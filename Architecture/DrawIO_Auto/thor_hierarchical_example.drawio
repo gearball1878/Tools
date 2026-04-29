@@ -1,0 +1,142 @@
+<?xml version="1.0" ?>
+<mxfile host="app.diagrams.net" modified="2026-04-26T00:00:00.000Z" agent="python-generator" version="24.0.0" type="device">
+  <diagram name="THOR Hierarchical Example">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1000" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="BLOCK_THOR_SoM" value="THOR SoM" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8f9fa;strokeColor=#666666;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry as="geometry" x="360" y="120" width="520" height="420"/>
+        </mxCell>
+        <mxCell id="BLOCK_Camera_Module" value="Camera Module" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8f9fa;strokeColor=#666666;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry as="geometry" x="80" y="160" width="180" height="160"/>
+        </mxCell>
+        <mxCell id="BLOCK_Power_Input" value="Power Input" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8f9fa;strokeColor=#666666;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry as="geometry" x="80" y="380" width="180" height="120"/>
+        </mxCell>
+        <mxCell id="BLOCK_Ethernet_PHY" value="10G Ethernet PHY" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8f9fa;strokeColor=#666666;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry as="geometry" x="980" y="180" width="220" height="180"/>
+        </mxCell>
+        <mxCell id="BLOCK_CPU" value="CPU / NVIDIA SoC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;" parent="BLOCK_THOR_SoM" vertex="1">
+          <mxGeometry as="geometry" x="40" y="60" width="190" height="120"/>
+        </mxCell>
+        <mxCell id="BLOCK_PMICS" value="PMICs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;" parent="BLOCK_THOR_SoM" vertex="1">
+          <mxGeometry as="geometry" x="40" y="240" width="190" height="100"/>
+        </mxCell>
+        <mxCell id="BLOCK_CSI_BRIDGE" value="CSI / GMSL Bridge" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;" parent="BLOCK_THOR_SoM" vertex="1">
+          <mxGeometry as="geometry" x="290" y="60" width="180" height="120"/>
+        </mxCell>
+        <mxCell id="BLOCK_ETH_MAC" value="Ethernet MAC" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#999999;" parent="BLOCK_THOR_SoM" vertex="1">
+          <mxGeometry as="geometry" x="290" y="240" width="180" height="100"/>
+        </mxCell>
+        <mxCell id="PORT_Camera_Module_CSI_OUT" value="CSI_OUT" style="shape=ellipse;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=8;" parent="BLOCK_Camera_Module" vertex="1">
+          <mxGeometry as="geometry" x="1" y="0.3333333333333333" width="20" height="20" relative="1">
+            <mxPoint x="-10" y="-10" as="offset"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="PORT_Camera_Module_VIN" value="VIN" style="shape=rectangle;fillColor=#ffcccc;strokeColor=#cc0000;fontSize=8;" parent="BLOCK_Camera_Module" vertex="1">
+          <mxGeometry as="geometry" x="0" y="0.5" width="20" height="20" relative="1">
+            <mxPoint x="-10" y="-10" as="offset"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="PORT_Power_Input_VOUT_12V" value="VOUT_12V" style="shape=rectangle;fillColor=#ffcccc;strokeColor=#cc0000;fontSize=8;" parent="BLOCK_Power_Input" vertex="1">
+          <mxGeometry as="geometry" x="1" y="0.3333333333333333" width="20" height="20" relative="1">
+            <mxPoint x="-10" y="-10" as="offset"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="PORT_Power_Input_GND" value="GND" style="shape=rectangle;fillColor=#e6e6e6;strokeColor=#000000;fontSize=8;" parent="BLOCK_Power_Input" vertex="1">
+          <mxGeometry as="geometry" x="1" y="0.6666666666666666" width="20" height="20" relative="1">
+            <mxPoint x="-10" y="-10" as="offset"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="PORT_THOR_SoM_CSI_IN0" value="CSI_IN0" style="shape=ellipse;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=8;" parent="BLOCK_THOR_SoM" vertex="1">
+          <mxGeometry as="geometry" x="0" y="0.2" width="20" height="20" relative="1">
+            <mxPoint x="-10" y="-10" as="offset"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="PORT_THOR_SoM_VIN_12V" value="VIN_12V" style="shape=rectangle;fillColor=#ffcccc;strokeColor=#cc0000;fontSize=8;" parent="BLOCK_THOR_SoM" vertex="1">
+          <mxGeometry as="geometry" x="0" y="0.4" width="20" height="20" relative="1">
+            <mxPoint x="-10" y="-10" as="offset"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="PORT_THOR_SoM_GND" value="GND" style="shape=rectangle;fillColor=#e6e6e6;strokeColor=#000000;fontSize=8;" parent="BLOCK_THOR_SoM" vertex="1">
+          <mxGeometry as="geometry" x="0" y="0.6" width="20" height="20" relative="1">
+            <mxPoint x="-10" y="-10" as="offset"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="PORT_THOR_SoM_XFI0" value="XFI0" style="shape=ellipse;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=8;" parent="BLOCK_THOR_SoM" vertex="1">
+          <mxGeometry as="geometry" x="1" y="0.3333333333333333" width="20" height="20" relative="1">
+            <mxPoint x="-10" y="-10" as="offset"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="PORT_Ethernet_PHY_XFI" value="XFI" style="shape=ellipse;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=8;" parent="BLOCK_Ethernet_PHY" vertex="1">
+          <mxGeometry as="geometry" x="0" y="0.3333333333333333" width="20" height="20" relative="1">
+            <mxPoint x="-10" y="-10" as="offset"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="PORT_Ethernet_PHY_MDI" value="MDI" style="shape=ellipse;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=8;" parent="BLOCK_Ethernet_PHY" vertex="1">
+          <mxGeometry as="geometry" x="1" y="0.3333333333333333" width="20" height="20" relative="1">
+            <mxPoint x="-10" y="-10" as="offset"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="PORT_CSI_BRIDGE_CSI_IN0" value="CSI_IN0" style="shape=ellipse;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=8;" parent="BLOCK_CSI_BRIDGE" vertex="1">
+          <mxGeometry as="geometry" x="0" y="0.3333333333333333" width="20" height="20" relative="1">
+            <mxPoint x="-10" y="-10" as="offset"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="PORT_CSI_BRIDGE_AXI_STREAM" value="AXI_STREAM" style="shape=ellipse;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=8;" parent="BLOCK_CSI_BRIDGE" vertex="1">
+          <mxGeometry as="geometry" x="1" y="0.3333333333333333" width="20" height="20" relative="1">
+            <mxPoint x="-10" y="-10" as="offset"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="PORT_CPU_CAM_AXI" value="CAM_AXI" style="shape=ellipse;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=8;" parent="BLOCK_CPU" vertex="1">
+          <mxGeometry as="geometry" x="1" y="0.3333333333333333" width="20" height="20" relative="1">
+            <mxPoint x="-10" y="-10" as="offset"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="PORT_PMICS_VDD_CPU" value="VDD_CPU" style="shape=rectangle;fillColor=#ffcccc;strokeColor=#cc0000;fontSize=8;" parent="BLOCK_PMICS" vertex="1">
+          <mxGeometry as="geometry" x="1" y="0.3333333333333333" width="20" height="20" relative="1">
+            <mxPoint x="-10" y="-10" as="offset"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="PORT_CPU_VDD_CPU" value="VDD_CPU" style="shape=rectangle;fillColor=#ffcccc;strokeColor=#cc0000;fontSize=8;" parent="BLOCK_CPU" vertex="1">
+          <mxGeometry as="geometry" x="0" y="0.3333333333333333" width="20" height="20" relative="1">
+            <mxPoint x="-10" y="-10" as="offset"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="PORT_ETH_MAC_XFI0" value="XFI0" style="shape=ellipse;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=8;" parent="BLOCK_ETH_MAC" vertex="1">
+          <mxGeometry as="geometry" x="1" y="0.3333333333333333" width="20" height="20" relative="1">
+            <mxPoint x="-10" y="-10" as="offset"/>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="LINK_CAM_CSI_01" value="CAM_Link_01 / CSI2-DPHY" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeWidth=4;dashed=1;" parent="1" edge="1" source="PORT_Camera_Module_CSI_OUT" target="PORT_THOR_SoM_CSI_IN0">
+          <mxGeometry as="geometry" relative="1"/>
+        </mxCell>
+        <mxCell id="LINK_PWR_12V" value="PWR_12V" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeWidth=2;" parent="1" edge="1" source="PORT_Power_Input_VOUT_12V" target="PORT_THOR_SoM_VIN_12V">
+          <mxGeometry as="geometry" relative="1"/>
+        </mxCell>
+        <mxCell id="LINK_GND" value="GND" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeWidth=2;" parent="1" edge="1" source="PORT_Power_Input_GND" target="PORT_THOR_SoM_GND">
+          <mxGeometry as="geometry" relative="1"/>
+        </mxCell>
+        <mxCell id="LINK_XFI_01" value="XFI_Link_01" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeWidth=4;dashed=1;" parent="1" edge="1" source="PORT_THOR_SoM_XFI0" target="PORT_Ethernet_PHY_XFI">
+          <mxGeometry as="geometry" relative="1"/>
+        </mxCell>
+        <mxCell id="LINK_MDI_01" value="MDI_Analog" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeWidth=2;" parent="1" edge="1" source="PORT_Ethernet_PHY_MDI" target="BLOCK_Ethernet_PHY">
+          <mxGeometry as="geometry" relative="1"/>
+        </mxCell>
+        <mxCell id="LINK_INTERNAL_CSI" value="internal CSI" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeWidth=4;dashed=1;" parent="1" edge="1" source="PORT_CSI_BRIDGE_CSI_IN0" target="PORT_CSI_BRIDGE_AXI_STREAM">
+          <mxGeometry as="geometry" relative="1"/>
+        </mxCell>
+        <mxCell id="LINK_INTERNAL_AXI" value="AXI video stream" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeWidth=4;dashed=1;" parent="1" edge="1" source="PORT_CSI_BRIDGE_AXI_STREAM" target="PORT_CPU_CAM_AXI">
+          <mxGeometry as="geometry" relative="1"/>
+        </mxCell>
+        <mxCell id="LINK_INTERNAL_VDD_CPU" value="VDD_CPU" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeWidth=2;" parent="1" edge="1" source="PORT_PMICS_VDD_CPU" target="PORT_CPU_VDD_CPU">
+          <mxGeometry as="geometry" relative="1"/>
+        </mxCell>
+        <mxCell id="LINK_INTERNAL_XFI" value="XFI0 internal" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeWidth=4;dashed=1;" parent="1" edge="1" source="PORT_ETH_MAC_XFI0" target="PORT_THOR_SoM_XFI0">
+          <mxGeometry as="geometry" relative="1"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

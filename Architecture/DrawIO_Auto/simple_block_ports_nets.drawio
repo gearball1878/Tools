@@ -1,0 +1,56 @@
+<?xml version="1.0" ?>
+<mxfile host="app.diagrams.net" agent="simple-python-wrapper" version="24.0.0" type="device">
+  <diagram name="Simple Object Example">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" page="1" pageScale="1" pageWidth="1000" pageHeight="700">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <object label="IN" kind="port" object_id="PORT_IN" object_name="Input Port" port_type="in" attributes_json="{&quot;direction&quot;:&quot;input&quot;,&quot;constraint_class&quot;:&quot;SIG_IN&quot;}" attr_direction="input" attr_constraint_class="SIG_IN">
+          <mxCell id="PORT_IN" value="IN" style="shape=ellipse;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="1">
+            <mxGeometry x="80" y="170" width="60" height="32" as="geometry"/>
+          </mxCell>
+        </object>
+        <object label="NET_IN" kind="net" object_id="NET_IN" object_name="NET_IN" type="net" attributes_json="{&quot;constraint_class&quot;:&quot;SIG_IN&quot;,&quot;signal_flow&quot;:&quot;left_to_right&quot;}" attr_constraint_class="SIG_IN" attr_signal_flow="left_to_right">
+          <mxCell id="NET_IN" value="&lt;&lt;Net&gt;&gt;&lt;br&gt;&lt;b&gt;NET_IN&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
+            <mxGeometry x="190" y="155" width="120" height="64" as="geometry"/>
+          </mxCell>
+        </object>
+        <object label="MyBlock" kind="block" object_id="BLOCK_MYBLOCK" object_name="MyBlock" level="1" attributes_json="{&quot;function&quot;:&quot;example_processing_block&quot;}" attr_function="example_processing_block">
+          <mxCell id="BLOCK_MYBLOCK" value="&lt;&lt;Block&gt;&gt;&lt;br&gt;&lt;b&gt;MyBlock&lt;/b&gt;&lt;hr size='1'&gt;ID: BLOCK_MYBLOCK" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#333333;fontSize=12;" vertex="1" parent="1">
+            <mxGeometry x="380" y="130" width="180" height="110" as="geometry"/>
+          </mxCell>
+        </object>
+        <object label="NET_OUT" kind="net" object_id="NET_OUT" object_name="NET_OUT" type="net" attributes_json="{&quot;constraint_class&quot;:&quot;SIG_OUT&quot;,&quot;signal_flow&quot;:&quot;left_to_right&quot;}" attr_constraint_class="SIG_OUT" attr_signal_flow="left_to_right">
+          <mxCell id="NET_OUT" value="&lt;&lt;Net&gt;&gt;&lt;br&gt;&lt;b&gt;NET_OUT&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" vertex="1" parent="1">
+            <mxGeometry x="630" y="155" width="120" height="64" as="geometry"/>
+          </mxCell>
+        </object>
+        <object label="OUT" kind="port" object_id="PORT_OUT" object_name="Output Port" port_type="out" attributes_json="{&quot;direction&quot;:&quot;output&quot;,&quot;constraint_class&quot;:&quot;SIG_OUT&quot;}" attr_direction="output" attr_constraint_class="SIG_OUT">
+          <mxCell id="PORT_OUT" value="OUT" style="shape=ellipse;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+            <mxGeometry x="810" y="170" width="60" height="32" as="geometry"/>
+          </mxCell>
+        </object>
+        <object label="" kind="wire" object_id="WIRE_IN_TO_NET_IN" source="PORT_IN" target="NET_IN">
+          <mxCell id="WIRE_IN_TO_NET_IN" value="" edge="1" parent="1" source="PORT_IN" target="NET_IN" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=none;strokeWidth=2;">
+            <mxGeometry relative="1" as="geometry"/>
+          </mxCell>
+        </object>
+        <object label="" kind="wire" object_id="WIRE_NET_IN_TO_BLOCK" source="NET_IN" target="BLOCK_MYBLOCK">
+          <mxCell id="WIRE_NET_IN_TO_BLOCK" value="" edge="1" parent="1" source="NET_IN" target="BLOCK_MYBLOCK" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=none;strokeWidth=2;">
+            <mxGeometry relative="1" as="geometry"/>
+          </mxCell>
+        </object>
+        <object label="" kind="wire" object_id="WIRE_BLOCK_TO_NET_OUT" source="BLOCK_MYBLOCK" target="NET_OUT">
+          <mxCell id="WIRE_BLOCK_TO_NET_OUT" value="" edge="1" parent="1" source="BLOCK_MYBLOCK" target="NET_OUT" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=none;strokeWidth=2;">
+            <mxGeometry relative="1" as="geometry"/>
+          </mxCell>
+        </object>
+        <object label="" kind="wire" object_id="WIRE_NET_OUT_TO_OUT" source="NET_OUT" target="PORT_OUT">
+          <mxCell id="WIRE_NET_OUT_TO_OUT" value="" edge="1" parent="1" source="NET_OUT" target="PORT_OUT" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=none;strokeWidth=2;">
+            <mxGeometry relative="1" as="geometry"/>
+          </mxCell>
+        </object>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

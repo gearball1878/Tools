@@ -1,0 +1,689 @@
+{
+  "id": "THOR_SIGNALFLOW_ARCH",
+  "name": "THOR UML Signalflow Architecture",
+  "domains": [
+    {
+      "id": "PSU_THOR",
+      "name": "PSU_THOR",
+      "level": 1,
+      "stereotype": "Domain",
+      "ports": [
+        {
+          "id": "VIN_24V",
+          "name": "VIN_24V",
+          "type": "power",
+          "attributes": {
+            "voltage": "24V",
+            "constraint_class": "PWR_IN"
+          }
+        },
+        {
+          "id": "GND",
+          "name": "GND",
+          "type": "ground",
+          "attributes": {
+            "constraint_class": "GND"
+          }
+        },
+        {
+          "id": "VOUT_CORE",
+          "name": "VOUT_CORE",
+          "type": "power",
+          "attributes": {
+            "voltage": "0.8V",
+            "current_max_A": 80,
+            "constraint_class": "PWR_CORE"
+          }
+        }
+      ],
+      "children": [
+        {
+          "id": "PSU_THOR_Core_Voltage_1",
+          "name": "PSU_THOR_Core_Voltage_1",
+          "level": 2,
+          "stereotype": "ArchitectureElement",
+          "ports": [
+            {
+              "id": "VIN",
+              "name": "VIN",
+              "type": "power",
+              "attributes": {
+                "voltage": "12V"
+              }
+            },
+            {
+              "id": "GND",
+              "name": "GND",
+              "type": "ground",
+              "attributes": {}
+            },
+            {
+              "id": "VOUT",
+              "name": "VOUT",
+              "type": "power",
+              "attributes": {
+                "voltage": "0.8V",
+                "current_max_A": 80
+              }
+            },
+            {
+              "id": "EN",
+              "name": "EN",
+              "type": "in",
+              "attributes": {
+                "constraint_class": "CTRL"
+              }
+            },
+            {
+              "id": "PGOOD",
+              "name": "PGOOD",
+              "type": "out",
+              "attributes": {
+                "constraint_class": "STATUS"
+              }
+            }
+          ],
+          "children": [
+            {
+              "id": "CFG_PSU_THOR_Core_Voltage_1",
+              "name": "CFG_PSU_THOR_Core_Voltage_1",
+              "level": 3,
+              "stereotype": "Configuration",
+              "ports": [
+                {
+                  "id": "VIN",
+                  "name": "VIN",
+                  "type": "power",
+                  "attributes": {}
+                },
+                {
+                  "id": "GND",
+                  "name": "GND",
+                  "type": "ground",
+                  "attributes": {}
+                },
+                {
+                  "id": "VOUT_SENSE",
+                  "name": "VOUT_SENSE",
+                  "type": "analog",
+                  "attributes": {}
+                },
+                {
+                  "id": "FB",
+                  "name": "FB",
+                  "type": "analog",
+                  "attributes": {
+                    "constraint_class": "ANALOG_FB"
+                  }
+                },
+                {
+                  "id": "EN",
+                  "name": "EN",
+                  "type": "in",
+                  "attributes": {}
+                },
+                {
+                  "id": "PGOOD",
+                  "name": "PGOOD",
+                  "type": "out",
+                  "attributes": {}
+                }
+              ],
+              "children": [
+                {
+                  "id": "OBJ_Buck_Controller_Reusable_1",
+                  "name": "OBJ_Buck_Controller_Reusable_1",
+                  "level": 4,
+                  "stereotype": "ReusableFunctionalInstance",
+                  "ports": [
+                    {
+                      "id": "VIN",
+                      "name": "VIN",
+                      "type": "power",
+                      "attributes": {}
+                    },
+                    {
+                      "id": "GND",
+                      "name": "GND",
+                      "type": "ground",
+                      "attributes": {}
+                    },
+                    {
+                      "id": "SW",
+                      "name": "SW",
+                      "type": "analog",
+                      "attributes": {}
+                    },
+                    {
+                      "id": "FB",
+                      "name": "FB",
+                      "type": "analog",
+                      "attributes": {}
+                    },
+                    {
+                      "id": "EN",
+                      "name": "EN",
+                      "type": "in",
+                      "attributes": {}
+                    },
+                    {
+                      "id": "PGOOD",
+                      "name": "PGOOD",
+                      "type": "out",
+                      "attributes": {}
+                    }
+                  ],
+                  "children": [],
+                  "attributes": {
+                    "object_type": "buck_controller",
+                    "library": "power.lib",
+                    "reuse": true
+                  }
+                },
+                {
+                  "id": "OBJ_Feedback_Divider_Reusable_1",
+                  "name": "OBJ_Feedback_Divider_Reusable_1",
+                  "level": 4,
+                  "stereotype": "ReusableFunctionalInstance",
+                  "ports": [
+                    {
+                      "id": "VOUT_SENSE",
+                      "name": "VOUT_SENSE",
+                      "type": "analog",
+                      "attributes": {}
+                    },
+                    {
+                      "id": "GND",
+                      "name": "GND",
+                      "type": "ground",
+                      "attributes": {}
+                    },
+                    {
+                      "id": "FB_OUT",
+                      "name": "FB_OUT",
+                      "type": "analog",
+                      "attributes": {}
+                    }
+                  ],
+                  "children": [],
+                  "attributes": {
+                    "object_type": "resistor_divider",
+                    "tolerance_percent": 0.1,
+                    "reuse": true
+                  }
+                }
+              ],
+              "attributes": {
+                "purpose": "configure buck regulator instance"
+              }
+            }
+          ],
+          "attributes": {
+            "rail": "VDD_CPU",
+            "voltage": "0.8V",
+            "current_max_A": 80
+          }
+        }
+      ],
+      "attributes": {
+        "domain": "Power",
+        "owner": "PowerDesign",
+        "thermal_budget_W": 25
+      }
+    },
+    {
+      "id": "PSU_ETH",
+      "name": "PSU_ETH",
+      "level": 1,
+      "stereotype": "Domain",
+      "ports": [
+        {
+          "id": "VIN_12V",
+          "name": "VIN_12V",
+          "type": "power",
+          "attributes": {
+            "voltage": "12V"
+          }
+        },
+        {
+          "id": "GND",
+          "name": "GND",
+          "type": "ground",
+          "attributes": {}
+        },
+        {
+          "id": "VDDIO_ETH",
+          "name": "VDDIO_ETH",
+          "type": "power",
+          "attributes": {
+            "voltage": "1.8V"
+          }
+        }
+      ],
+      "children": [
+        {
+          "id": "PSU_ETH_VDDIO_1",
+          "name": "PSU_ETH_VDDIO_1",
+          "level": 2,
+          "stereotype": "ArchitectureElement",
+          "ports": [
+            {
+              "id": "VIN",
+              "name": "VIN",
+              "type": "power",
+              "attributes": {
+                "voltage": "12V"
+              }
+            },
+            {
+              "id": "GND",
+              "name": "GND",
+              "type": "ground",
+              "attributes": {}
+            },
+            {
+              "id": "VOUT",
+              "name": "VOUT",
+              "type": "power",
+              "attributes": {
+                "voltage": "1.8V"
+              }
+            }
+          ],
+          "children": [],
+          "attributes": {
+            "rail": "VDDIO_ETH",
+            "voltage": "1.8V"
+          }
+        }
+      ],
+      "attributes": {
+        "domain": "Power",
+        "owner": "PowerDesign"
+      }
+    },
+    {
+      "id": "SoM",
+      "name": "SoM",
+      "level": 1,
+      "stereotype": "Domain",
+      "ports": [
+        {
+          "id": "VIN_CORE",
+          "name": "VIN_CORE",
+          "type": "power",
+          "attributes": {
+            "voltage": "0.8V"
+          }
+        },
+        {
+          "id": "VIN_ETH_IO",
+          "name": "VIN_ETH_IO",
+          "type": "power",
+          "attributes": {
+            "voltage": "1.8V"
+          }
+        },
+        {
+          "id": "GND",
+          "name": "GND",
+          "type": "ground",
+          "attributes": {}
+        },
+        {
+          "id": "SAFETY_SPI",
+          "name": "SAFETY_SPI",
+          "type": "bidi",
+          "attributes": {
+            "protocol": "SPI",
+            "width": 4
+          }
+        },
+        {
+          "id": "RADAR_ETH",
+          "name": "RADAR_ETH",
+          "type": "bidi",
+          "attributes": {
+            "protocol": "Ethernet"
+          }
+        }
+      ],
+      "children": [
+        {
+          "id": "SoM_Compute_Core_1",
+          "name": "SoM_Compute_Core_1",
+          "level": 2,
+          "stereotype": "ArchitectureElement",
+          "ports": [
+            {
+              "id": "VIN_CORE",
+              "name": "VIN_CORE",
+              "type": "power",
+              "attributes": {}
+            },
+            {
+              "id": "GND",
+              "name": "GND",
+              "type": "ground",
+              "attributes": {}
+            },
+            {
+              "id": "SPI0",
+              "name": "SPI0",
+              "type": "bidi",
+              "attributes": {
+                "protocol": "SPI"
+              }
+            },
+            {
+              "id": "ETH0",
+              "name": "ETH0",
+              "type": "bidi",
+              "attributes": {
+                "protocol": "Ethernet"
+              }
+            },
+            {
+              "id": "BOOT_I2C",
+              "name": "BOOT_I2C",
+              "type": "bidi",
+              "attributes": {
+                "protocol": "I2C"
+              }
+            }
+          ],
+          "children": [
+            {
+              "id": "CFG_SoM_Boot_1",
+              "name": "CFG_SoM_Boot_1",
+              "level": 3,
+              "stereotype": "Configuration",
+              "ports": [
+                {
+                  "id": "VCC",
+                  "name": "VCC",
+                  "type": "power",
+                  "attributes": {}
+                },
+                {
+                  "id": "GND",
+                  "name": "GND",
+                  "type": "ground",
+                  "attributes": {}
+                },
+                {
+                  "id": "I2C",
+                  "name": "I2C",
+                  "type": "bidi",
+                  "attributes": {}
+                },
+                {
+                  "id": "BOOTMODE",
+                  "name": "BOOTMODE",
+                  "type": "in",
+                  "attributes": {}
+                }
+              ],
+              "children": [
+                {
+                  "id": "OBJ_EEPROM_Reusable_1",
+                  "name": "OBJ_EEPROM_Reusable_1",
+                  "level": 4,
+                  "stereotype": "ReusableFunctionalInstance",
+                  "ports": [
+                    {
+                      "id": "VCC",
+                      "name": "VCC",
+                      "type": "power",
+                      "attributes": {}
+                    },
+                    {
+                      "id": "GND",
+                      "name": "GND",
+                      "type": "ground",
+                      "attributes": {}
+                    },
+                    {
+                      "id": "I2C",
+                      "name": "I2C",
+                      "type": "bidi",
+                      "attributes": {}
+                    },
+                    {
+                      "id": "WP",
+                      "name": "WP",
+                      "type": "in",
+                      "attributes": {}
+                    }
+                  ],
+                  "children": [],
+                  "attributes": {
+                    "object_type": "i2c_eeprom",
+                    "library": "memory.lib",
+                    "reuse": true
+                  }
+                }
+              ],
+              "attributes": {
+                "purpose": "boot straps and EEPROM configuration"
+              }
+            }
+          ],
+          "attributes": {
+            "processor": "NVIDIA_THOR"
+          }
+        }
+      ],
+      "attributes": {
+        "domain": "Compute",
+        "processor_family": "THOR"
+      }
+    },
+    {
+      "id": "SafetyMicro",
+      "name": "SafetyMicro",
+      "level": 1,
+      "stereotype": "Domain",
+      "ports": [
+        {
+          "id": "VIN_3V3",
+          "name": "VIN_3V3",
+          "type": "power",
+          "attributes": {
+            "voltage": "3.3V"
+          }
+        },
+        {
+          "id": "GND",
+          "name": "GND",
+          "type": "ground",
+          "attributes": {}
+        },
+        {
+          "id": "SPI_TO_SOM",
+          "name": "SPI_TO_SOM",
+          "type": "bidi",
+          "attributes": {
+            "protocol": "SPI"
+          }
+        },
+        {
+          "id": "RESET_OUT",
+          "name": "RESET_OUT",
+          "type": "out",
+          "attributes": {}
+        }
+      ],
+      "children": [],
+      "attributes": {
+        "domain": "Safety",
+        "asil_relevance": "high"
+      }
+    },
+    {
+      "id": "Radar",
+      "name": "Radar",
+      "level": 1,
+      "stereotype": "Domain",
+      "ports": [
+        {
+          "id": "VIN_12V",
+          "name": "VIN_12V",
+          "type": "power",
+          "attributes": {
+            "voltage": "12V"
+          }
+        },
+        {
+          "id": "GND",
+          "name": "GND",
+          "type": "ground",
+          "attributes": {}
+        },
+        {
+          "id": "ETH_DATA",
+          "name": "ETH_DATA",
+          "type": "bidi",
+          "attributes": {
+            "protocol": "Ethernet"
+          }
+        }
+      ],
+      "children": [],
+      "attributes": {
+        "domain": "Sensor",
+        "sensor_type": "surround_radar"
+      }
+    }
+  ],
+  "signals": [
+    {
+      "id": "NET_PSU_THOR_CORE_TO_SOM",
+      "name": "PWR_THOR_CORE",
+      "type": "net",
+      "endpoints": [
+        "PSU_THOR.VOUT_CORE",
+        "SoM.VIN_CORE"
+      ],
+      "stereotype": "Net",
+      "attributes": {
+        "constraint_class": "PWR_CORE",
+        "voltage": "0.8V",
+        "current_max_A": 80
+      }
+    },
+    {
+      "id": "NET_PSU_ETH_VDDIO_TO_SOM",
+      "name": "PWR_ETH_IO",
+      "type": "net",
+      "endpoints": [
+        "PSU_ETH.VDDIO_ETH",
+        "SoM.VIN_ETH_IO"
+      ],
+      "stereotype": "Net",
+      "attributes": {
+        "constraint_class": "PWR_ETH_IO",
+        "voltage": "1.8V"
+      }
+    },
+    {
+      "id": "BUS_SOM_TO_SAFETY_SPI",
+      "name": "SAFETY_SPI",
+      "type": "bus",
+      "endpoints": [
+        "SoM.SAFETY_SPI",
+        "SafetyMicro.SPI_TO_SOM"
+      ],
+      "stereotype": "Bus",
+      "attributes": {
+        "protocol": "SPI",
+        "width": 4,
+        "constraint_class": "SPI"
+      }
+    },
+    {
+      "id": "BUS_SOM_TO_RADAR_ETH",
+      "name": "RADAR_ETH",
+      "type": "bus",
+      "endpoints": [
+        "SoM.RADAR_ETH",
+        "Radar.ETH_DATA"
+      ],
+      "stereotype": "Bus",
+      "attributes": {
+        "protocol": "Ethernet",
+        "constraint_class": "ETH"
+      }
+    },
+    {
+      "id": "NET_L2_PSU_THOR_VOUT_TO_CFG",
+      "name": "VDD_CPU_CFG",
+      "type": "net",
+      "endpoints": [
+        "PSU_THOR_Core_Voltage_1.VOUT",
+        "CFG_PSU_THOR_Core_Voltage_1.VOUT_SENSE"
+      ],
+      "stereotype": "Net",
+      "attributes": {
+        "constraint_class": "PWR_CORE_SENSE"
+      }
+    },
+    {
+      "id": "NET_BUCK_FB",
+      "name": "BUCK_FB",
+      "type": "net",
+      "endpoints": [
+        "OBJ_Feedback_Divider_Reusable_1.FB_OUT",
+        "OBJ_Buck_Controller_Reusable_1.FB"
+      ],
+      "stereotype": "Net",
+      "attributes": {
+        "constraint_class": "ANALOG_FB"
+      }
+    },
+    {
+      "id": "NET_BUCK_EN",
+      "name": "BUCK_EN",
+      "type": "net",
+      "endpoints": [
+        "CFG_PSU_THOR_Core_Voltage_1.EN",
+        "OBJ_Buck_Controller_Reusable_1.EN"
+      ],
+      "stereotype": "Net",
+      "attributes": {
+        "constraint_class": "CTRL"
+      }
+    },
+    {
+      "id": "NET_BUCK_PGOOD",
+      "name": "BUCK_PGOOD",
+      "type": "net",
+      "endpoints": [
+        "OBJ_Buck_Controller_Reusable_1.PGOOD",
+        "CFG_PSU_THOR_Core_Voltage_1.PGOOD"
+      ],
+      "stereotype": "Net",
+      "attributes": {
+        "constraint_class": "STATUS"
+      }
+    },
+    {
+      "id": "BUS_BOOT_EEPROM_I2C",
+      "name": "BOOT_EEPROM_I2C",
+      "type": "bus",
+      "endpoints": [
+        "CFG_SoM_Boot_1.I2C",
+        "OBJ_EEPROM_Reusable_1.I2C"
+      ],
+      "stereotype": "Bus",
+      "attributes": {
+        "protocol": "I2C",
+        "width": 2,
+        "constraint_class": "I2C"
+      }
+    }
+  ],
+  "attributes": {
+    "project": "Liebherr THOR SoM ECAD Design"
+  }
+}

@@ -1,0 +1,94 @@
+<?xml version="1.0" ?>
+<mxfile host="app.diagrams.net" agent="thor-uml-object-renderer" version="24.0.0" type="device">
+  <diagram name="L1_UML_Domains">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <object label="PSU_THOR" kind="uml_block" object_id="PSU_THOR" object_name="PSU_THOR" stereotype="Domain" attributes_json="{&quot;domain&quot;:&quot;Power&quot;,&quot;owner&quot;:&quot;PowerDesign&quot;,&quot;thermal_budget_W&quot;:25}" level="1" has_children="True" attr_domain="Power" attr_owner="PowerDesign" attr_thermal_budget_W="25">
+          <mxCell id="UML_BLOCK_PSU_THOR" value="&lt;div style='font-size:11px'&gt;&amp;lt;&amp;lt;Domain&amp;gt;&amp;gt;&lt;/div&gt;&lt;b&gt;&lt;u&gt;PSU_THOR&lt;/u&gt;&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:10px'&gt;PSU_THOR&lt;/font&gt;&lt;br&gt;&lt;font style='font-size:10px'&gt;linked drill-down page&lt;/font&gt;&lt;hr size='1'&gt;&lt;b&gt;ports&lt;/b&gt;&lt;br&gt;# VIN_24V : power&lt;br&gt;# GND : ground&lt;br&gt;# VOUT_CORE : power&lt;hr size='1'&gt;&lt;b&gt;attributes&lt;/b&gt;&lt;br&gt;domain = Power&lt;br&gt;owner = PowerDesign&lt;br&gt;thermal_budget_W = 25" style="rounded=0;whiteSpace=wrap;html=1;align=center;verticalAlign=top;spacingTop=8;fillColor=#ffffff;strokeColor=#333333;fontSize=12;link=data:page/id,PSU_THOR;" vertex="1" parent="1">
+            <mxGeometry x="80" y="110" width="340" height="260" as="geometry"/>
+          </mxCell>
+        </object>
+        <object label="SoM" kind="uml_block" object_id="SoM" object_name="SoM" stereotype="Domain" attributes_json="{&quot;domain&quot;:&quot;Compute&quot;,&quot;processor_family&quot;:&quot;THOR&quot;}" level="1" has_children="False" attr_domain="Compute" attr_processor_family="THOR">
+          <mxCell id="UML_BLOCK_SoM" value="&lt;div style='font-size:11px'&gt;&amp;lt;&amp;lt;Domain&amp;gt;&amp;gt;&lt;/div&gt;&lt;b&gt;&lt;u&gt;SoM&lt;/u&gt;&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:10px'&gt;SoM&lt;/font&gt;&lt;hr size='1'&gt;&lt;b&gt;ports&lt;/b&gt;&lt;br&gt;# VIN_CORE : power&lt;br&gt;# GND : ground&lt;br&gt;~ SAFETY_SPI : bidi&lt;hr size='1'&gt;&lt;b&gt;attributes&lt;/b&gt;&lt;br&gt;domain = Compute&lt;br&gt;processor_family = THOR" style="rounded=0;whiteSpace=wrap;html=1;align=center;verticalAlign=top;spacingTop=8;fillColor=#ffffff;strokeColor=#333333;fontSize=12;" vertex="1" parent="1">
+            <mxGeometry x="540" y="110" width="340" height="260" as="geometry"/>
+          </mxCell>
+        </object>
+        <object label="SafetyMicro" kind="uml_block" object_id="SafetyMicro" object_name="SafetyMicro" stereotype="Domain" attributes_json="{&quot;domain&quot;:&quot;Safety&quot;,&quot;asil_relevance&quot;:&quot;high&quot;}" level="1" has_children="False" attr_domain="Safety" attr_asil_relevance="high">
+          <mxCell id="UML_BLOCK_SafetyMicro" value="&lt;div style='font-size:11px'&gt;&amp;lt;&amp;lt;Domain&amp;gt;&amp;gt;&lt;/div&gt;&lt;b&gt;&lt;u&gt;SafetyMicro&lt;/u&gt;&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:10px'&gt;SafetyMicro&lt;/font&gt;&lt;hr size='1'&gt;&lt;b&gt;ports&lt;/b&gt;&lt;br&gt;# VIN_3V3 : power&lt;br&gt;# GND : ground&lt;br&gt;~ SPI_TO_SOM : bidi&lt;hr size='1'&gt;&lt;b&gt;attributes&lt;/b&gt;&lt;br&gt;domain = Safety&lt;br&gt;asil_relevance = high" style="rounded=0;whiteSpace=wrap;html=1;align=center;verticalAlign=top;spacingTop=8;fillColor=#ffffff;strokeColor=#333333;fontSize=12;" vertex="1" parent="1">
+            <mxGeometry x="1000" y="110" width="340" height="260" as="geometry"/>
+          </mxCell>
+        </object>
+        <object label="PWR_THOR_CORE" kind="uml_connection" object_id="NET_PSU_THOR_CORE_TO_SOM" object_name="PWR_THOR_CORE" stereotype="Net" attributes_json="{&quot;constraint_class&quot;:&quot;PWR_CORE&quot;,&quot;voltage&quot;:&quot;0.8V&quot;,&quot;current_max_A&quot;:80}" type="net" source="PSU_THOR.VOUT_CORE" target="SoM.VIN_CORE" source_port="VOUT_CORE" target_port="VIN_CORE" attr_constraint_class="PWR_CORE" attr_voltage="0.8V" attr_current_max_A="80">
+          <mxCell id="UML_CONN_NET_PSU_THOR_CORE_TO_SOM" value="&amp;lt;&amp;lt;Net&amp;gt;&amp;gt;&lt;br&gt;PWR_THOR_CORE&lt;br&gt;&lt;font style='font-size:9px'&gt;PSU_THOR.VOUT_CORE → SoM.VIN_CORE&lt;/font&gt;" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;strokeWidth=2;" edge="1" parent="1" source="UML_BLOCK_PSU_THOR" target="UML_BLOCK_SoM">
+            <mxGeometry relative="1" as="geometry"/>
+          </mxCell>
+        </object>
+        <object label="SAFETY_SPI" kind="uml_connection" object_id="BUS_SOM_TO_SAFETY_SPI" object_name="SAFETY_SPI" stereotype="Bus" attributes_json="{&quot;protocol&quot;:&quot;SPI&quot;,&quot;width&quot;:4,&quot;constraint_class&quot;:&quot;SPI&quot;}" type="bus" source="SoM.SAFETY_SPI" target="SafetyMicro.SPI_TO_SOM" source_port="SAFETY_SPI" target_port="SPI_TO_SOM" attr_protocol="SPI" attr_width="4" attr_constraint_class="SPI">
+          <mxCell id="UML_CONN_BUS_SOM_TO_SAFETY_SPI" value="&amp;lt;&amp;lt;Bus&amp;gt;&amp;gt;&lt;br&gt;SAFETY_SPI&lt;br&gt;&lt;font style='font-size:9px'&gt;SoM.SAFETY_SPI → SafetyMicro.SPI_TO_SOM&lt;/font&gt;" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;strokeWidth=4;dashed=1;" edge="1" parent="1" source="UML_BLOCK_SoM" target="UML_BLOCK_SafetyMicro">
+            <mxGeometry relative="1" as="geometry"/>
+          </mxCell>
+        </object>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram name="PSU_THOR">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="TITLE_PSU_THOR" value="UML Drill-down: PSU_THOR" style="text;html=1;strokeColor=none;fillColor=none;fontSize=18;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1000" height="40" as="geometry"/>
+        </mxCell>
+        <object label="PSU_THOR_Core_Voltage_1" kind="uml_block" object_id="PSU_THOR_Core_Voltage_1" object_name="PSU_THOR_Core_Voltage_1" stereotype="ArchitectureElement" attributes_json="{&quot;rail&quot;:&quot;VDD_CPU&quot;,&quot;voltage&quot;:&quot;0.8V&quot;,&quot;current_max_A&quot;:80}" level="2" has_children="True" attr_rail="VDD_CPU" attr_voltage="0.8V" attr_current_max_A="80">
+          <mxCell id="UML_BLOCK_PSU_THOR_Core_Voltage_1" value="&lt;div style='font-size:11px'&gt;&amp;lt;&amp;lt;ArchitectureElement&amp;gt;&amp;gt;&lt;/div&gt;&lt;b&gt;&lt;u&gt;PSU_THOR_Core_Voltage_1&lt;/u&gt;&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:10px'&gt;PSU_THOR_Core_Voltage_1&lt;/font&gt;&lt;br&gt;&lt;font style='font-size:10px'&gt;linked drill-down page&lt;/font&gt;&lt;hr size='1'&gt;&lt;b&gt;ports&lt;/b&gt;&lt;br&gt;# VIN : power&lt;br&gt;# GND : ground&lt;br&gt;# VOUT : power&lt;hr size='1'&gt;&lt;b&gt;attributes&lt;/b&gt;&lt;br&gt;rail = VDD_CPU&lt;br&gt;voltage = 0.8V&lt;br&gt;current_max_A = 80" style="rounded=0;whiteSpace=wrap;html=1;align=center;verticalAlign=top;spacingTop=8;fillColor=#ffffff;strokeColor=#333333;fontSize=12;link=data:page/id,PSU_THOR_Core_Voltage_1;" vertex="1" parent="1">
+            <mxGeometry x="80" y="110" width="340" height="260" as="geometry"/>
+          </mxCell>
+        </object>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram name="PSU_THOR_Core_Voltage_1">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="TITLE_PSU_THOR_Core_Voltage_1" value="UML Drill-down: PSU_THOR_Core_Voltage_1" style="text;html=1;strokeColor=none;fillColor=none;fontSize=18;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1000" height="40" as="geometry"/>
+        </mxCell>
+        <object label="CFG_PSU_THOR_Core_Voltage_1" kind="uml_block" object_id="CFG_PSU_THOR_Core_Voltage_1" object_name="CFG_PSU_THOR_Core_Voltage_1" stereotype="Configuration" attributes_json="{&quot;purpose&quot;:&quot;configure buck regulator instance&quot;}" level="3" has_children="True" attr_purpose="configure buck regulator instance">
+          <mxCell id="UML_BLOCK_CFG_PSU_THOR_Core_Voltage_1" value="&lt;div style='font-size:11px'&gt;&amp;lt;&amp;lt;Configuration&amp;gt;&amp;gt;&lt;/div&gt;&lt;b&gt;&lt;u&gt;CFG_PSU_THOR_Core_Voltage_1&lt;/u&gt;&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:10px'&gt;CFG_PSU_THOR_Core_Voltage_1&lt;/font&gt;&lt;br&gt;&lt;font style='font-size:10px'&gt;linked drill-down page&lt;/font&gt;&lt;hr size='1'&gt;&lt;b&gt;ports&lt;/b&gt;&lt;br&gt;~ FB : analog&lt;br&gt;+ EN : in&lt;br&gt;- PGOOD : out&lt;hr size='1'&gt;&lt;b&gt;attributes&lt;/b&gt;&lt;br&gt;purpose = configure buck regulator instance" style="rounded=0;whiteSpace=wrap;html=1;align=center;verticalAlign=top;spacingTop=8;fillColor=#ffffff;strokeColor=#333333;fontSize=12;link=data:page/id,CFG_PSU_THOR_Core_Voltage_1;" vertex="1" parent="1">
+            <mxGeometry x="80" y="110" width="340" height="260" as="geometry"/>
+          </mxCell>
+        </object>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram name="CFG_PSU_THOR_Core_Voltage_1">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="TITLE_CFG_PSU_THOR_Core_Voltage_1" value="UML Drill-down: CFG_PSU_THOR_Core_Voltage_1" style="text;html=1;strokeColor=none;fillColor=none;fontSize=18;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="40" y="20" width="1000" height="40" as="geometry"/>
+        </mxCell>
+        <object label="OBJ_Buck_Controller_Reusable_1" kind="uml_block" object_id="OBJ_Buck_Controller_Reusable_1" object_name="OBJ_Buck_Controller_Reusable_1" stereotype="ReusableFunctionalInstance" attributes_json="{&quot;object_type&quot;:&quot;buck_controller&quot;,&quot;library&quot;:&quot;power.lib&quot;,&quot;reuse&quot;:true}" level="4" has_children="False" attr_object_type="buck_controller" attr_library="power.lib" attr_reuse="True">
+          <mxCell id="UML_BLOCK_OBJ_Buck_Controller_Reusable_1" value="&lt;div style='font-size:11px'&gt;&amp;lt;&amp;lt;ReusableFunctionalInstance&amp;gt;&amp;gt;&lt;/div&gt;&lt;b&gt;&lt;u&gt;OBJ_Buck_Controller_Reusable_1&lt;/u&gt;&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:10px'&gt;OBJ_Buck_Controller_Reusable_1&lt;/font&gt;&lt;hr size='1'&gt;&lt;b&gt;ports&lt;/b&gt;&lt;br&gt;# VIN : power&lt;br&gt;~ SW : analog&lt;br&gt;~ FB : analog&lt;br&gt;+ EN : in&lt;br&gt;- PGOOD : out&lt;hr size='1'&gt;&lt;b&gt;attributes&lt;/b&gt;&lt;br&gt;object_type = buck_controller&lt;br&gt;library = power.lib&lt;br&gt;reuse = True" style="rounded=0;whiteSpace=wrap;html=1;align=center;verticalAlign=top;spacingTop=8;fillColor=#ffffff;strokeColor=#333333;fontSize=12;" vertex="1" parent="1">
+            <mxGeometry x="80" y="110" width="340" height="260" as="geometry"/>
+          </mxCell>
+        </object>
+        <object label="OBJ_Feedback_Divider_Reusable_1" kind="uml_block" object_id="OBJ_Feedback_Divider_Reusable_1" object_name="OBJ_Feedback_Divider_Reusable_1" stereotype="ReusableFunctionalInstance" attributes_json="{&quot;object_type&quot;:&quot;resistor_divider&quot;,&quot;tolerance_percent&quot;:0.1,&quot;reuse&quot;:true}" level="4" has_children="False" attr_object_type="resistor_divider" attr_tolerance_percent="0.1" attr_reuse="True">
+          <mxCell id="UML_BLOCK_OBJ_Feedback_Divider_Reusable_1" value="&lt;div style='font-size:11px'&gt;&amp;lt;&amp;lt;ReusableFunctionalInstance&amp;gt;&amp;gt;&lt;/div&gt;&lt;b&gt;&lt;u&gt;OBJ_Feedback_Divider_Reusable_1&lt;/u&gt;&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:10px'&gt;OBJ_Feedback_Divider_Reusable_1&lt;/font&gt;&lt;hr size='1'&gt;&lt;b&gt;ports&lt;/b&gt;&lt;br&gt;~ VOUT_SENSE : analog&lt;br&gt;~ FB_OUT : analog&lt;hr size='1'&gt;&lt;b&gt;attributes&lt;/b&gt;&lt;br&gt;object_type = resistor_divider&lt;br&gt;tolerance_percent = 0.1&lt;br&gt;reuse = True" style="rounded=0;whiteSpace=wrap;html=1;align=center;verticalAlign=top;spacingTop=8;fillColor=#ffffff;strokeColor=#333333;fontSize=12;" vertex="1" parent="1">
+            <mxGeometry x="540" y="110" width="340" height="260" as="geometry"/>
+          </mxCell>
+        </object>
+        <object label="BUCK_FB" kind="uml_connection" object_id="NET_BUCK_FB" object_name="BUCK_FB" stereotype="Net" attributes_json="{&quot;constraint_class&quot;:&quot;ANALOG_FB&quot;}" type="net" source="OBJ_Feedback_Divider_Reusable_1.FB_OUT" target="OBJ_Buck_Controller_Reusable_1.FB" source_port="FB_OUT" target_port="FB" attr_constraint_class="ANALOG_FB">
+          <mxCell id="UML_CONN_NET_BUCK_FB" value="&amp;lt;&amp;lt;Net&amp;gt;&amp;gt;&lt;br&gt;BUCK_FB&lt;br&gt;&lt;font style='font-size:9px'&gt;OBJ_Feedback_Divider_Reusable_1.FB_OUT → OBJ_Buck_Controller_Reusable_1.FB&lt;/font&gt;" style="edgeStyle=orthogonalEdgeStyle;rounded=0;html=1;endArrow=block;strokeWidth=2;" edge="1" parent="1" source="UML_BLOCK_OBJ_Feedback_Divider_Reusable_1" target="UML_BLOCK_OBJ_Buck_Controller_Reusable_1">
+            <mxGeometry relative="1" as="geometry"/>
+          </mxCell>
+        </object>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

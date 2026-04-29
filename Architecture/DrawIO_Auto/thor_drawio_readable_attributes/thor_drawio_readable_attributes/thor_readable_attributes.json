@@ -1,0 +1,300 @@
+{
+  "id": "THOR_ECAD_ARCH",
+  "name": "THOR ECAD Architecture with readable draw.io attributes",
+  "domains": [
+    {
+      "id": "PSU_THOR",
+      "name": "PSU THOR",
+      "level": 1,
+      "ports": [
+        {
+          "id": "VIN_24V",
+          "name": "VIN 24V",
+          "type": "power",
+          "attributes": {
+            "voltage": "24V",
+            "constraint_class": "PWR_IN"
+          }
+        },
+        {
+          "id": "GND",
+          "name": "GND",
+          "type": "ground",
+          "attributes": {
+            "constraint_class": "GND"
+          }
+        },
+        {
+          "id": "VOUT_CORE",
+          "name": "VOUT Core",
+          "type": "power",
+          "attributes": {
+            "voltage": "0.8V",
+            "current_max_A": 80,
+            "constraint_class": "PWR_CORE"
+          }
+        }
+      ],
+      "children": [
+        {
+          "id": "PSU_THOR_Core_Voltage_1",
+          "name": "THOR Core Voltage Rail 1",
+          "level": 2,
+          "ports": [
+            {
+              "id": "VIN",
+              "name": "VIN",
+              "type": "power",
+              "attributes": {
+                "voltage": "12V"
+              }
+            },
+            {
+              "id": "GND",
+              "name": "GND",
+              "type": "ground",
+              "attributes": {}
+            },
+            {
+              "id": "VOUT",
+              "name": "VOUT",
+              "type": "power",
+              "attributes": {
+                "voltage": "0.8V",
+                "current_max_A": 80
+              }
+            }
+          ],
+          "children": [
+            {
+              "id": "CFG_PSU_THOR_Core_Voltage_1",
+              "name": "Configuration: feedback / enable / sequencing",
+              "level": 3,
+              "ports": [
+                {
+                  "id": "FB",
+                  "name": "FB",
+                  "type": "analog",
+                  "attributes": {
+                    "constraint_class": "ANALOG_FB"
+                  }
+                },
+                {
+                  "id": "EN",
+                  "name": "EN",
+                  "type": "in",
+                  "attributes": {
+                    "constraint_class": "CTRL"
+                  }
+                },
+                {
+                  "id": "PGOOD",
+                  "name": "PGOOD",
+                  "type": "out",
+                  "attributes": {
+                    "constraint_class": "STATUS"
+                  }
+                }
+              ],
+              "children": [
+                {
+                  "id": "OBJ_Buck_Controller_Reusable_1",
+                  "name": "Reusable Buck Controller Instance",
+                  "level": 4,
+                  "ports": [
+                    {
+                      "id": "VIN",
+                      "name": "VIN",
+                      "type": "power",
+                      "attributes": {}
+                    },
+                    {
+                      "id": "SW",
+                      "name": "SW",
+                      "type": "analog",
+                      "attributes": {}
+                    },
+                    {
+                      "id": "FB",
+                      "name": "FB",
+                      "type": "analog",
+                      "attributes": {}
+                    },
+                    {
+                      "id": "EN",
+                      "name": "EN",
+                      "type": "in",
+                      "attributes": {}
+                    },
+                    {
+                      "id": "PGOOD",
+                      "name": "PGOOD",
+                      "type": "out",
+                      "attributes": {}
+                    }
+                  ],
+                  "children": [],
+                  "attributes": {
+                    "object_type": "buck_controller",
+                    "library": "power.lib",
+                    "reuse": true,
+                    "preferred_vendor": "tbd"
+                  }
+                },
+                {
+                  "id": "OBJ_Feedback_Divider_Reusable_1",
+                  "name": "Reusable Feedback Divider Instance",
+                  "level": 4,
+                  "ports": [
+                    {
+                      "id": "VOUT_SENSE",
+                      "name": "VOUT Sense",
+                      "type": "analog",
+                      "attributes": {}
+                    },
+                    {
+                      "id": "FB_OUT",
+                      "name": "FB Out",
+                      "type": "analog",
+                      "attributes": {}
+                    }
+                  ],
+                  "children": [],
+                  "attributes": {
+                    "object_type": "resistor_divider",
+                    "reuse": true,
+                    "tolerance_percent": 0.1
+                  }
+                }
+              ],
+              "attributes": {
+                "purpose": "external functional components configure the rail"
+              }
+            }
+          ],
+          "attributes": {
+            "rail": "VDD_CPU",
+            "voltage": "0.8V",
+            "current_max_A": 80,
+            "ecad_sheet": "PSU_THOR_CORE"
+          }
+        }
+      ],
+      "attributes": {
+        "domain": "Power",
+        "owner": "PowerDesign",
+        "asil_relevant": true,
+        "thermal_budget_W": 25
+      }
+    },
+    {
+      "id": "SoM",
+      "name": "THOR SoM",
+      "level": 1,
+      "ports": [
+        {
+          "id": "VIN_CORE",
+          "name": "VIN Core",
+          "type": "power",
+          "attributes": {
+            "voltage": "0.8V",
+            "constraint_class": "PWR_CORE"
+          }
+        },
+        {
+          "id": "GND",
+          "name": "GND",
+          "type": "ground",
+          "attributes": {}
+        },
+        {
+          "id": "SAFETY_SPI",
+          "name": "Safety SPI",
+          "type": "bidi",
+          "attributes": {
+            "protocol": "SPI",
+            "constraint_class": "SPI"
+          }
+        }
+      ],
+      "children": [],
+      "attributes": {
+        "domain": "Compute",
+        "processor_family": "THOR"
+      }
+    },
+    {
+      "id": "SafetyMicro",
+      "name": "Safety Micro",
+      "level": 1,
+      "ports": [
+        {
+          "id": "VIN_3V3",
+          "name": "VIN 3V3",
+          "type": "power",
+          "attributes": {
+            "voltage": "3.3V"
+          }
+        },
+        {
+          "id": "GND",
+          "name": "GND",
+          "type": "ground",
+          "attributes": {}
+        },
+        {
+          "id": "SPI_TO_SOM",
+          "name": "SPI to SoM",
+          "type": "bidi",
+          "attributes": {
+            "protocol": "SPI"
+          }
+        }
+      ],
+      "children": [],
+      "attributes": {
+        "domain": "Safety",
+        "asil_relevance": "high"
+      }
+    }
+  ],
+  "connections": [
+    {
+      "id": "NET_PSU_THOR_CORE_TO_SOM",
+      "name": "PWR_THOR_CORE",
+      "type": "net",
+      "source": "PSU_THOR.VOUT_CORE",
+      "target": "SoM.VIN_CORE",
+      "attributes": {
+        "constraint_class": "PWR_CORE",
+        "voltage": "0.8V",
+        "current_max_A": 80
+      }
+    },
+    {
+      "id": "BUS_SOM_TO_SAFETY_SPI",
+      "name": "SAFETY_SPI",
+      "type": "bus",
+      "source": "SoM.SAFETY_SPI",
+      "target": "SafetyMicro.SPI_TO_SOM",
+      "attributes": {
+        "protocol": "SPI",
+        "width": 4,
+        "constraint_class": "SPI"
+      }
+    },
+    {
+      "id": "NET_BUCK_FB",
+      "name": "BUCK_FB",
+      "type": "net",
+      "source": "OBJ_Feedback_Divider_Reusable_1.FB_OUT",
+      "target": "OBJ_Buck_Controller_Reusable_1.FB",
+      "attributes": {
+        "constraint_class": "ANALOG_FB"
+      }
+    }
+  ],
+  "attributes": {
+    "project": "Liebherr THOR SoM ECAD Design"
+  }
+}

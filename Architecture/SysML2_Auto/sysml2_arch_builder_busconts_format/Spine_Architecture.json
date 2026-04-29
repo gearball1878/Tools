@@ -1,0 +1,1708 @@
+{
+  "name": "Spine_Architecture",
+  "blocks": [
+    {
+      "name": "PSU_JETSON_T5000",
+      "level": "Level1_Domain",
+      "id": "BLK-A369FC91BF",
+      "kind": "Domain",
+      "is_host": false,
+      "color": "#f8cecc",
+      "attributes": {
+        "domainColor": "#f8cecc",
+        "isHost": false
+      },
+      "ports": [],
+      "children": []
+    },
+    {
+      "name": "PSU_Audio",
+      "level": "Level1_Domain",
+      "id": "BLK-1B4A4560E3",
+      "kind": "Domain",
+      "is_host": false,
+      "color": "#f8cecc",
+      "attributes": {
+        "domainColor": "#f8cecc",
+        "isHost": false
+      },
+      "ports": [
+        {
+          "name": "UART_Link_1",
+          "port_type": "Bidi",
+          "id": "PRT-47297A695B",
+          "attributes": {
+            "interfaceName": "UART_Link_1",
+            "connectionType": "Bus",
+            "signals": [
+              "UART_Link_1_RX",
+              "UART_Link_1_TX",
+              "UART_Link_1_CTS",
+              "UART_Link_1_RTS"
+            ],
+            "ecadSignals": [
+              "UART_Link_1_RX",
+              "UART_Link_1_TX",
+              "UART_Link_1_CTS",
+              "UART_Link_1_RTS"
+            ],
+            "generatedBy": "BusContentWizard",
+            "netId": "NET-0EF5AEA09B",
+            "family": "interface",
+            "template": "UART_[Link/Port]",
+            "instanceIndex": 1,
+            "bcLine": "UART_Link_1 UART_Link_1_RX,UART_Link_1_TX,UART_Link_1_CTS,UART_Link_1_RTS",
+            "busContentName": "UART_Link_1",
+            "propagateToParent": true
+          }
+        },
+        {
+          "name": "UART_Link_2",
+          "port_type": "Bidi",
+          "id": "PRT-F0C196333A",
+          "attributes": {
+            "interfaceName": "UART_Link_2",
+            "connectionType": "Bus",
+            "signals": [
+              "UART_Link_2_RX",
+              "UART_Link_2_TX",
+              "UART_Link_2_CTS",
+              "UART_Link_2_RTS"
+            ],
+            "ecadSignals": [
+              "UART_Link_2_RX",
+              "UART_Link_2_TX",
+              "UART_Link_2_CTS",
+              "UART_Link_2_RTS"
+            ],
+            "generatedBy": "BusContentWizard",
+            "netId": "NET-5696D142A4",
+            "family": "interface",
+            "template": "UART_[Link/Port]",
+            "instanceIndex": 2,
+            "bcLine": "UART_Link_2 UART_Link_2_RX,UART_Link_2_TX,UART_Link_2_CTS,UART_Link_2_RTS",
+            "busContentName": "UART_Link_2",
+            "propagateToParent": true
+          }
+        }
+      ],
+      "children": []
+    },
+    {
+      "name": "PSU_Video",
+      "level": "Level1_Domain",
+      "id": "BLK-B824BCF6E7",
+      "kind": "Domain",
+      "is_host": false,
+      "color": "#f8cecc",
+      "attributes": {
+        "domainColor": "#f8cecc",
+        "isHost": false
+      },
+      "ports": [],
+      "children": [
+        {
+          "name": "PSU_Video_DESER",
+          "level": "Level2_ArchitectureElement",
+          "id": "BLK-CB93ACA81C",
+          "kind": "ArchitectureElement",
+          "is_host": false,
+          "color": "#f8cecc",
+          "attributes": {
+            "domainColor": "#f8cecc"
+          },
+          "ports": [],
+          "children": []
+        }
+      ]
+    },
+    {
+      "name": "PSU_Radar",
+      "level": "Level1_Domain",
+      "id": "BLK-7112D97B34",
+      "kind": "Domain",
+      "is_host": false,
+      "color": "#f8cecc",
+      "attributes": {
+        "domainColor": "#f8cecc",
+        "isHost": false
+      },
+      "ports": [],
+      "children": []
+    },
+    {
+      "name": "PSU_PMU_Micro",
+      "level": "Level1_Domain",
+      "id": "BLK-746960DE6D",
+      "kind": "Domain",
+      "is_host": false,
+      "color": "#f8cecc",
+      "attributes": {
+        "domainColor": "#f8cecc",
+        "isHost": false
+      },
+      "ports": [],
+      "children": []
+    },
+    {
+      "name": "PSU_Ethernet",
+      "level": "Level1_Domain",
+      "id": "BLK-8890E085E1",
+      "kind": "Domain",
+      "is_host": false,
+      "color": "#f8cecc",
+      "attributes": {
+        "domainColor": "#f8cecc",
+        "isHost": false
+      },
+      "ports": [],
+      "children": [
+        {
+          "name": "PSU_ETH_Switch",
+          "level": "Level2_ArchitectureElement",
+          "id": "BLK-2BDBE31CB7",
+          "kind": "ArchitectureElement",
+          "is_host": false,
+          "color": "#f8cecc",
+          "attributes": {
+            "domainColor": "#f8cecc"
+          },
+          "ports": [
+            {
+              "name": "ETH_SGMII_Link_1",
+              "port_type": "Bidi",
+              "id": "PRT-1B98E75187",
+              "attributes": {
+                "interfaceName": "ETH_SGMII_Link_1",
+                "connectionType": "Bus",
+                "signals": [
+                  "ETH_SGMII_Link_1_TXD_P",
+                  "ETH_SGMII_Link_1_TXD_N",
+                  "ETH_SGMII_Link_1_RXD_P",
+                  "ETH_SGMII_Link_1_RXD_N"
+                ],
+                "ecadSignals": [
+                  "ETH_SGMII_Link_1_TXD_P",
+                  "ETH_SGMII_Link_1_TXD_N",
+                  "ETH_SGMII_Link_1_RXD_P",
+                  "ETH_SGMII_Link_1_RXD_N"
+                ],
+                "generatedBy": "BusContentWizard",
+                "netId": "NET-8EF8E93549",
+                "family": "interface",
+                "template": "ETH_SGMII_[Link/Port]",
+                "instanceIndex": 1,
+                "bcLine": "ETH_SGMII_Link_1 ETH_SGMII_Link_1_TXD_P,ETH_SGMII_Link_1_TXD_N,ETH_SGMII_Link_1_RXD_P,ETH_SGMII_Link_1_RXD_N",
+                "busContentName": "ETH_SGMII_Link_1",
+                "copiedFrom": "JETSON_T5000.ETH_SGMII_Link_1"
+              }
+            }
+          ],
+          "children": []
+        },
+        {
+          "name": "PSU_ETH_PHY_FIBRE",
+          "level": "Level2_ArchitectureElement",
+          "id": "BLK-D72BBA7D2C",
+          "kind": "ArchitectureElement",
+          "is_host": false,
+          "color": "#f8cecc",
+          "attributes": {
+            "domainColor": "#f8cecc"
+          },
+          "ports": [],
+          "children": []
+        },
+        {
+          "name": "PSU_ETH_10GBASE_T_PHY",
+          "level": "Level2_ArchitectureElement",
+          "id": "BLK-D273D01C43",
+          "kind": "ArchitectureElement",
+          "is_host": false,
+          "color": "#f8cecc",
+          "attributes": {
+            "domainColor": "#f8cecc"
+          },
+          "ports": [],
+          "children": []
+        }
+      ]
+    },
+    {
+      "name": "PSU_Input",
+      "level": "Level1_Domain",
+      "id": "BLK-5B5CB5534D",
+      "kind": "Domain",
+      "is_host": false,
+      "color": "#f8cecc",
+      "attributes": {
+        "domainColor": "#f8cecc",
+        "isHost": false
+      },
+      "ports": [
+        {
+          "name": "VBAT_PSU_IN_230V",
+          "port_type": "Power",
+          "id": "PRT-33C1C68FD8",
+          "attributes": {
+            "interfaceName": "VBAT_PSU_IN_230V",
+            "connectionType": "Net",
+            "signals": [
+              "VBAT_PSU_IN_230V"
+            ],
+            "ecadSignals": [
+              "VBAT_PSU_IN_230V"
+            ],
+            "generatedBy": "BusContentWizard",
+            "netId": "NET-1A704E69DE",
+            "family": "power",
+            "template": "VBAT",
+            "instanceIndex": 0,
+            "bcLine": "Power_Signals VBAT_PSU_IN_230V",
+            "busContentName": "Power_Signals",
+            "powerDirection": "PowerIn"
+          }
+        },
+        {
+          "name": "VBAT_PSU_IN_24V",
+          "port_type": "Power",
+          "id": "PRT-CD659493B0",
+          "attributes": {
+            "interfaceName": "VBAT_PSU_IN_24V",
+            "connectionType": "Net",
+            "signals": [
+              "VBAT_PSU_IN_24V"
+            ],
+            "ecadSignals": [
+              "VBAT_PSU_IN_24V"
+            ],
+            "generatedBy": "BusContentWizard",
+            "netId": "NET-F5F89AE832",
+            "family": "power",
+            "template": "VBAT",
+            "instanceIndex": 0,
+            "bcLine": "Power_Signals VBAT_PSU_IN_24V",
+            "busContentName": "Power_Signals",
+            "powerDirection": "PowerIn"
+          }
+        },
+        {
+          "name": "VBAT_PSU_BOARD_24V",
+          "port_type": "Power",
+          "id": "PRT-09BAFE284E",
+          "attributes": {
+            "interfaceName": "VBAT_PSU_BOARD_24V",
+            "connectionType": "Net",
+            "signals": [
+              "VBAT_PSU_BOARD_24V"
+            ],
+            "ecadSignals": [
+              "VBAT_PSU_BOARD_24V"
+            ],
+            "generatedBy": "BusContentWizard",
+            "netId": "NET-706E6FBB03",
+            "family": "power",
+            "template": "VBAT",
+            "instanceIndex": 0,
+            "bcLine": "Power_Signals VBAT_PSU_BOARD_24V",
+            "busContentName": "Power_Signals",
+            "powerDirection": "PowerOut"
+          }
+        }
+      ],
+      "children": []
+    },
+    {
+      "name": "Edge_Connectors",
+      "level": "Level1_Domain",
+      "id": "BLK-62C72179D3",
+      "kind": "Domain",
+      "is_host": false,
+      "color": "#e8f6f3",
+      "attributes": {
+        "domainColor": "#e8f6f3",
+        "isHost": false
+      },
+      "ports": [],
+      "children": []
+    },
+    {
+      "name": "JETSON_T5000",
+      "level": "Level1_Domain",
+      "id": "BLK-3E75E1E6F6",
+      "kind": "Domain",
+      "is_host": true,
+      "color": "#f3e8ff",
+      "attributes": {
+        "domainColor": "#f3e8ff",
+        "isHost": true
+      },
+      "ports": [
+        {
+          "name": "CSI2_Link_1",
+          "port_type": "Bidi",
+          "id": "PRT-F8B6DA1754",
+          "attributes": {
+            "interfaceName": "CSI2_Link_1",
+            "connectionType": "Bus",
+            "signals": [
+              "CSI2_Link_1_Trio_1_A_D0_P",
+              "CSI2_Link_1_Trio_1_B_D0_N",
+              "CSI2_Link_1_Trio_2_B_D1_P",
+              "CSI2_Link_1_Trio_2_C_D1_N",
+              "CSI2_Link_1_Trio_3_A_D2_P",
+              "CSI2_Link_1_Trio_3_B_D2_N",
+              "CSI2_Link_1_Trio_4_B_D3_P",
+              "CSI2_Link_1_Trio_4_C_D3_N",
+              "CSI2_Link_1_Trio_3_C_CLK1_P",
+              "CSI2_Link_1_Trio_4_A_CLK1_N",
+              "CSI2_Link_1_Trio_1_C_CLK2_P",
+              "CSI2_Link_1_Trio_2_A_CLK2_N"
+            ],
+            "ecadSignals": [
+              "CSI2_Link_1_Trio_1_A_D0_P",
+              "CSI2_Link_1_Trio_1_B_D0_N",
+              "CSI2_Link_1_Trio_2_B_D1_P",
+              "CSI2_Link_1_Trio_2_C_D1_N",
+              "CSI2_Link_1_Trio_3_A_D2_P",
+              "CSI2_Link_1_Trio_3_B_D2_N",
+              "CSI2_Link_1_Trio_4_B_D3_P",
+              "CSI2_Link_1_Trio_4_C_D3_N",
+              "CSI2_Link_1_Trio_3_C_CLK1_P",
+              "CSI2_Link_1_Trio_4_A_CLK1_N",
+              "CSI2_Link_1_Trio_1_C_CLK2_P",
+              "CSI2_Link_1_Trio_2_A_CLK2_N"
+            ],
+            "generatedBy": "BusContentWizard",
+            "netId": "NET-187341D3D0",
+            "family": "interface",
+            "template": "CSI2_[Link/Port]",
+            "instanceIndex": 1,
+            "bcLine": "CSI2_Link_1 CSI2_Link_1_Trio_1_A_D0_P,CSI2_Link_1_Trio_1_B_D0_N,CSI2_Link_1_Trio_2_B_D1_P,CSI2_Link_1_Trio_2_C_D1_N,CSI2_Link_1_Trio_3_A_D2_P,CSI2_Link_1_Trio_3_B_D2_N,CSI2_Link_1_Trio_4_B_D3_P,CSI2_Link_1_Trio_4_C_D3_N,CSI2_Link_1_Trio_3_C_CLK1_P,CSI2_Link_1_Trio_4_A_CLK1_N,CSI2_Link_1_Trio_1_C_CLK2_P,CSI2_Link_1_Trio_2_A_CLK2_N",
+            "busContentName": "CSI2_Link_1"
+          }
+        },
+        {
+          "name": "CSI2_Link_2",
+          "port_type": "Bidi",
+          "id": "PRT-381A010B94",
+          "attributes": {
+            "interfaceName": "CSI2_Link_2",
+            "connectionType": "Bus",
+            "signals": [
+              "CSI2_Link_2_Trio_1_A_D0_P",
+              "CSI2_Link_2_Trio_1_B_D0_N",
+              "CSI2_Link_2_Trio_2_B_D1_P",
+              "CSI2_Link_2_Trio_2_C_D1_N",
+              "CSI2_Link_2_Trio_3_A_D2_P",
+              "CSI2_Link_2_Trio_3_B_D2_N",
+              "CSI2_Link_2_Trio_4_B_D3_P",
+              "CSI2_Link_2_Trio_4_C_D3_N",
+              "CSI2_Link_2_Trio_3_C_CLK1_P",
+              "CSI2_Link_2_Trio_4_A_CLK1_N",
+              "CSI2_Link_2_Trio_1_C_CLK2_P",
+              "CSI2_Link_2_Trio_2_A_CLK2_N"
+            ],
+            "ecadSignals": [
+              "CSI2_Link_2_Trio_1_A_D0_P",
+              "CSI2_Link_2_Trio_1_B_D0_N",
+              "CSI2_Link_2_Trio_2_B_D1_P",
+              "CSI2_Link_2_Trio_2_C_D1_N",
+              "CSI2_Link_2_Trio_3_A_D2_P",
+              "CSI2_Link_2_Trio_3_B_D2_N",
+              "CSI2_Link_2_Trio_4_B_D3_P",
+              "CSI2_Link_2_Trio_4_C_D3_N",
+              "CSI2_Link_2_Trio_3_C_CLK1_P",
+              "CSI2_Link_2_Trio_4_A_CLK1_N",
+              "CSI2_Link_2_Trio_1_C_CLK2_P",
+              "CSI2_Link_2_Trio_2_A_CLK2_N"
+            ],
+            "generatedBy": "BusContentWizard",
+            "netId": "NET-D0688FFAAF",
+            "family": "interface",
+            "template": "CSI2_[Link/Port]",
+            "instanceIndex": 2,
+            "bcLine": "CSI2_Link_2 CSI2_Link_2_Trio_1_A_D0_P,CSI2_Link_2_Trio_1_B_D0_N,CSI2_Link_2_Trio_2_B_D1_P,CSI2_Link_2_Trio_2_C_D1_N,CSI2_Link_2_Trio_3_A_D2_P,CSI2_Link_2_Trio_3_B_D2_N,CSI2_Link_2_Trio_4_B_D3_P,CSI2_Link_2_Trio_4_C_D3_N,CSI2_Link_2_Trio_3_C_CLK1_P,CSI2_Link_2_Trio_4_A_CLK1_N,CSI2_Link_2_Trio_1_C_CLK2_P,CSI2_Link_2_Trio_2_A_CLK2_N",
+            "busContentName": "CSI2_Link_2"
+          }
+        },
+        {
+          "name": "CSI2_Link_3",
+          "port_type": "Bidi",
+          "id": "PRT-D53A276F58",
+          "attributes": {
+            "interfaceName": "CSI2_Link_3",
+            "connectionType": "Bus",
+            "signals": [
+              "CSI2_Link_3_Trio_1_A_D0_P",
+              "CSI2_Link_3_Trio_1_B_D0_N",
+              "CSI2_Link_3_Trio_2_B_D1_P",
+              "CSI2_Link_3_Trio_2_C_D1_N",
+              "CSI2_Link_3_Trio_3_A_D2_P",
+              "CSI2_Link_3_Trio_3_B_D2_N",
+              "CSI2_Link_3_Trio_4_B_D3_P",
+              "CSI2_Link_3_Trio_4_C_D3_N",
+              "CSI2_Link_3_Trio_3_C_CLK1_P",
+              "CSI2_Link_3_Trio_4_A_CLK1_N",
+              "CSI2_Link_3_Trio_1_C_CLK2_P",
+              "CSI2_Link_3_Trio_2_A_CLK2_N"
+            ],
+            "ecadSignals": [
+              "CSI2_Link_3_Trio_1_A_D0_P",
+              "CSI2_Link_3_Trio_1_B_D0_N",
+              "CSI2_Link_3_Trio_2_B_D1_P",
+              "CSI2_Link_3_Trio_2_C_D1_N",
+              "CSI2_Link_3_Trio_3_A_D2_P",
+              "CSI2_Link_3_Trio_3_B_D2_N",
+              "CSI2_Link_3_Trio_4_B_D3_P",
+              "CSI2_Link_3_Trio_4_C_D3_N",
+              "CSI2_Link_3_Trio_3_C_CLK1_P",
+              "CSI2_Link_3_Trio_4_A_CLK1_N",
+              "CSI2_Link_3_Trio_1_C_CLK2_P",
+              "CSI2_Link_3_Trio_2_A_CLK2_N"
+            ],
+            "generatedBy": "BusContentWizard",
+            "netId": "NET-1DB177E4F8",
+            "family": "interface",
+            "template": "CSI2_[Link/Port]",
+            "instanceIndex": 3,
+            "bcLine": "CSI2_Link_3 CSI2_Link_3_Trio_1_A_D0_P,CSI2_Link_3_Trio_1_B_D0_N,CSI2_Link_3_Trio_2_B_D1_P,CSI2_Link_3_Trio_2_C_D1_N,CSI2_Link_3_Trio_3_A_D2_P,CSI2_Link_3_Trio_3_B_D2_N,CSI2_Link_3_Trio_4_B_D3_P,CSI2_Link_3_Trio_4_C_D3_N,CSI2_Link_3_Trio_3_C_CLK1_P,CSI2_Link_3_Trio_4_A_CLK1_N,CSI2_Link_3_Trio_1_C_CLK2_P,CSI2_Link_3_Trio_2_A_CLK2_N",
+            "busContentName": "CSI2_Link_3"
+          }
+        },
+        {
+          "name": "ETH_SGMII_Link_1",
+          "port_type": "Bidi",
+          "id": "PRT-6940CEBC7C",
+          "attributes": {
+            "interfaceName": "ETH_SGMII_Link_1",
+            "connectionType": "Bus",
+            "signals": [
+              "ETH_SGMII_Link_1_TXD_P",
+              "ETH_SGMII_Link_1_TXD_N",
+              "ETH_SGMII_Link_1_RXD_P",
+              "ETH_SGMII_Link_1_RXD_N"
+            ],
+            "ecadSignals": [
+              "ETH_SGMII_Link_1_TXD_P",
+              "ETH_SGMII_Link_1_TXD_N",
+              "ETH_SGMII_Link_1_RXD_P",
+              "ETH_SGMII_Link_1_RXD_N"
+            ],
+            "generatedBy": "BusContentWizard",
+            "netId": "NET-8EF8E93549",
+            "family": "interface",
+            "template": "ETH_SGMII_[Link/Port]",
+            "instanceIndex": 1,
+            "bcLine": "ETH_SGMII_Link_1 ETH_SGMII_Link_1_TXD_P,ETH_SGMII_Link_1_TXD_N,ETH_SGMII_Link_1_RXD_P,ETH_SGMII_Link_1_RXD_N",
+            "busContentName": "ETH_SGMII_Link_1"
+          }
+        }
+      ],
+      "children": []
+    },
+    {
+      "name": "Audio",
+      "level": "Level1_Domain",
+      "id": "BLK-0B7D74F99A",
+      "kind": "Domain",
+      "is_host": false,
+      "color": "#f5f5f5",
+      "attributes": {
+        "domainColor": "#f5f5f5",
+        "isHost": false
+      },
+      "ports": [],
+      "children": [
+        {
+          "name": "Microphone_Array",
+          "level": "Level2_ArchitectureElement",
+          "id": "BLK-EF74087E19",
+          "kind": "ArchitectureElement",
+          "is_host": false,
+          "color": "#f5f5f5",
+          "attributes": {
+            "domainColor": "#f5f5f5"
+          },
+          "ports": [],
+          "children": []
+        }
+      ]
+    },
+    {
+      "name": "Video",
+      "level": "Level1_Domain",
+      "id": "BLK-6AB5223C98",
+      "kind": "Domain",
+      "is_host": false,
+      "color": "#fff2cc",
+      "attributes": {
+        "domainColor": "#fff2cc",
+        "isHost": false
+      },
+      "ports": [],
+      "children": [
+        {
+          "name": "GMSL_DESER_1",
+          "level": "Level2_ArchitectureElement",
+          "id": "BLK-B9E5AE8B8C",
+          "kind": "ArchitectureElement",
+          "is_host": false,
+          "color": "#fff2cc",
+          "attributes": {
+            "domainColor": "#fff2cc"
+          },
+          "ports": [
+            {
+              "name": "CSI2_Link_1",
+              "port_type": "Bidi",
+              "id": "PRT-9DC30BBB34",
+              "attributes": {
+                "interfaceName": "CSI2_Link_1",
+                "connectionType": "Bus",
+                "signals": [
+                  "CSI2_Link_1_Trio_1_A_D0_P",
+                  "CSI2_Link_1_Trio_1_B_D0_N",
+                  "CSI2_Link_1_Trio_2_B_D1_P",
+                  "CSI2_Link_1_Trio_2_C_D1_N",
+                  "CSI2_Link_1_Trio_3_A_D2_P",
+                  "CSI2_Link_1_Trio_3_B_D2_N",
+                  "CSI2_Link_1_Trio_4_B_D3_P",
+                  "CSI2_Link_1_Trio_4_C_D3_N",
+                  "CSI2_Link_1_Trio_3_C_CLK1_P",
+                  "CSI2_Link_1_Trio_4_A_CLK1_N",
+                  "CSI2_Link_1_Trio_1_C_CLK2_P",
+                  "CSI2_Link_1_Trio_2_A_CLK2_N"
+                ],
+                "ecadSignals": [
+                  "CSI2_Link_1_Trio_1_A_D0_P",
+                  "CSI2_Link_1_Trio_1_B_D0_N",
+                  "CSI2_Link_1_Trio_2_B_D1_P",
+                  "CSI2_Link_1_Trio_2_C_D1_N",
+                  "CSI2_Link_1_Trio_3_A_D2_P",
+                  "CSI2_Link_1_Trio_3_B_D2_N",
+                  "CSI2_Link_1_Trio_4_B_D3_P",
+                  "CSI2_Link_1_Trio_4_C_D3_N",
+                  "CSI2_Link_1_Trio_3_C_CLK1_P",
+                  "CSI2_Link_1_Trio_4_A_CLK1_N",
+                  "CSI2_Link_1_Trio_1_C_CLK2_P",
+                  "CSI2_Link_1_Trio_2_A_CLK2_N"
+                ],
+                "generatedBy": "BusContentWizard",
+                "netId": "NET-187341D3D0",
+                "family": "interface",
+                "template": "CSI2_[Link/Port]",
+                "instanceIndex": 1,
+                "bcLine": "CSI2_Link_1 CSI2_Link_1_Trio_1_A_D0_P,CSI2_Link_1_Trio_1_B_D0_N,CSI2_Link_1_Trio_2_B_D1_P,CSI2_Link_1_Trio_2_C_D1_N,CSI2_Link_1_Trio_3_A_D2_P,CSI2_Link_1_Trio_3_B_D2_N,CSI2_Link_1_Trio_4_B_D3_P,CSI2_Link_1_Trio_4_C_D3_N,CSI2_Link_1_Trio_3_C_CLK1_P,CSI2_Link_1_Trio_4_A_CLK1_N,CSI2_Link_1_Trio_1_C_CLK2_P,CSI2_Link_1_Trio_2_A_CLK2_N",
+                "busContentName": "CSI2_Link_1",
+                "copiedFrom": "JETSON_T5000.CSI2_Link_1"
+              }
+            }
+          ],
+          "children": []
+        },
+        {
+          "name": "GMSL_DESER_2",
+          "level": "Level2_ArchitectureElement",
+          "id": "BLK-C0C8BEF10D",
+          "kind": "ArchitectureElement",
+          "is_host": false,
+          "color": "#fff2cc",
+          "attributes": {
+            "domainColor": "#fff2cc"
+          },
+          "ports": [
+            {
+              "name": "CSI2_Link_2",
+              "port_type": "Bidi",
+              "id": "PRT-BF49423111",
+              "attributes": {
+                "interfaceName": "CSI2_Link_2",
+                "connectionType": "Bus",
+                "signals": [
+                  "CSI2_Link_2_Trio_1_A_D0_P",
+                  "CSI2_Link_2_Trio_1_B_D0_N",
+                  "CSI2_Link_2_Trio_2_B_D1_P",
+                  "CSI2_Link_2_Trio_2_C_D1_N",
+                  "CSI2_Link_2_Trio_3_A_D2_P",
+                  "CSI2_Link_2_Trio_3_B_D2_N",
+                  "CSI2_Link_2_Trio_4_B_D3_P",
+                  "CSI2_Link_2_Trio_4_C_D3_N",
+                  "CSI2_Link_2_Trio_3_C_CLK1_P",
+                  "CSI2_Link_2_Trio_4_A_CLK1_N",
+                  "CSI2_Link_2_Trio_1_C_CLK2_P",
+                  "CSI2_Link_2_Trio_2_A_CLK2_N"
+                ],
+                "ecadSignals": [
+                  "CSI2_Link_2_Trio_1_A_D0_P",
+                  "CSI2_Link_2_Trio_1_B_D0_N",
+                  "CSI2_Link_2_Trio_2_B_D1_P",
+                  "CSI2_Link_2_Trio_2_C_D1_N",
+                  "CSI2_Link_2_Trio_3_A_D2_P",
+                  "CSI2_Link_2_Trio_3_B_D2_N",
+                  "CSI2_Link_2_Trio_4_B_D3_P",
+                  "CSI2_Link_2_Trio_4_C_D3_N",
+                  "CSI2_Link_2_Trio_3_C_CLK1_P",
+                  "CSI2_Link_2_Trio_4_A_CLK1_N",
+                  "CSI2_Link_2_Trio_1_C_CLK2_P",
+                  "CSI2_Link_2_Trio_2_A_CLK2_N"
+                ],
+                "generatedBy": "BusContentWizard",
+                "netId": "NET-D0688FFAAF",
+                "family": "interface",
+                "template": "CSI2_[Link/Port]",
+                "instanceIndex": 2,
+                "bcLine": "CSI2_Link_2 CSI2_Link_2_Trio_1_A_D0_P,CSI2_Link_2_Trio_1_B_D0_N,CSI2_Link_2_Trio_2_B_D1_P,CSI2_Link_2_Trio_2_C_D1_N,CSI2_Link_2_Trio_3_A_D2_P,CSI2_Link_2_Trio_3_B_D2_N,CSI2_Link_2_Trio_4_B_D3_P,CSI2_Link_2_Trio_4_C_D3_N,CSI2_Link_2_Trio_3_C_CLK1_P,CSI2_Link_2_Trio_4_A_CLK1_N,CSI2_Link_2_Trio_1_C_CLK2_P,CSI2_Link_2_Trio_2_A_CLK2_N",
+                "busContentName": "CSI2_Link_2",
+                "copiedFrom": "JETSON_T5000.CSI2_Link_2"
+              }
+            }
+          ],
+          "children": []
+        },
+        {
+          "name": "GMSL_DESER_3",
+          "level": "Level2_ArchitectureElement",
+          "id": "BLK-A439040255",
+          "kind": "ArchitectureElement",
+          "is_host": false,
+          "color": "#fff2cc",
+          "attributes": {
+            "domainColor": "#fff2cc"
+          },
+          "ports": [
+            {
+              "name": "CSI2_Link_3",
+              "port_type": "Bidi",
+              "id": "PRT-3ED32F606B",
+              "attributes": {
+                "interfaceName": "CSI2_Link_3",
+                "connectionType": "Bus",
+                "signals": [
+                  "CSI2_Link_3_Trio_1_A_D0_P",
+                  "CSI2_Link_3_Trio_1_B_D0_N",
+                  "CSI2_Link_3_Trio_2_B_D1_P",
+                  "CSI2_Link_3_Trio_2_C_D1_N",
+                  "CSI2_Link_3_Trio_3_A_D2_P",
+                  "CSI2_Link_3_Trio_3_B_D2_N",
+                  "CSI2_Link_3_Trio_4_B_D3_P",
+                  "CSI2_Link_3_Trio_4_C_D3_N",
+                  "CSI2_Link_3_Trio_3_C_CLK1_P",
+                  "CSI2_Link_3_Trio_4_A_CLK1_N",
+                  "CSI2_Link_3_Trio_1_C_CLK2_P",
+                  "CSI2_Link_3_Trio_2_A_CLK2_N"
+                ],
+                "ecadSignals": [
+                  "CSI2_Link_3_Trio_1_A_D0_P",
+                  "CSI2_Link_3_Trio_1_B_D0_N",
+                  "CSI2_Link_3_Trio_2_B_D1_P",
+                  "CSI2_Link_3_Trio_2_C_D1_N",
+                  "CSI2_Link_3_Trio_3_A_D2_P",
+                  "CSI2_Link_3_Trio_3_B_D2_N",
+                  "CSI2_Link_3_Trio_4_B_D3_P",
+                  "CSI2_Link_3_Trio_4_C_D3_N",
+                  "CSI2_Link_3_Trio_3_C_CLK1_P",
+                  "CSI2_Link_3_Trio_4_A_CLK1_N",
+                  "CSI2_Link_3_Trio_1_C_CLK2_P",
+                  "CSI2_Link_3_Trio_2_A_CLK2_N"
+                ],
+                "generatedBy": "BusContentWizard",
+                "netId": "NET-1DB177E4F8",
+                "family": "interface",
+                "template": "CSI2_[Link/Port]",
+                "instanceIndex": 3,
+                "bcLine": "CSI2_Link_3 CSI2_Link_3_Trio_1_A_D0_P,CSI2_Link_3_Trio_1_B_D0_N,CSI2_Link_3_Trio_2_B_D1_P,CSI2_Link_3_Trio_2_C_D1_N,CSI2_Link_3_Trio_3_A_D2_P,CSI2_Link_3_Trio_3_B_D2_N,CSI2_Link_3_Trio_4_B_D3_P,CSI2_Link_3_Trio_4_C_D3_N,CSI2_Link_3_Trio_3_C_CLK1_P,CSI2_Link_3_Trio_4_A_CLK1_N,CSI2_Link_3_Trio_1_C_CLK2_P,CSI2_Link_3_Trio_2_A_CLK2_N",
+                "busContentName": "CSI2_Link_3",
+                "copiedFrom": "JETSON_T5000.CSI2_Link_3"
+              }
+            }
+          ],
+          "children": []
+        },
+        {
+          "name": "PTZ_STEPPERS",
+          "level": "Level2_ArchitectureElement",
+          "id": "BLK-B2ABE22D0D",
+          "kind": "ArchitectureElement",
+          "is_host": false,
+          "color": "#fff2cc",
+          "attributes": {
+            "domainColor": "#fff2cc"
+          },
+          "ports": [],
+          "children": []
+        }
+      ]
+    },
+    {
+      "name": "Radar",
+      "level": "Level1_Domain",
+      "id": "BLK-16FEA19361",
+      "kind": "Domain",
+      "is_host": false,
+      "color": "#ffe6cc",
+      "attributes": {
+        "domainColor": "#ffe6cc",
+        "isHost": false
+      },
+      "ports": [],
+      "children": []
+    },
+    {
+      "name": "PMU_Micro",
+      "level": "Level1_Domain",
+      "id": "BLK-C021848BAA",
+      "kind": "Domain",
+      "is_host": false,
+      "color": "#e1d5e7",
+      "attributes": {
+        "domainColor": "#e1d5e7",
+        "isHost": false
+      },
+      "ports": [],
+      "children": [
+        {
+          "name": "PMU_MCU",
+          "level": "Level2_ArchitectureElement",
+          "id": "BLK-53FC3AC7DC",
+          "kind": "ArchitectureElement",
+          "is_host": false,
+          "color": "#e1d5e7",
+          "attributes": {
+            "domainColor": "#e1d5e7"
+          },
+          "ports": [],
+          "children": []
+        }
+      ]
+    },
+    {
+      "name": "Ethernet",
+      "level": "Level1_Domain",
+      "id": "BLK-E7DBEB4C5E",
+      "kind": "Domain",
+      "is_host": false,
+      "color": "#dae8fc",
+      "attributes": {
+        "domainColor": "#dae8fc",
+        "isHost": false
+      },
+      "ports": [],
+      "children": [
+        {
+          "name": "ETH_Switch_1",
+          "level": "Level2_ArchitectureElement",
+          "id": "BLK-624D405B75",
+          "kind": "ArchitectureElement",
+          "is_host": true,
+          "color": "#dae8fc",
+          "attributes": {
+            "domainColor": "#dae8fc",
+            "isHost": true
+          },
+          "ports": [
+            {
+              "name": "ETH_10G_MII_Link_1",
+              "port_type": "Bidi",
+              "id": "PRT-35F4752DAC",
+              "attributes": {
+                "interfaceName": "ETH_10G_MII_Link_1",
+                "connectionType": "Bus",
+                "signals": [
+                  "ETH_10G_MII_Link_1_TX_P",
+                  "ETH_10G_MII_Link_1_TX_N",
+                  "ETH_10G_MII_Link_1_RX_P",
+                  "ETH_10G_MII_Link_1_RX_N"
+                ],
+                "ecadSignals": [
+                  "ETH_10G_MII_Link_1_TX_P",
+                  "ETH_10G_MII_Link_1_TX_N",
+                  "ETH_10G_MII_Link_1_RX_P",
+                  "ETH_10G_MII_Link_1_RX_N"
+                ],
+                "generatedBy": "BusContentWizard",
+                "netId": "NET-2C590E7B87",
+                "family": "interface",
+                "template": "ETH_10G_MII_[Link/Port]",
+                "instanceIndex": 1,
+                "bcLine": "ETH_10G_MII_Link_1 ETH_10G_MII_Link_1_TX_P,ETH_10G_MII_Link_1_TX_N,ETH_10G_MII_Link_1_RX_P,ETH_10G_MII_Link_1_RX_N",
+                "busContentName": "ETH_10G_MII_Link_1"
+              }
+            },
+            {
+              "name": "ETH_10G_MII_Link_2",
+              "port_type": "Bidi",
+              "id": "PRT-73264A5804",
+              "attributes": {
+                "interfaceName": "ETH_10G_MII_Link_2",
+                "connectionType": "Bus",
+                "signals": [
+                  "ETH_10G_MII_Link_2_TX_P",
+                  "ETH_10G_MII_Link_2_TX_N",
+                  "ETH_10G_MII_Link_2_RX_P",
+                  "ETH_10G_MII_Link_2_RX_N"
+                ],
+                "ecadSignals": [
+                  "ETH_10G_MII_Link_2_TX_P",
+                  "ETH_10G_MII_Link_2_TX_N",
+                  "ETH_10G_MII_Link_2_RX_P",
+                  "ETH_10G_MII_Link_2_RX_N"
+                ],
+                "generatedBy": "BusContentWizard",
+                "netId": "NET-A3170EDE26",
+                "family": "interface",
+                "template": "ETH_10G_MII_[Link/Port]",
+                "instanceIndex": 2,
+                "bcLine": "ETH_10G_MII_Link_2 ETH_10G_MII_Link_2_TX_P,ETH_10G_MII_Link_2_TX_N,ETH_10G_MII_Link_2_RX_P,ETH_10G_MII_Link_2_RX_N",
+                "busContentName": "ETH_10G_MII_Link_2"
+              }
+            },
+            {
+              "name": "ETH_10G_MII_Link_3",
+              "port_type": "Bidi",
+              "id": "PRT-E5ADD71BD5",
+              "attributes": {
+                "interfaceName": "ETH_10G_MII_Link_3",
+                "connectionType": "Bus",
+                "signals": [
+                  "ETH_10G_MII_Link_3_TX_P",
+                  "ETH_10G_MII_Link_3_TX_N",
+                  "ETH_10G_MII_Link_3_RX_P",
+                  "ETH_10G_MII_Link_3_RX_N"
+                ],
+                "ecadSignals": [
+                  "ETH_10G_MII_Link_3_TX_P",
+                  "ETH_10G_MII_Link_3_TX_N",
+                  "ETH_10G_MII_Link_3_RX_P",
+                  "ETH_10G_MII_Link_3_RX_N"
+                ],
+                "generatedBy": "BusContentWizard",
+                "netId": "NET-ED2317EE8E",
+                "family": "interface",
+                "template": "ETH_10G_MII_[Link/Port]",
+                "instanceIndex": 3,
+                "bcLine": "ETH_10G_MII_Link_3 ETH_10G_MII_Link_3_TX_P,ETH_10G_MII_Link_3_TX_N,ETH_10G_MII_Link_3_RX_P,ETH_10G_MII_Link_3_RX_N",
+                "busContentName": "ETH_10G_MII_Link_3"
+              }
+            },
+            {
+              "name": "ETH_10G_MII_Link_4",
+              "port_type": "Bidi",
+              "id": "PRT-1F96FB16BB",
+              "attributes": {
+                "interfaceName": "ETH_10G_MII_Link_4",
+                "connectionType": "Bus",
+                "signals": [
+                  "ETH_10G_MII_Link_4_TX_P",
+                  "ETH_10G_MII_Link_4_TX_N",
+                  "ETH_10G_MII_Link_4_RX_P",
+                  "ETH_10G_MII_Link_4_RX_N"
+                ],
+                "ecadSignals": [
+                  "ETH_10G_MII_Link_4_TX_P",
+                  "ETH_10G_MII_Link_4_TX_N",
+                  "ETH_10G_MII_Link_4_RX_P",
+                  "ETH_10G_MII_Link_4_RX_N"
+                ],
+                "generatedBy": "BusContentWizard",
+                "netId": "NET-C5406E7CB0",
+                "family": "interface",
+                "template": "ETH_10G_MII_[Link/Port]",
+                "instanceIndex": 4,
+                "bcLine": "ETH_10G_MII_Link_4 ETH_10G_MII_Link_4_TX_P,ETH_10G_MII_Link_4_TX_N,ETH_10G_MII_Link_4_RX_P,ETH_10G_MII_Link_4_RX_N",
+                "busContentName": "ETH_10G_MII_Link_4"
+              }
+            },
+            {
+              "name": "ETH_10G_MII_Link_5",
+              "port_type": "Bidi",
+              "id": "PRT-21C793B0A3",
+              "attributes": {
+                "interfaceName": "ETH_10G_MII_Link_5",
+                "connectionType": "Bus",
+                "signals": [
+                  "ETH_10G_MII_Link_5_TX_P",
+                  "ETH_10G_MII_Link_5_TX_N",
+                  "ETH_10G_MII_Link_5_RX_P",
+                  "ETH_10G_MII_Link_5_RX_N"
+                ],
+                "ecadSignals": [
+                  "ETH_10G_MII_Link_5_TX_P",
+                  "ETH_10G_MII_Link_5_TX_N",
+                  "ETH_10G_MII_Link_5_RX_P",
+                  "ETH_10G_MII_Link_5_RX_N"
+                ],
+                "generatedBy": "BusContentWizard",
+                "netId": "NET-E6F4417864",
+                "family": "interface",
+                "template": "ETH_10G_MII_[Link/Port]",
+                "instanceIndex": 5,
+                "bcLine": "ETH_10G_MII_Link_5 ETH_10G_MII_Link_5_TX_P,ETH_10G_MII_Link_5_TX_N,ETH_10G_MII_Link_5_RX_P,ETH_10G_MII_Link_5_RX_N",
+                "busContentName": "ETH_10G_MII_Link_5"
+              }
+            }
+          ],
+          "children": []
+        },
+        {
+          "name": "ETH_10G_PHY_FIBRE_1",
+          "level": "Level2_ArchitectureElement",
+          "id": "BLK-217E0897A0",
+          "kind": "ArchitectureElement",
+          "is_host": false,
+          "color": "#dae8fc",
+          "attributes": {
+            "domainColor": "#dae8fc",
+            "isHost": false
+          },
+          "ports": [],
+          "children": []
+        },
+        {
+          "name": "ETH_10G_PHY_FIBRE_2",
+          "level": "Level2_ArchitectureElement",
+          "id": "BLK-EFE99D4D7D",
+          "kind": "ArchitectureElement",
+          "is_host": false,
+          "color": "#dae8fc",
+          "attributes": {
+            "domainColor": "#dae8fc",
+            "isHost": false
+          },
+          "ports": [],
+          "children": []
+        },
+        {
+          "name": "ETH_10GBASE_T_PHY_1",
+          "level": "Level2_ArchitectureElement",
+          "id": "BLK-04C585BC03",
+          "kind": "ArchitectureElement",
+          "is_host": false,
+          "color": "#dae8fc",
+          "attributes": {
+            "domainColor": "#dae8fc",
+            "isHost": false
+          },
+          "ports": [],
+          "children": []
+        },
+        {
+          "name": "ETH_10GBASE_T_PHY_2",
+          "level": "Level2_ArchitectureElement",
+          "id": "BLK-D6E228CF02",
+          "kind": "ArchitectureElement",
+          "is_host": false,
+          "color": "#dae8fc",
+          "attributes": {
+            "domainColor": "#dae8fc",
+            "isHost": false
+          },
+          "ports": [],
+          "children": []
+        }
+      ]
+    }
+  ],
+  "connections": [],
+  "net_references": [
+    {
+      "name": "CSI2_Link_1",
+      "reference_type": "Bus",
+      "end": {
+        "block_path": "JETSON_T5000",
+        "port_name": "CSI2_Link_1"
+      },
+      "direction": "Bidi",
+      "id": "REF-1A7DA9B74F",
+      "net_id": "NET-187341D3D0",
+      "attributes": {
+        "interfaceName": "CSI2_Link_1",
+        "connectionType": "Bus",
+        "signals": [
+          "CSI2_Link_1_Trio_1_A_D0_P",
+          "CSI2_Link_1_Trio_1_B_D0_N",
+          "CSI2_Link_1_Trio_2_B_D1_P",
+          "CSI2_Link_1_Trio_2_C_D1_N",
+          "CSI2_Link_1_Trio_3_A_D2_P",
+          "CSI2_Link_1_Trio_3_B_D2_N",
+          "CSI2_Link_1_Trio_4_B_D3_P",
+          "CSI2_Link_1_Trio_4_C_D3_N",
+          "CSI2_Link_1_Trio_3_C_CLK1_P",
+          "CSI2_Link_1_Trio_4_A_CLK1_N",
+          "CSI2_Link_1_Trio_1_C_CLK2_P",
+          "CSI2_Link_1_Trio_2_A_CLK2_N"
+        ],
+        "ecadSignals": [
+          "CSI2_Link_1_Trio_1_A_D0_P",
+          "CSI2_Link_1_Trio_1_B_D0_N",
+          "CSI2_Link_1_Trio_2_B_D1_P",
+          "CSI2_Link_1_Trio_2_C_D1_N",
+          "CSI2_Link_1_Trio_3_A_D2_P",
+          "CSI2_Link_1_Trio_3_B_D2_N",
+          "CSI2_Link_1_Trio_4_B_D3_P",
+          "CSI2_Link_1_Trio_4_C_D3_N",
+          "CSI2_Link_1_Trio_3_C_CLK1_P",
+          "CSI2_Link_1_Trio_4_A_CLK1_N",
+          "CSI2_Link_1_Trio_1_C_CLK2_P",
+          "CSI2_Link_1_Trio_2_A_CLK2_N"
+        ],
+        "generatedBy": "BusContentWizard",
+        "netId": "NET-187341D3D0",
+        "family": "interface",
+        "template": "CSI2_[Link/Port]",
+        "instanceIndex": 1,
+        "bcLine": "CSI2_Link_1 CSI2_Link_1_Trio_1_A_D0_P,CSI2_Link_1_Trio_1_B_D0_N,CSI2_Link_1_Trio_2_B_D1_P,CSI2_Link_1_Trio_2_C_D1_N,CSI2_Link_1_Trio_3_A_D2_P,CSI2_Link_1_Trio_3_B_D2_N,CSI2_Link_1_Trio_4_B_D3_P,CSI2_Link_1_Trio_4_C_D3_N,CSI2_Link_1_Trio_3_C_CLK1_P,CSI2_Link_1_Trio_4_A_CLK1_N,CSI2_Link_1_Trio_1_C_CLK2_P,CSI2_Link_1_Trio_2_A_CLK2_N",
+        "busContentName": "CSI2_Link_1"
+      }
+    },
+    {
+      "name": "CSI2_Link_2",
+      "reference_type": "Bus",
+      "end": {
+        "block_path": "JETSON_T5000",
+        "port_name": "CSI2_Link_2"
+      },
+      "direction": "Bidi",
+      "id": "REF-059FB5BCEA",
+      "net_id": "NET-D0688FFAAF",
+      "attributes": {
+        "interfaceName": "CSI2_Link_2",
+        "connectionType": "Bus",
+        "signals": [
+          "CSI2_Link_2_Trio_1_A_D0_P",
+          "CSI2_Link_2_Trio_1_B_D0_N",
+          "CSI2_Link_2_Trio_2_B_D1_P",
+          "CSI2_Link_2_Trio_2_C_D1_N",
+          "CSI2_Link_2_Trio_3_A_D2_P",
+          "CSI2_Link_2_Trio_3_B_D2_N",
+          "CSI2_Link_2_Trio_4_B_D3_P",
+          "CSI2_Link_2_Trio_4_C_D3_N",
+          "CSI2_Link_2_Trio_3_C_CLK1_P",
+          "CSI2_Link_2_Trio_4_A_CLK1_N",
+          "CSI2_Link_2_Trio_1_C_CLK2_P",
+          "CSI2_Link_2_Trio_2_A_CLK2_N"
+        ],
+        "ecadSignals": [
+          "CSI2_Link_2_Trio_1_A_D0_P",
+          "CSI2_Link_2_Trio_1_B_D0_N",
+          "CSI2_Link_2_Trio_2_B_D1_P",
+          "CSI2_Link_2_Trio_2_C_D1_N",
+          "CSI2_Link_2_Trio_3_A_D2_P",
+          "CSI2_Link_2_Trio_3_B_D2_N",
+          "CSI2_Link_2_Trio_4_B_D3_P",
+          "CSI2_Link_2_Trio_4_C_D3_N",
+          "CSI2_Link_2_Trio_3_C_CLK1_P",
+          "CSI2_Link_2_Trio_4_A_CLK1_N",
+          "CSI2_Link_2_Trio_1_C_CLK2_P",
+          "CSI2_Link_2_Trio_2_A_CLK2_N"
+        ],
+        "generatedBy": "BusContentWizard",
+        "netId": "NET-D0688FFAAF",
+        "family": "interface",
+        "template": "CSI2_[Link/Port]",
+        "instanceIndex": 2,
+        "bcLine": "CSI2_Link_2 CSI2_Link_2_Trio_1_A_D0_P,CSI2_Link_2_Trio_1_B_D0_N,CSI2_Link_2_Trio_2_B_D1_P,CSI2_Link_2_Trio_2_C_D1_N,CSI2_Link_2_Trio_3_A_D2_P,CSI2_Link_2_Trio_3_B_D2_N,CSI2_Link_2_Trio_4_B_D3_P,CSI2_Link_2_Trio_4_C_D3_N,CSI2_Link_2_Trio_3_C_CLK1_P,CSI2_Link_2_Trio_4_A_CLK1_N,CSI2_Link_2_Trio_1_C_CLK2_P,CSI2_Link_2_Trio_2_A_CLK2_N",
+        "busContentName": "CSI2_Link_2"
+      }
+    },
+    {
+      "name": "CSI2_Link_3",
+      "reference_type": "Bus",
+      "end": {
+        "block_path": "JETSON_T5000",
+        "port_name": "CSI2_Link_3"
+      },
+      "direction": "Bidi",
+      "id": "REF-53955199F6",
+      "net_id": "NET-1DB177E4F8",
+      "attributes": {
+        "interfaceName": "CSI2_Link_3",
+        "connectionType": "Bus",
+        "signals": [
+          "CSI2_Link_3_Trio_1_A_D0_P",
+          "CSI2_Link_3_Trio_1_B_D0_N",
+          "CSI2_Link_3_Trio_2_B_D1_P",
+          "CSI2_Link_3_Trio_2_C_D1_N",
+          "CSI2_Link_3_Trio_3_A_D2_P",
+          "CSI2_Link_3_Trio_3_B_D2_N",
+          "CSI2_Link_3_Trio_4_B_D3_P",
+          "CSI2_Link_3_Trio_4_C_D3_N",
+          "CSI2_Link_3_Trio_3_C_CLK1_P",
+          "CSI2_Link_3_Trio_4_A_CLK1_N",
+          "CSI2_Link_3_Trio_1_C_CLK2_P",
+          "CSI2_Link_3_Trio_2_A_CLK2_N"
+        ],
+        "ecadSignals": [
+          "CSI2_Link_3_Trio_1_A_D0_P",
+          "CSI2_Link_3_Trio_1_B_D0_N",
+          "CSI2_Link_3_Trio_2_B_D1_P",
+          "CSI2_Link_3_Trio_2_C_D1_N",
+          "CSI2_Link_3_Trio_3_A_D2_P",
+          "CSI2_Link_3_Trio_3_B_D2_N",
+          "CSI2_Link_3_Trio_4_B_D3_P",
+          "CSI2_Link_3_Trio_4_C_D3_N",
+          "CSI2_Link_3_Trio_3_C_CLK1_P",
+          "CSI2_Link_3_Trio_4_A_CLK1_N",
+          "CSI2_Link_3_Trio_1_C_CLK2_P",
+          "CSI2_Link_3_Trio_2_A_CLK2_N"
+        ],
+        "generatedBy": "BusContentWizard",
+        "netId": "NET-1DB177E4F8",
+        "family": "interface",
+        "template": "CSI2_[Link/Port]",
+        "instanceIndex": 3,
+        "bcLine": "CSI2_Link_3 CSI2_Link_3_Trio_1_A_D0_P,CSI2_Link_3_Trio_1_B_D0_N,CSI2_Link_3_Trio_2_B_D1_P,CSI2_Link_3_Trio_2_C_D1_N,CSI2_Link_3_Trio_3_A_D2_P,CSI2_Link_3_Trio_3_B_D2_N,CSI2_Link_3_Trio_4_B_D3_P,CSI2_Link_3_Trio_4_C_D3_N,CSI2_Link_3_Trio_3_C_CLK1_P,CSI2_Link_3_Trio_4_A_CLK1_N,CSI2_Link_3_Trio_1_C_CLK2_P,CSI2_Link_3_Trio_2_A_CLK2_N",
+        "busContentName": "CSI2_Link_3"
+      }
+    },
+    {
+      "name": "ETH_SGMII_Link_1",
+      "reference_type": "Bus",
+      "end": {
+        "block_path": "JETSON_T5000",
+        "port_name": "ETH_SGMII_Link_1"
+      },
+      "direction": "Bidi",
+      "id": "REF-BFBFFCCC52",
+      "net_id": "NET-8EF8E93549",
+      "attributes": {
+        "interfaceName": "ETH_SGMII_Link_1",
+        "connectionType": "Bus",
+        "signals": [
+          "ETH_SGMII_Link_1_TXD_P",
+          "ETH_SGMII_Link_1_TXD_N",
+          "ETH_SGMII_Link_1_RXD_P",
+          "ETH_SGMII_Link_1_RXD_N"
+        ],
+        "ecadSignals": [
+          "ETH_SGMII_Link_1_TXD_P",
+          "ETH_SGMII_Link_1_TXD_N",
+          "ETH_SGMII_Link_1_RXD_P",
+          "ETH_SGMII_Link_1_RXD_N"
+        ],
+        "generatedBy": "BusContentWizard",
+        "netId": "NET-8EF8E93549",
+        "family": "interface",
+        "template": "ETH_SGMII_[Link/Port]",
+        "instanceIndex": 1,
+        "bcLine": "ETH_SGMII_Link_1 ETH_SGMII_Link_1_TXD_P,ETH_SGMII_Link_1_TXD_N,ETH_SGMII_Link_1_RXD_P,ETH_SGMII_Link_1_RXD_N",
+        "busContentName": "ETH_SGMII_Link_1"
+      }
+    },
+    {
+      "name": "VBAT_PSU_IN_230V",
+      "reference_type": "Net",
+      "end": {
+        "block_path": "PSU_Input",
+        "port_name": "VBAT_PSU_IN_230V"
+      },
+      "direction": "In",
+      "id": "REF-ED73744E45",
+      "net_id": "NET-1A704E69DE",
+      "attributes": {
+        "interfaceName": "VBAT_PSU_IN_230V",
+        "connectionType": "Net",
+        "signals": [
+          "VBAT_PSU_IN_230V"
+        ],
+        "ecadSignals": [
+          "VBAT_PSU_IN_230V"
+        ],
+        "generatedBy": "BusContentWizard",
+        "netId": "NET-1A704E69DE",
+        "family": "power",
+        "template": "VBAT",
+        "instanceIndex": 0,
+        "bcLine": "Power_Signals VBAT_PSU_IN_230V",
+        "busContentName": "Power_Signals",
+        "powerDirection": "PowerIn"
+      }
+    },
+    {
+      "name": "VBAT_PSU_IN_24V",
+      "reference_type": "Net",
+      "end": {
+        "block_path": "PSU_Input",
+        "port_name": "VBAT_PSU_IN_24V"
+      },
+      "direction": "In",
+      "id": "REF-33A45D9154",
+      "net_id": "NET-F5F89AE832",
+      "attributes": {
+        "interfaceName": "VBAT_PSU_IN_24V",
+        "connectionType": "Net",
+        "signals": [
+          "VBAT_PSU_IN_24V"
+        ],
+        "ecadSignals": [
+          "VBAT_PSU_IN_24V"
+        ],
+        "generatedBy": "BusContentWizard",
+        "netId": "NET-F5F89AE832",
+        "family": "power",
+        "template": "VBAT",
+        "instanceIndex": 0,
+        "bcLine": "Power_Signals VBAT_PSU_IN_24V",
+        "busContentName": "Power_Signals",
+        "powerDirection": "PowerIn"
+      }
+    },
+    {
+      "name": "VBAT_PSU_BOARD_24V",
+      "reference_type": "Net",
+      "end": {
+        "block_path": "PSU_Input",
+        "port_name": "VBAT_PSU_BOARD_24V"
+      },
+      "direction": "Out",
+      "id": "REF-567047D78F",
+      "net_id": "NET-706E6FBB03",
+      "attributes": {
+        "interfaceName": "VBAT_PSU_BOARD_24V",
+        "connectionType": "Net",
+        "signals": [
+          "VBAT_PSU_BOARD_24V"
+        ],
+        "ecadSignals": [
+          "VBAT_PSU_BOARD_24V"
+        ],
+        "generatedBy": "BusContentWizard",
+        "netId": "NET-706E6FBB03",
+        "family": "power",
+        "template": "VBAT",
+        "instanceIndex": 0,
+        "bcLine": "Power_Signals VBAT_PSU_BOARD_24V",
+        "busContentName": "Power_Signals",
+        "powerDirection": "PowerOut"
+      }
+    },
+    {
+      "name": "ETH_10G_MII_Link_1",
+      "reference_type": "Bus",
+      "end": {
+        "block_path": "Ethernet.ETH_Switch_1",
+        "port_name": "ETH_10G_MII_Link_1"
+      },
+      "direction": "Bidi",
+      "id": "REF-176A2911E6",
+      "net_id": "NET-2C590E7B87",
+      "attributes": {
+        "interfaceName": "ETH_10G_MII_Link_1",
+        "connectionType": "Bus",
+        "signals": [
+          "ETH_10G_MII_Link_1_TX_P",
+          "ETH_10G_MII_Link_1_TX_N",
+          "ETH_10G_MII_Link_1_RX_P",
+          "ETH_10G_MII_Link_1_RX_N"
+        ],
+        "ecadSignals": [
+          "ETH_10G_MII_Link_1_TX_P",
+          "ETH_10G_MII_Link_1_TX_N",
+          "ETH_10G_MII_Link_1_RX_P",
+          "ETH_10G_MII_Link_1_RX_N"
+        ],
+        "generatedBy": "BusContentWizard",
+        "netId": "NET-2C590E7B87",
+        "family": "interface",
+        "template": "ETH_10G_MII_[Link/Port]",
+        "instanceIndex": 1,
+        "bcLine": "ETH_10G_MII_Link_1 ETH_10G_MII_Link_1_TX_P,ETH_10G_MII_Link_1_TX_N,ETH_10G_MII_Link_1_RX_P,ETH_10G_MII_Link_1_RX_N",
+        "busContentName": "ETH_10G_MII_Link_1"
+      }
+    },
+    {
+      "name": "ETH_10G_MII_Link_2",
+      "reference_type": "Bus",
+      "end": {
+        "block_path": "Ethernet.ETH_Switch_1",
+        "port_name": "ETH_10G_MII_Link_2"
+      },
+      "direction": "Bidi",
+      "id": "REF-F15DEEB97C",
+      "net_id": "NET-A3170EDE26",
+      "attributes": {
+        "interfaceName": "ETH_10G_MII_Link_2",
+        "connectionType": "Bus",
+        "signals": [
+          "ETH_10G_MII_Link_2_TX_P",
+          "ETH_10G_MII_Link_2_TX_N",
+          "ETH_10G_MII_Link_2_RX_P",
+          "ETH_10G_MII_Link_2_RX_N"
+        ],
+        "ecadSignals": [
+          "ETH_10G_MII_Link_2_TX_P",
+          "ETH_10G_MII_Link_2_TX_N",
+          "ETH_10G_MII_Link_2_RX_P",
+          "ETH_10G_MII_Link_2_RX_N"
+        ],
+        "generatedBy": "BusContentWizard",
+        "netId": "NET-A3170EDE26",
+        "family": "interface",
+        "template": "ETH_10G_MII_[Link/Port]",
+        "instanceIndex": 2,
+        "bcLine": "ETH_10G_MII_Link_2 ETH_10G_MII_Link_2_TX_P,ETH_10G_MII_Link_2_TX_N,ETH_10G_MII_Link_2_RX_P,ETH_10G_MII_Link_2_RX_N",
+        "busContentName": "ETH_10G_MII_Link_2"
+      }
+    },
+    {
+      "name": "ETH_10G_MII_Link_3",
+      "reference_type": "Bus",
+      "end": {
+        "block_path": "Ethernet.ETH_Switch_1",
+        "port_name": "ETH_10G_MII_Link_3"
+      },
+      "direction": "Bidi",
+      "id": "REF-3DC6406796",
+      "net_id": "NET-ED2317EE8E",
+      "attributes": {
+        "interfaceName": "ETH_10G_MII_Link_3",
+        "connectionType": "Bus",
+        "signals": [
+          "ETH_10G_MII_Link_3_TX_P",
+          "ETH_10G_MII_Link_3_TX_N",
+          "ETH_10G_MII_Link_3_RX_P",
+          "ETH_10G_MII_Link_3_RX_N"
+        ],
+        "ecadSignals": [
+          "ETH_10G_MII_Link_3_TX_P",
+          "ETH_10G_MII_Link_3_TX_N",
+          "ETH_10G_MII_Link_3_RX_P",
+          "ETH_10G_MII_Link_3_RX_N"
+        ],
+        "generatedBy": "BusContentWizard",
+        "netId": "NET-ED2317EE8E",
+        "family": "interface",
+        "template": "ETH_10G_MII_[Link/Port]",
+        "instanceIndex": 3,
+        "bcLine": "ETH_10G_MII_Link_3 ETH_10G_MII_Link_3_TX_P,ETH_10G_MII_Link_3_TX_N,ETH_10G_MII_Link_3_RX_P,ETH_10G_MII_Link_3_RX_N",
+        "busContentName": "ETH_10G_MII_Link_3"
+      }
+    },
+    {
+      "name": "ETH_10G_MII_Link_4",
+      "reference_type": "Bus",
+      "end": {
+        "block_path": "Ethernet.ETH_Switch_1",
+        "port_name": "ETH_10G_MII_Link_4"
+      },
+      "direction": "Bidi",
+      "id": "REF-478FE417D5",
+      "net_id": "NET-C5406E7CB0",
+      "attributes": {
+        "interfaceName": "ETH_10G_MII_Link_4",
+        "connectionType": "Bus",
+        "signals": [
+          "ETH_10G_MII_Link_4_TX_P",
+          "ETH_10G_MII_Link_4_TX_N",
+          "ETH_10G_MII_Link_4_RX_P",
+          "ETH_10G_MII_Link_4_RX_N"
+        ],
+        "ecadSignals": [
+          "ETH_10G_MII_Link_4_TX_P",
+          "ETH_10G_MII_Link_4_TX_N",
+          "ETH_10G_MII_Link_4_RX_P",
+          "ETH_10G_MII_Link_4_RX_N"
+        ],
+        "generatedBy": "BusContentWizard",
+        "netId": "NET-C5406E7CB0",
+        "family": "interface",
+        "template": "ETH_10G_MII_[Link/Port]",
+        "instanceIndex": 4,
+        "bcLine": "ETH_10G_MII_Link_4 ETH_10G_MII_Link_4_TX_P,ETH_10G_MII_Link_4_TX_N,ETH_10G_MII_Link_4_RX_P,ETH_10G_MII_Link_4_RX_N",
+        "busContentName": "ETH_10G_MII_Link_4"
+      }
+    },
+    {
+      "name": "ETH_10G_MII_Link_5",
+      "reference_type": "Bus",
+      "end": {
+        "block_path": "Ethernet.ETH_Switch_1",
+        "port_name": "ETH_10G_MII_Link_5"
+      },
+      "direction": "Bidi",
+      "id": "REF-8BD85E7CFB",
+      "net_id": "NET-E6F4417864",
+      "attributes": {
+        "interfaceName": "ETH_10G_MII_Link_5",
+        "connectionType": "Bus",
+        "signals": [
+          "ETH_10G_MII_Link_5_TX_P",
+          "ETH_10G_MII_Link_5_TX_N",
+          "ETH_10G_MII_Link_5_RX_P",
+          "ETH_10G_MII_Link_5_RX_N"
+        ],
+        "ecadSignals": [
+          "ETH_10G_MII_Link_5_TX_P",
+          "ETH_10G_MII_Link_5_TX_N",
+          "ETH_10G_MII_Link_5_RX_P",
+          "ETH_10G_MII_Link_5_RX_N"
+        ],
+        "generatedBy": "BusContentWizard",
+        "netId": "NET-E6F4417864",
+        "family": "interface",
+        "template": "ETH_10G_MII_[Link/Port]",
+        "instanceIndex": 5,
+        "bcLine": "ETH_10G_MII_Link_5 ETH_10G_MII_Link_5_TX_P,ETH_10G_MII_Link_5_TX_N,ETH_10G_MII_Link_5_RX_P,ETH_10G_MII_Link_5_RX_N",
+        "busContentName": "ETH_10G_MII_Link_5"
+      }
+    },
+    {
+      "name": "UART_Link_1",
+      "reference_type": "Bus",
+      "end": {
+        "block_path": "PSU_Audio",
+        "port_name": "UART_Link_1"
+      },
+      "direction": "Bidi",
+      "id": "REF-13BA3059B6",
+      "net_id": "NET-0EF5AEA09B",
+      "attributes": {
+        "interfaceName": "UART_Link_1",
+        "connectionType": "Bus",
+        "signals": [
+          "UART_Link_1_RX",
+          "UART_Link_1_TX",
+          "UART_Link_1_CTS",
+          "UART_Link_1_RTS"
+        ],
+        "ecadSignals": [
+          "UART_Link_1_RX",
+          "UART_Link_1_TX",
+          "UART_Link_1_CTS",
+          "UART_Link_1_RTS"
+        ],
+        "generatedBy": "BusContentWizard",
+        "netId": "NET-0EF5AEA09B",
+        "family": "interface",
+        "template": "UART_[Link/Port]",
+        "instanceIndex": 1,
+        "bcLine": "UART_Link_1 UART_Link_1_RX,UART_Link_1_TX,UART_Link_1_CTS,UART_Link_1_RTS",
+        "busContentName": "UART_Link_1",
+        "propagateToParent": true
+      }
+    },
+    {
+      "name": "UART_Link_2",
+      "reference_type": "Bus",
+      "end": {
+        "block_path": "PSU_Audio",
+        "port_name": "UART_Link_2"
+      },
+      "direction": "Bidi",
+      "id": "REF-239DA0DC25",
+      "net_id": "NET-5696D142A4",
+      "attributes": {
+        "interfaceName": "UART_Link_2",
+        "connectionType": "Bus",
+        "signals": [
+          "UART_Link_2_RX",
+          "UART_Link_2_TX",
+          "UART_Link_2_CTS",
+          "UART_Link_2_RTS"
+        ],
+        "ecadSignals": [
+          "UART_Link_2_RX",
+          "UART_Link_2_TX",
+          "UART_Link_2_CTS",
+          "UART_Link_2_RTS"
+        ],
+        "generatedBy": "BusContentWizard",
+        "netId": "NET-5696D142A4",
+        "family": "interface",
+        "template": "UART_[Link/Port]",
+        "instanceIndex": 2,
+        "bcLine": "UART_Link_2 UART_Link_2_RX,UART_Link_2_TX,UART_Link_2_CTS,UART_Link_2_RTS",
+        "busContentName": "UART_Link_2",
+        "propagateToParent": true
+      }
+    },
+    {
+      "name": "CSI2_Link_1",
+      "reference_type": "Bus",
+      "end": {
+        "block_path": "Video.GMSL_DESER_1",
+        "port_name": "CSI2_Link_1"
+      },
+      "direction": "Bidi",
+      "id": "REF-D8CCB224C8",
+      "net_id": "NET-187341D3D0",
+      "attributes": {
+        "interfaceName": "CSI2_Link_1",
+        "connectionType": "Bus",
+        "signals": [
+          "CSI2_Link_1_Trio_1_A_D0_P",
+          "CSI2_Link_1_Trio_1_B_D0_N",
+          "CSI2_Link_1_Trio_2_B_D1_P",
+          "CSI2_Link_1_Trio_2_C_D1_N",
+          "CSI2_Link_1_Trio_3_A_D2_P",
+          "CSI2_Link_1_Trio_3_B_D2_N",
+          "CSI2_Link_1_Trio_4_B_D3_P",
+          "CSI2_Link_1_Trio_4_C_D3_N",
+          "CSI2_Link_1_Trio_3_C_CLK1_P",
+          "CSI2_Link_1_Trio_4_A_CLK1_N",
+          "CSI2_Link_1_Trio_1_C_CLK2_P",
+          "CSI2_Link_1_Trio_2_A_CLK2_N"
+        ],
+        "ecadSignals": [
+          "CSI2_Link_1_Trio_1_A_D0_P",
+          "CSI2_Link_1_Trio_1_B_D0_N",
+          "CSI2_Link_1_Trio_2_B_D1_P",
+          "CSI2_Link_1_Trio_2_C_D1_N",
+          "CSI2_Link_1_Trio_3_A_D2_P",
+          "CSI2_Link_1_Trio_3_B_D2_N",
+          "CSI2_Link_1_Trio_4_B_D3_P",
+          "CSI2_Link_1_Trio_4_C_D3_N",
+          "CSI2_Link_1_Trio_3_C_CLK1_P",
+          "CSI2_Link_1_Trio_4_A_CLK1_N",
+          "CSI2_Link_1_Trio_1_C_CLK2_P",
+          "CSI2_Link_1_Trio_2_A_CLK2_N"
+        ],
+        "generatedBy": "BusContentWizard",
+        "netId": "NET-187341D3D0",
+        "family": "interface",
+        "template": "CSI2_[Link/Port]",
+        "instanceIndex": 1,
+        "bcLine": "CSI2_Link_1 CSI2_Link_1_Trio_1_A_D0_P,CSI2_Link_1_Trio_1_B_D0_N,CSI2_Link_1_Trio_2_B_D1_P,CSI2_Link_1_Trio_2_C_D1_N,CSI2_Link_1_Trio_3_A_D2_P,CSI2_Link_1_Trio_3_B_D2_N,CSI2_Link_1_Trio_4_B_D3_P,CSI2_Link_1_Trio_4_C_D3_N,CSI2_Link_1_Trio_3_C_CLK1_P,CSI2_Link_1_Trio_4_A_CLK1_N,CSI2_Link_1_Trio_1_C_CLK2_P,CSI2_Link_1_Trio_2_A_CLK2_N",
+        "busContentName": "CSI2_Link_1",
+        "copiedFrom": "CSI2_Link_1"
+      }
+    },
+    {
+      "name": "CSI2_Link_2",
+      "reference_type": "Bus",
+      "end": {
+        "block_path": "Video.GMSL_DESER_2",
+        "port_name": "CSI2_Link_2"
+      },
+      "direction": "Bidi",
+      "id": "REF-4F219560A7",
+      "net_id": "NET-D0688FFAAF",
+      "attributes": {
+        "interfaceName": "CSI2_Link_2",
+        "connectionType": "Bus",
+        "signals": [
+          "CSI2_Link_2_Trio_1_A_D0_P",
+          "CSI2_Link_2_Trio_1_B_D0_N",
+          "CSI2_Link_2_Trio_2_B_D1_P",
+          "CSI2_Link_2_Trio_2_C_D1_N",
+          "CSI2_Link_2_Trio_3_A_D2_P",
+          "CSI2_Link_2_Trio_3_B_D2_N",
+          "CSI2_Link_2_Trio_4_B_D3_P",
+          "CSI2_Link_2_Trio_4_C_D3_N",
+          "CSI2_Link_2_Trio_3_C_CLK1_P",
+          "CSI2_Link_2_Trio_4_A_CLK1_N",
+          "CSI2_Link_2_Trio_1_C_CLK2_P",
+          "CSI2_Link_2_Trio_2_A_CLK2_N"
+        ],
+        "ecadSignals": [
+          "CSI2_Link_2_Trio_1_A_D0_P",
+          "CSI2_Link_2_Trio_1_B_D0_N",
+          "CSI2_Link_2_Trio_2_B_D1_P",
+          "CSI2_Link_2_Trio_2_C_D1_N",
+          "CSI2_Link_2_Trio_3_A_D2_P",
+          "CSI2_Link_2_Trio_3_B_D2_N",
+          "CSI2_Link_2_Trio_4_B_D3_P",
+          "CSI2_Link_2_Trio_4_C_D3_N",
+          "CSI2_Link_2_Trio_3_C_CLK1_P",
+          "CSI2_Link_2_Trio_4_A_CLK1_N",
+          "CSI2_Link_2_Trio_1_C_CLK2_P",
+          "CSI2_Link_2_Trio_2_A_CLK2_N"
+        ],
+        "generatedBy": "BusContentWizard",
+        "netId": "NET-D0688FFAAF",
+        "family": "interface",
+        "template": "CSI2_[Link/Port]",
+        "instanceIndex": 2,
+        "bcLine": "CSI2_Link_2 CSI2_Link_2_Trio_1_A_D0_P,CSI2_Link_2_Trio_1_B_D0_N,CSI2_Link_2_Trio_2_B_D1_P,CSI2_Link_2_Trio_2_C_D1_N,CSI2_Link_2_Trio_3_A_D2_P,CSI2_Link_2_Trio_3_B_D2_N,CSI2_Link_2_Trio_4_B_D3_P,CSI2_Link_2_Trio_4_C_D3_N,CSI2_Link_2_Trio_3_C_CLK1_P,CSI2_Link_2_Trio_4_A_CLK1_N,CSI2_Link_2_Trio_1_C_CLK2_P,CSI2_Link_2_Trio_2_A_CLK2_N",
+        "busContentName": "CSI2_Link_2",
+        "copiedFrom": "CSI2_Link_2"
+      }
+    },
+    {
+      "name": "CSI2_Link_3",
+      "reference_type": "Bus",
+      "end": {
+        "block_path": "Video.GMSL_DESER_3",
+        "port_name": "CSI2_Link_3"
+      },
+      "direction": "Bidi",
+      "id": "REF-8474A36C98",
+      "net_id": "NET-1DB177E4F8",
+      "attributes": {
+        "interfaceName": "CSI2_Link_3",
+        "connectionType": "Bus",
+        "signals": [
+          "CSI2_Link_3_Trio_1_A_D0_P",
+          "CSI2_Link_3_Trio_1_B_D0_N",
+          "CSI2_Link_3_Trio_2_B_D1_P",
+          "CSI2_Link_3_Trio_2_C_D1_N",
+          "CSI2_Link_3_Trio_3_A_D2_P",
+          "CSI2_Link_3_Trio_3_B_D2_N",
+          "CSI2_Link_3_Trio_4_B_D3_P",
+          "CSI2_Link_3_Trio_4_C_D3_N",
+          "CSI2_Link_3_Trio_3_C_CLK1_P",
+          "CSI2_Link_3_Trio_4_A_CLK1_N",
+          "CSI2_Link_3_Trio_1_C_CLK2_P",
+          "CSI2_Link_3_Trio_2_A_CLK2_N"
+        ],
+        "ecadSignals": [
+          "CSI2_Link_3_Trio_1_A_D0_P",
+          "CSI2_Link_3_Trio_1_B_D0_N",
+          "CSI2_Link_3_Trio_2_B_D1_P",
+          "CSI2_Link_3_Trio_2_C_D1_N",
+          "CSI2_Link_3_Trio_3_A_D2_P",
+          "CSI2_Link_3_Trio_3_B_D2_N",
+          "CSI2_Link_3_Trio_4_B_D3_P",
+          "CSI2_Link_3_Trio_4_C_D3_N",
+          "CSI2_Link_3_Trio_3_C_CLK1_P",
+          "CSI2_Link_3_Trio_4_A_CLK1_N",
+          "CSI2_Link_3_Trio_1_C_CLK2_P",
+          "CSI2_Link_3_Trio_2_A_CLK2_N"
+        ],
+        "generatedBy": "BusContentWizard",
+        "netId": "NET-1DB177E4F8",
+        "family": "interface",
+        "template": "CSI2_[Link/Port]",
+        "instanceIndex": 3,
+        "bcLine": "CSI2_Link_3 CSI2_Link_3_Trio_1_A_D0_P,CSI2_Link_3_Trio_1_B_D0_N,CSI2_Link_3_Trio_2_B_D1_P,CSI2_Link_3_Trio_2_C_D1_N,CSI2_Link_3_Trio_3_A_D2_P,CSI2_Link_3_Trio_3_B_D2_N,CSI2_Link_3_Trio_4_B_D3_P,CSI2_Link_3_Trio_4_C_D3_N,CSI2_Link_3_Trio_3_C_CLK1_P,CSI2_Link_3_Trio_4_A_CLK1_N,CSI2_Link_3_Trio_1_C_CLK2_P,CSI2_Link_3_Trio_2_A_CLK2_N",
+        "busContentName": "CSI2_Link_3",
+        "copiedFrom": "CSI2_Link_3"
+      }
+    },
+    {
+      "name": "ETH_SGMII_Link_1",
+      "reference_type": "Bus",
+      "end": {
+        "block_path": "PSU_Ethernet.PSU_ETH_Switch",
+        "port_name": "ETH_SGMII_Link_1"
+      },
+      "direction": "Bidi",
+      "id": "REF-2F988ABBF7",
+      "net_id": "NET-8EF8E93549",
+      "attributes": {
+        "interfaceName": "ETH_SGMII_Link_1",
+        "connectionType": "Bus",
+        "signals": [
+          "ETH_SGMII_Link_1_TXD_P",
+          "ETH_SGMII_Link_1_TXD_N",
+          "ETH_SGMII_Link_1_RXD_P",
+          "ETH_SGMII_Link_1_RXD_N"
+        ],
+        "ecadSignals": [
+          "ETH_SGMII_Link_1_TXD_P",
+          "ETH_SGMII_Link_1_TXD_N",
+          "ETH_SGMII_Link_1_RXD_P",
+          "ETH_SGMII_Link_1_RXD_N"
+        ],
+        "generatedBy": "BusContentWizard",
+        "netId": "NET-8EF8E93549",
+        "family": "interface",
+        "template": "ETH_SGMII_[Link/Port]",
+        "instanceIndex": 1,
+        "bcLine": "ETH_SGMII_Link_1 ETH_SGMII_Link_1_TXD_P,ETH_SGMII_Link_1_TXD_N,ETH_SGMII_Link_1_RXD_P,ETH_SGMII_Link_1_RXD_N",
+        "busContentName": "ETH_SGMII_Link_1",
+        "copiedFrom": "ETH_SGMII_Link_1"
+      }
+    }
+  ]
+}

@@ -1,0 +1,358 @@
+{
+  "name": "THOR hierarchical object model example",
+  "root_blocks": [
+    {
+      "name": "Camera_Module",
+      "label": "Camera Module",
+      "ref": null,
+      "description": "External camera module",
+      "ports": [
+        {
+          "name": "VIN",
+          "type": "power",
+          "side": "left",
+          "voltage": "12V",
+          "protocol": null,
+          "constraint_class": null,
+          "description": null
+        },
+        {
+          "name": "GND",
+          "type": "ground",
+          "side": "left",
+          "voltage": null,
+          "protocol": null,
+          "constraint_class": null,
+          "description": null
+        },
+        {
+          "name": "CSI_OUT",
+          "type": "output",
+          "side": "right",
+          "voltage": null,
+          "protocol": "CSI2_DPHY",
+          "constraint_class": "CSI2_DPHY",
+          "description": null
+        }
+      ],
+      "children": []
+    },
+    {
+      "name": "Power_Input",
+      "label": "Power Input",
+      "ref": null,
+      "description": null,
+      "ports": [
+        {
+          "name": "VIN_24V",
+          "type": "power",
+          "side": "left",
+          "voltage": "24V",
+          "protocol": null,
+          "constraint_class": null,
+          "description": null
+        },
+        {
+          "name": "GND_IN",
+          "type": "ground",
+          "side": "left",
+          "voltage": null,
+          "protocol": null,
+          "constraint_class": null,
+          "description": null
+        },
+        {
+          "name": "VOUT_12V",
+          "type": "power",
+          "side": "right",
+          "voltage": "12V",
+          "protocol": null,
+          "constraint_class": null,
+          "description": null
+        },
+        {
+          "name": "GND",
+          "type": "ground",
+          "side": "right",
+          "voltage": null,
+          "protocol": null,
+          "constraint_class": null,
+          "description": null
+        }
+      ],
+      "children": []
+    },
+    {
+      "name": "THOR_SoM",
+      "label": "THOR SoM",
+      "ref": null,
+      "description": "Hierarchical SoM block",
+      "ports": [
+        {
+          "name": "VIN_12V",
+          "type": "power",
+          "side": "left",
+          "voltage": "12V",
+          "protocol": null,
+          "constraint_class": null,
+          "description": null
+        },
+        {
+          "name": "GND",
+          "type": "ground",
+          "side": "left",
+          "voltage": null,
+          "protocol": null,
+          "constraint_class": null,
+          "description": null
+        },
+        {
+          "name": "CSI_IN0",
+          "type": "input",
+          "side": "left",
+          "voltage": null,
+          "protocol": "CSI2_DPHY",
+          "constraint_class": "CSI2_DPHY",
+          "description": null
+        },
+        {
+          "name": "XFI0",
+          "type": "bidirectional",
+          "side": "right",
+          "voltage": null,
+          "protocol": "XFI",
+          "constraint_class": "10G_XFI",
+          "description": null
+        }
+      ],
+      "children": [
+        {
+          "name": "CPU",
+          "label": "CPU / NVIDIA SoC",
+          "ref": null,
+          "description": null,
+          "ports": [
+            {
+              "name": "VDD_CPU",
+              "type": "power",
+              "side": "left",
+              "voltage": "0.8V",
+              "protocol": null,
+              "constraint_class": null,
+              "description": null
+            },
+            {
+              "name": "CAM_AXI",
+              "type": "input",
+              "side": "right",
+              "voltage": null,
+              "protocol": "AXI_STREAM",
+              "constraint_class": null,
+              "description": null
+            },
+            {
+              "name": "ETH_XFI0",
+              "type": "bidirectional",
+              "side": "right",
+              "voltage": null,
+              "protocol": "XFI",
+              "constraint_class": null,
+              "description": null
+            }
+          ],
+          "children": []
+        },
+        {
+          "name": "PMIC",
+          "label": "PMIC",
+          "ref": null,
+          "description": null,
+          "ports": [
+            {
+              "name": "VIN_12V",
+              "type": "power",
+              "side": "left",
+              "voltage": "12V",
+              "protocol": null,
+              "constraint_class": null,
+              "description": null
+            },
+            {
+              "name": "VDD_CPU",
+              "type": "power",
+              "side": "right",
+              "voltage": "0.8V",
+              "protocol": null,
+              "constraint_class": null,
+              "description": null
+            },
+            {
+              "name": "PGOOD",
+              "type": "output",
+              "side": "right",
+              "voltage": null,
+              "protocol": null,
+              "constraint_class": null,
+              "description": null
+            }
+          ],
+          "children": []
+        },
+        {
+          "name": "CSI_Bridge",
+          "label": "CSI / GMSL Bridge",
+          "ref": null,
+          "description": null,
+          "ports": [
+            {
+              "name": "CSI_IN0",
+              "type": "input",
+              "side": "left",
+              "voltage": null,
+              "protocol": "CSI2_DPHY",
+              "constraint_class": "CSI2_DPHY",
+              "description": null
+            },
+            {
+              "name": "AXI_STREAM",
+              "type": "output",
+              "side": "right",
+              "voltage": null,
+              "protocol": "AXI_STREAM",
+              "constraint_class": null,
+              "description": null
+            }
+          ],
+          "children": []
+        },
+        {
+          "name": "ETH_MAC",
+          "label": "Ethernet MAC",
+          "ref": null,
+          "description": null,
+          "ports": [
+            {
+              "name": "XFI0",
+              "type": "bidirectional",
+              "side": "right",
+              "voltage": null,
+              "protocol": "XFI",
+              "constraint_class": "10G_XFI",
+              "description": null
+            }
+          ],
+          "children": []
+        }
+      ]
+    },
+    {
+      "name": "Ethernet_PHY",
+      "label": "10G Ethernet PHY",
+      "ref": null,
+      "description": null,
+      "ports": [
+        {
+          "name": "XFI",
+          "type": "bidirectional",
+          "side": "left",
+          "voltage": null,
+          "protocol": "XFI",
+          "constraint_class": "10G_XFI",
+          "description": null
+        },
+        {
+          "name": "MDI",
+          "type": "analog",
+          "side": "right",
+          "voltage": null,
+          "protocol": "10GBASE-T",
+          "constraint_class": null,
+          "description": null
+        }
+      ],
+      "children": []
+    }
+  ],
+  "connections": [
+    {
+      "name": "CAM_Link_01",
+      "type": "bus",
+      "source": "Camera_Module.CSI_OUT",
+      "target": "THOR_SoM.CSI_IN0",
+      "protocol": "CSI2_DPHY",
+      "width": 4,
+      "constraint_class": "CSI2_DPHY",
+      "description": null
+    },
+    {
+      "name": "PWR_12V",
+      "type": "net",
+      "source": "Power_Input.VOUT_12V",
+      "target": "THOR_SoM.VIN_12V",
+      "protocol": null,
+      "width": null,
+      "constraint_class": "PWR_12V",
+      "description": null
+    },
+    {
+      "name": "GND",
+      "type": "net",
+      "source": "Power_Input.GND",
+      "target": "THOR_SoM.GND",
+      "protocol": null,
+      "width": null,
+      "constraint_class": "GND",
+      "description": null
+    },
+    {
+      "name": "XFI_Link_01",
+      "type": "bus",
+      "source": "THOR_SoM.XFI0",
+      "target": "Ethernet_PHY.XFI",
+      "protocol": "XFI",
+      "width": 4,
+      "constraint_class": "10G_XFI",
+      "description": null
+    },
+    {
+      "name": "Internal_CSI_To_Bridge",
+      "type": "bus",
+      "source": "THOR_SoM.CSI_IN0",
+      "target": "THOR_SoM.CSI_Bridge.CSI_IN0",
+      "protocol": "CSI2_DPHY",
+      "width": 4,
+      "constraint_class": "CSI2_DPHY",
+      "description": null
+    },
+    {
+      "name": "Internal_AXI_Video",
+      "type": "bus",
+      "source": "THOR_SoM.CSI_Bridge.AXI_STREAM",
+      "target": "THOR_SoM.CPU.CAM_AXI",
+      "protocol": "AXI_STREAM",
+      "width": 32,
+      "constraint_class": null,
+      "description": null
+    },
+    {
+      "name": "Internal_VDD_CPU",
+      "type": "net",
+      "source": "THOR_SoM.PMIC.VDD_CPU",
+      "target": "THOR_SoM.CPU.VDD_CPU",
+      "protocol": null,
+      "width": null,
+      "constraint_class": "PWR_CORE",
+      "description": null
+    },
+    {
+      "name": "Internal_XFI0",
+      "type": "bus",
+      "source": "THOR_SoM.ETH_MAC.XFI0",
+      "target": "THOR_SoM.CPU.ETH_XFI0",
+      "protocol": "XFI",
+      "width": 4,
+      "constraint_class": "10G_XFI",
+      "description": null
+    }
+  ]
+}

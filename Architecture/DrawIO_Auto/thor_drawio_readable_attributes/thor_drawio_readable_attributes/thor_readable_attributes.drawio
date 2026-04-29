@@ -1,0 +1,248 @@
+<?xml version="1.0" ?>
+<mxfile host="app.diagrams.net" agent="thor-readable-attribute-renderer" version="24.0.0" type="device">
+  <diagram name="L1_Domains">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <object label="PSU THOR" kind="block" object_id="PSU_THOR" object_name="PSU THOR" attributes_json="{&quot;domain&quot;:&quot;Power&quot;,&quot;owner&quot;:&quot;PowerDesign&quot;,&quot;asil_relevant&quot;:true,&quot;thermal_budget_W&quot;:25}" level="1" has_children="True" attr_domain="Power" attr_owner="PowerDesign" attr_asil_relevant="True" attr_thermal_budget_W="25">
+          <mxCell id="BLOCK_PSU_THOR" value="&lt;b&gt;PSU THOR&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:10px'&gt;PSU_THOR&lt;/font&gt;&lt;br&gt;&lt;font style='font-size:9px'&gt;domain: Power&lt;br&gt;owner: PowerDesign&lt;br&gt;asil_relevant: True&lt;br&gt;thermal_budget_W: 25&lt;/font&gt;&lt;br&gt;&lt;font style='font-size:10px'&gt;drill-down page available&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8f9fa;strokeColor=#333333;fontStyle=1;link=data:page/id,PSU_THOR;" vertex="1" parent="1">
+            <mxGeometry as="geometry" x="80" y="110" width="320" height="190"/>
+          </mxCell>
+        </object>
+        <object label="VIN 24V" kind="port" object_id="VIN_24V" object_name="VIN 24V" attributes_json="{&quot;voltage&quot;:&quot;24V&quot;,&quot;constraint_class&quot;:&quot;PWR_IN&quot;}" type="power" parent_block_id="PSU_THOR" fqid="PSU_THOR.VIN_24V" attr_voltage="24V" attr_constraint_class="PWR_IN">
+          <mxCell id="PORT_PSU_THOR_VIN_24V" value="VIN 24V" style="shape=rectangle;fillColor=#ffcccc;strokeColor=#cc0000;fontSize=8;" vertex="1" parent="BLOCK_PSU_THOR">
+            <mxGeometry as="geometry" x="0" y="0.25" width="22" height="22" relative="1">
+              <mxPoint x="-11" y="-11" as="offset"/>
+            </mxGeometry>
+          </mxCell>
+        </object>
+        <object label="GND" kind="port" object_id="GND" object_name="GND" attributes_json="{&quot;constraint_class&quot;:&quot;GND&quot;}" type="ground" parent_block_id="PSU_THOR" fqid="PSU_THOR.GND" attr_constraint_class="GND">
+          <mxCell id="PORT_PSU_THOR_GND" value="GND" style="shape=rectangle;fillColor=#e6e6e6;strokeColor=#000000;fontSize=8;" vertex="1" parent="BLOCK_PSU_THOR">
+            <mxGeometry as="geometry" x="0" y="0.5" width="22" height="22" relative="1">
+              <mxPoint x="-11" y="-11" as="offset"/>
+            </mxGeometry>
+          </mxCell>
+        </object>
+        <object label="VOUT Core" kind="port" object_id="VOUT_CORE" object_name="VOUT Core" attributes_json="{&quot;voltage&quot;:&quot;0.8V&quot;,&quot;current_max_A&quot;:80,&quot;constraint_class&quot;:&quot;PWR_CORE&quot;}" type="power" parent_block_id="PSU_THOR" fqid="PSU_THOR.VOUT_CORE" attr_voltage="0.8V" attr_current_max_A="80" attr_constraint_class="PWR_CORE">
+          <mxCell id="PORT_PSU_THOR_VOUT_CORE" value="VOUT Core" style="shape=rectangle;fillColor=#ffcccc;strokeColor=#cc0000;fontSize=8;" vertex="1" parent="BLOCK_PSU_THOR">
+            <mxGeometry as="geometry" x="0" y="0.75" width="22" height="22" relative="1">
+              <mxPoint x="-11" y="-11" as="offset"/>
+            </mxGeometry>
+          </mxCell>
+        </object>
+        <object label="THOR SoM" kind="block" object_id="SoM" object_name="THOR SoM" attributes_json="{&quot;domain&quot;:&quot;Compute&quot;,&quot;processor_family&quot;:&quot;THOR&quot;}" level="1" has_children="False" attr_domain="Compute" attr_processor_family="THOR">
+          <mxCell id="BLOCK_SoM" value="&lt;b&gt;THOR SoM&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:10px'&gt;SoM&lt;/font&gt;&lt;br&gt;&lt;font style='font-size:9px'&gt;domain: Compute&lt;br&gt;processor_family: THOR&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8f9fa;strokeColor=#333333;fontStyle=1;" vertex="1" parent="1">
+            <mxGeometry as="geometry" x="520" y="110" width="320" height="190"/>
+          </mxCell>
+        </object>
+        <object label="VIN Core" kind="port" object_id="VIN_CORE" object_name="VIN Core" attributes_json="{&quot;voltage&quot;:&quot;0.8V&quot;,&quot;constraint_class&quot;:&quot;PWR_CORE&quot;}" type="power" parent_block_id="SoM" fqid="SoM.VIN_CORE" attr_voltage="0.8V" attr_constraint_class="PWR_CORE">
+          <mxCell id="PORT_SoM_VIN_CORE" value="VIN Core" style="shape=rectangle;fillColor=#ffcccc;strokeColor=#cc0000;fontSize=8;" vertex="1" parent="BLOCK_SoM">
+            <mxGeometry as="geometry" x="0" y="0.3333333333333333" width="22" height="22" relative="1">
+              <mxPoint x="-11" y="-11" as="offset"/>
+            </mxGeometry>
+          </mxCell>
+        </object>
+        <object label="GND" kind="port" object_id="GND" object_name="GND" attributes_json="{}" type="ground" parent_block_id="SoM" fqid="SoM.GND">
+          <mxCell id="PORT_SoM_GND" value="GND" style="shape=rectangle;fillColor=#e6e6e6;strokeColor=#000000;fontSize=8;" vertex="1" parent="BLOCK_SoM">
+            <mxGeometry as="geometry" x="0" y="0.6666666666666666" width="22" height="22" relative="1">
+              <mxPoint x="-11" y="-11" as="offset"/>
+            </mxGeometry>
+          </mxCell>
+        </object>
+        <object label="Safety SPI" kind="port" object_id="SAFETY_SPI" object_name="Safety SPI" attributes_json="{&quot;protocol&quot;:&quot;SPI&quot;,&quot;constraint_class&quot;:&quot;SPI&quot;}" type="bidi" parent_block_id="SoM" fqid="SoM.SAFETY_SPI" attr_protocol="SPI" attr_constraint_class="SPI">
+          <mxCell id="PORT_SoM_SAFETY_SPI" value="Safety SPI" style="shape=ellipse;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=8;" vertex="1" parent="BLOCK_SoM">
+            <mxGeometry as="geometry" x="1" y="0.5" width="22" height="22" relative="1">
+              <mxPoint x="-11" y="-11" as="offset"/>
+            </mxGeometry>
+          </mxCell>
+        </object>
+        <object label="Safety Micro" kind="block" object_id="SafetyMicro" object_name="Safety Micro" attributes_json="{&quot;domain&quot;:&quot;Safety&quot;,&quot;asil_relevance&quot;:&quot;high&quot;}" level="1" has_children="False" attr_domain="Safety" attr_asil_relevance="high">
+          <mxCell id="BLOCK_SafetyMicro" value="&lt;b&gt;Safety Micro&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:10px'&gt;SafetyMicro&lt;/font&gt;&lt;br&gt;&lt;font style='font-size:9px'&gt;domain: Safety&lt;br&gt;asil_relevance: high&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8f9fa;strokeColor=#333333;fontStyle=1;" vertex="1" parent="1">
+            <mxGeometry as="geometry" x="960" y="110" width="320" height="190"/>
+          </mxCell>
+        </object>
+        <object label="VIN 3V3" kind="port" object_id="VIN_3V3" object_name="VIN 3V3" attributes_json="{&quot;voltage&quot;:&quot;3.3V&quot;}" type="power" parent_block_id="SafetyMicro" fqid="SafetyMicro.VIN_3V3" attr_voltage="3.3V">
+          <mxCell id="PORT_SafetyMicro_VIN_3V3" value="VIN 3V3" style="shape=rectangle;fillColor=#ffcccc;strokeColor=#cc0000;fontSize=8;" vertex="1" parent="BLOCK_SafetyMicro">
+            <mxGeometry as="geometry" x="0" y="0.3333333333333333" width="22" height="22" relative="1">
+              <mxPoint x="-11" y="-11" as="offset"/>
+            </mxGeometry>
+          </mxCell>
+        </object>
+        <object label="GND" kind="port" object_id="GND" object_name="GND" attributes_json="{}" type="ground" parent_block_id="SafetyMicro" fqid="SafetyMicro.GND">
+          <mxCell id="PORT_SafetyMicro_GND" value="GND" style="shape=rectangle;fillColor=#e6e6e6;strokeColor=#000000;fontSize=8;" vertex="1" parent="BLOCK_SafetyMicro">
+            <mxGeometry as="geometry" x="0" y="0.6666666666666666" width="22" height="22" relative="1">
+              <mxPoint x="-11" y="-11" as="offset"/>
+            </mxGeometry>
+          </mxCell>
+        </object>
+        <object label="SPI to SoM" kind="port" object_id="SPI_TO_SOM" object_name="SPI to SoM" attributes_json="{&quot;protocol&quot;:&quot;SPI&quot;}" type="bidi" parent_block_id="SafetyMicro" fqid="SafetyMicro.SPI_TO_SOM" attr_protocol="SPI">
+          <mxCell id="PORT_SafetyMicro_SPI_TO_SOM" value="SPI to SoM" style="shape=ellipse;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=8;" vertex="1" parent="BLOCK_SafetyMicro">
+            <mxGeometry as="geometry" x="1" y="0.5" width="22" height="22" relative="1">
+              <mxPoint x="-11" y="-11" as="offset"/>
+            </mxGeometry>
+          </mxCell>
+        </object>
+        <object label="PWR_THOR_CORE" kind="connection" object_id="NET_PSU_THOR_CORE_TO_SOM" object_name="PWR_THOR_CORE" attributes_json="{&quot;constraint_class&quot;:&quot;PWR_CORE&quot;,&quot;voltage&quot;:&quot;0.8V&quot;,&quot;current_max_A&quot;:80}" type="net" source="PSU_THOR.VOUT_CORE" target="SoM.VIN_CORE" attr_constraint_class="PWR_CORE" attr_voltage="0.8V" attr_current_max_A="80">
+          <mxCell id="CONN_NET_PSU_THOR_CORE_TO_SOM" value="PWR_THOR_CORE" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeWidth=2;" edge="1" parent="1" source="PORT_PSU_THOR_VOUT_CORE" target="PORT_SoM_VIN_CORE">
+            <mxGeometry as="geometry" relative="1"/>
+          </mxCell>
+        </object>
+        <object label="SAFETY_SPI" kind="connection" object_id="BUS_SOM_TO_SAFETY_SPI" object_name="SAFETY_SPI" attributes_json="{&quot;protocol&quot;:&quot;SPI&quot;,&quot;width&quot;:4,&quot;constraint_class&quot;:&quot;SPI&quot;}" type="bus" source="SoM.SAFETY_SPI" target="SafetyMicro.SPI_TO_SOM" attr_protocol="SPI" attr_width="4" attr_constraint_class="SPI">
+          <mxCell id="CONN_BUS_SOM_TO_SAFETY_SPI" value="SAFETY_SPI" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeWidth=4;dashed=1;" edge="1" parent="1" source="PORT_SoM_SAFETY_SPI" target="PORT_SafetyMicro_SPI_TO_SOM">
+            <mxGeometry as="geometry" relative="1"/>
+          </mxCell>
+        </object>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram name="PSU_THOR">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="TITLE_PSU_THOR" value="PSU THOR / Drill-down" style="text;html=1;strokeColor=none;fillColor=none;fontSize=18;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry as="geometry" x="40" y="20" width="900" height="40"/>
+        </mxCell>
+        <object label="THOR Core Voltage Rail 1" kind="block" object_id="PSU_THOR_Core_Voltage_1" object_name="THOR Core Voltage Rail 1" attributes_json="{&quot;rail&quot;:&quot;VDD_CPU&quot;,&quot;voltage&quot;:&quot;0.8V&quot;,&quot;current_max_A&quot;:80,&quot;ecad_sheet&quot;:&quot;PSU_THOR_CORE&quot;}" level="2" has_children="True" attr_rail="VDD_CPU" attr_voltage="0.8V" attr_current_max_A="80" attr_ecad_sheet="PSU_THOR_CORE">
+          <mxCell id="BLOCK_PSU_THOR_Core_Voltage_1" value="&lt;b&gt;THOR Core Voltage Rail 1&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:10px'&gt;PSU_THOR_Core_Voltage_1&lt;/font&gt;&lt;br&gt;&lt;font style='font-size:9px'&gt;rail: VDD_CPU&lt;br&gt;voltage: 0.8V&lt;br&gt;current_max_A: 80&lt;br&gt;ecad_sheet: PSU_THOR_CORE&lt;/font&gt;&lt;br&gt;&lt;font style='font-size:10px'&gt;drill-down page available&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#666666;fontStyle=1;link=data:page/id,PSU_THOR_Core_Voltage_1;" vertex="1" parent="1">
+            <mxGeometry as="geometry" x="80" y="110" width="320" height="190"/>
+          </mxCell>
+        </object>
+        <object label="VIN" kind="port" object_id="VIN" object_name="VIN" attributes_json="{&quot;voltage&quot;:&quot;12V&quot;}" type="power" parent_block_id="PSU_THOR_Core_Voltage_1" fqid="PSU_THOR_Core_Voltage_1.VIN" attr_voltage="12V">
+          <mxCell id="PORT_PSU_THOR_Core_Voltage_1_VIN" value="VIN" style="shape=rectangle;fillColor=#ffcccc;strokeColor=#cc0000;fontSize=8;" vertex="1" parent="BLOCK_PSU_THOR_Core_Voltage_1">
+            <mxGeometry as="geometry" x="0" y="0.25" width="22" height="22" relative="1">
+              <mxPoint x="-11" y="-11" as="offset"/>
+            </mxGeometry>
+          </mxCell>
+        </object>
+        <object label="GND" kind="port" object_id="GND" object_name="GND" attributes_json="{}" type="ground" parent_block_id="PSU_THOR_Core_Voltage_1" fqid="PSU_THOR_Core_Voltage_1.GND">
+          <mxCell id="PORT_PSU_THOR_Core_Voltage_1_GND" value="GND" style="shape=rectangle;fillColor=#e6e6e6;strokeColor=#000000;fontSize=8;" vertex="1" parent="BLOCK_PSU_THOR_Core_Voltage_1">
+            <mxGeometry as="geometry" x="0" y="0.5" width="22" height="22" relative="1">
+              <mxPoint x="-11" y="-11" as="offset"/>
+            </mxGeometry>
+          </mxCell>
+        </object>
+        <object label="VOUT" kind="port" object_id="VOUT" object_name="VOUT" attributes_json="{&quot;voltage&quot;:&quot;0.8V&quot;,&quot;current_max_A&quot;:80}" type="power" parent_block_id="PSU_THOR_Core_Voltage_1" fqid="PSU_THOR_Core_Voltage_1.VOUT" attr_voltage="0.8V" attr_current_max_A="80">
+          <mxCell id="PORT_PSU_THOR_Core_Voltage_1_VOUT" value="VOUT" style="shape=rectangle;fillColor=#ffcccc;strokeColor=#cc0000;fontSize=8;" vertex="1" parent="BLOCK_PSU_THOR_Core_Voltage_1">
+            <mxGeometry as="geometry" x="0" y="0.75" width="22" height="22" relative="1">
+              <mxPoint x="-11" y="-11" as="offset"/>
+            </mxGeometry>
+          </mxCell>
+        </object>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram name="PSU_THOR_Core_Voltage_1">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="TITLE_PSU_THOR_Core_Voltage_1" value="THOR Core Voltage Rail 1 / Drill-down" style="text;html=1;strokeColor=none;fillColor=none;fontSize=18;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry as="geometry" x="40" y="20" width="900" height="40"/>
+        </mxCell>
+        <object label="Configuration: feedback / enable / sequencing" kind="block" object_id="CFG_PSU_THOR_Core_Voltage_1" object_name="Configuration: feedback / enable / sequencing" attributes_json="{&quot;purpose&quot;:&quot;external functional components configure the rail&quot;}" level="3" has_children="True" attr_purpose="external functional components configure the rail">
+          <mxCell id="BLOCK_CFG_PSU_THOR_Core_Voltage_1" value="&lt;b&gt;Configuration: feedback / enable / sequencing&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:10px'&gt;CFG_PSU_THOR_Core_Voltage_1&lt;/font&gt;&lt;br&gt;&lt;font style='font-size:9px'&gt;purpose: external functional components configure the rail&lt;/font&gt;&lt;br&gt;&lt;font style='font-size:10px'&gt;drill-down page available&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#999999;link=data:page/id,CFG_PSU_THOR_Core_Voltage_1;" vertex="1" parent="1">
+            <mxGeometry as="geometry" x="80" y="110" width="320" height="190"/>
+          </mxCell>
+        </object>
+        <object label="FB" kind="port" object_id="FB" object_name="FB" attributes_json="{&quot;constraint_class&quot;:&quot;ANALOG_FB&quot;}" type="analog" parent_block_id="CFG_PSU_THOR_Core_Voltage_1" fqid="CFG_PSU_THOR_Core_Voltage_1.FB" attr_constraint_class="ANALOG_FB">
+          <mxCell id="PORT_CFG_PSU_THOR_Core_Voltage_1_FB" value="FB" style="shape=ellipse;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=8;" vertex="1" parent="BLOCK_CFG_PSU_THOR_Core_Voltage_1">
+            <mxGeometry as="geometry" x="0" y="0.3333333333333333" width="22" height="22" relative="1">
+              <mxPoint x="-11" y="-11" as="offset"/>
+            </mxGeometry>
+          </mxCell>
+        </object>
+        <object label="EN" kind="port" object_id="EN" object_name="EN" attributes_json="{&quot;constraint_class&quot;:&quot;CTRL&quot;}" type="in" parent_block_id="CFG_PSU_THOR_Core_Voltage_1" fqid="CFG_PSU_THOR_Core_Voltage_1.EN" attr_constraint_class="CTRL">
+          <mxCell id="PORT_CFG_PSU_THOR_Core_Voltage_1_EN" value="EN" style="shape=ellipse;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=8;" vertex="1" parent="BLOCK_CFG_PSU_THOR_Core_Voltage_1">
+            <mxGeometry as="geometry" x="0" y="0.6666666666666666" width="22" height="22" relative="1">
+              <mxPoint x="-11" y="-11" as="offset"/>
+            </mxGeometry>
+          </mxCell>
+        </object>
+        <object label="PGOOD" kind="port" object_id="PGOOD" object_name="PGOOD" attributes_json="{&quot;constraint_class&quot;:&quot;STATUS&quot;}" type="out" parent_block_id="CFG_PSU_THOR_Core_Voltage_1" fqid="CFG_PSU_THOR_Core_Voltage_1.PGOOD" attr_constraint_class="STATUS">
+          <mxCell id="PORT_CFG_PSU_THOR_Core_Voltage_1_PGOOD" value="PGOOD" style="shape=ellipse;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=8;" vertex="1" parent="BLOCK_CFG_PSU_THOR_Core_Voltage_1">
+            <mxGeometry as="geometry" x="1" y="0.5" width="22" height="22" relative="1">
+              <mxPoint x="-11" y="-11" as="offset"/>
+            </mxGeometry>
+          </mxCell>
+        </object>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram name="CFG_PSU_THOR_Core_Voltage_1">
+    <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="TITLE_CFG_PSU_THOR_Core_Voltage_1" value="Configuration: feedback / enable / sequencing / Drill-down" style="text;html=1;strokeColor=none;fillColor=none;fontSize=18;fontStyle=1;" parent="1" vertex="1">
+          <mxGeometry as="geometry" x="40" y="20" width="900" height="40"/>
+        </mxCell>
+        <object label="Reusable Buck Controller Instance" kind="block" object_id="OBJ_Buck_Controller_Reusable_1" object_name="Reusable Buck Controller Instance" attributes_json="{&quot;object_type&quot;:&quot;buck_controller&quot;,&quot;library&quot;:&quot;power.lib&quot;,&quot;reuse&quot;:true,&quot;preferred_vendor&quot;:&quot;tbd&quot;}" level="4" has_children="False" attr_object_type="buck_controller" attr_library="power.lib" attr_reuse="True" attr_preferred_vendor="tbd">
+          <mxCell id="BLOCK_OBJ_Buck_Controller_Reusable_1" value="&lt;b&gt;Reusable Buck Controller Instance&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:10px'&gt;OBJ_Buck_Controller_Reusable_1&lt;/font&gt;&lt;br&gt;&lt;font style='font-size:9px'&gt;object_type: buck_controller&lt;br&gt;library: power.lib&lt;br&gt;reuse: True&lt;br&gt;preferred_vendor: tbd&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b3b3b3;" vertex="1" parent="1">
+            <mxGeometry as="geometry" x="80" y="110" width="320" height="190"/>
+          </mxCell>
+        </object>
+        <object label="VIN" kind="port" object_id="VIN" object_name="VIN" attributes_json="{}" type="power" parent_block_id="OBJ_Buck_Controller_Reusable_1" fqid="OBJ_Buck_Controller_Reusable_1.VIN">
+          <mxCell id="PORT_OBJ_Buck_Controller_Reusable_1_VIN" value="VIN" style="shape=rectangle;fillColor=#ffcccc;strokeColor=#cc0000;fontSize=8;" vertex="1" parent="BLOCK_OBJ_Buck_Controller_Reusable_1">
+            <mxGeometry as="geometry" x="0" y="0.2" width="22" height="22" relative="1">
+              <mxPoint x="-11" y="-11" as="offset"/>
+            </mxGeometry>
+          </mxCell>
+        </object>
+        <object label="SW" kind="port" object_id="SW" object_name="SW" attributes_json="{}" type="analog" parent_block_id="OBJ_Buck_Controller_Reusable_1" fqid="OBJ_Buck_Controller_Reusable_1.SW">
+          <mxCell id="PORT_OBJ_Buck_Controller_Reusable_1_SW" value="SW" style="shape=ellipse;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=8;" vertex="1" parent="BLOCK_OBJ_Buck_Controller_Reusable_1">
+            <mxGeometry as="geometry" x="0" y="0.4" width="22" height="22" relative="1">
+              <mxPoint x="-11" y="-11" as="offset"/>
+            </mxGeometry>
+          </mxCell>
+        </object>
+        <object label="FB" kind="port" object_id="FB" object_name="FB" attributes_json="{}" type="analog" parent_block_id="OBJ_Buck_Controller_Reusable_1" fqid="OBJ_Buck_Controller_Reusable_1.FB">
+          <mxCell id="PORT_OBJ_Buck_Controller_Reusable_1_FB" value="FB" style="shape=ellipse;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=8;" vertex="1" parent="BLOCK_OBJ_Buck_Controller_Reusable_1">
+            <mxGeometry as="geometry" x="0" y="0.6" width="22" height="22" relative="1">
+              <mxPoint x="-11" y="-11" as="offset"/>
+            </mxGeometry>
+          </mxCell>
+        </object>
+        <object label="EN" kind="port" object_id="EN" object_name="EN" attributes_json="{}" type="in" parent_block_id="OBJ_Buck_Controller_Reusable_1" fqid="OBJ_Buck_Controller_Reusable_1.EN">
+          <mxCell id="PORT_OBJ_Buck_Controller_Reusable_1_EN" value="EN" style="shape=ellipse;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=8;" vertex="1" parent="BLOCK_OBJ_Buck_Controller_Reusable_1">
+            <mxGeometry as="geometry" x="0" y="0.8" width="22" height="22" relative="1">
+              <mxPoint x="-11" y="-11" as="offset"/>
+            </mxGeometry>
+          </mxCell>
+        </object>
+        <object label="PGOOD" kind="port" object_id="PGOOD" object_name="PGOOD" attributes_json="{}" type="out" parent_block_id="OBJ_Buck_Controller_Reusable_1" fqid="OBJ_Buck_Controller_Reusable_1.PGOOD">
+          <mxCell id="PORT_OBJ_Buck_Controller_Reusable_1_PGOOD" value="PGOOD" style="shape=ellipse;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=8;" vertex="1" parent="BLOCK_OBJ_Buck_Controller_Reusable_1">
+            <mxGeometry as="geometry" x="1" y="0.5" width="22" height="22" relative="1">
+              <mxPoint x="-11" y="-11" as="offset"/>
+            </mxGeometry>
+          </mxCell>
+        </object>
+        <object label="Reusable Feedback Divider Instance" kind="block" object_id="OBJ_Feedback_Divider_Reusable_1" object_name="Reusable Feedback Divider Instance" attributes_json="{&quot;object_type&quot;:&quot;resistor_divider&quot;,&quot;reuse&quot;:true,&quot;tolerance_percent&quot;:0.1}" level="4" has_children="False" attr_object_type="resistor_divider" attr_reuse="True" attr_tolerance_percent="0.1">
+          <mxCell id="BLOCK_OBJ_Feedback_Divider_Reusable_1" value="&lt;b&gt;Reusable Feedback Divider Instance&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:10px'&gt;OBJ_Feedback_Divider_Reusable_1&lt;/font&gt;&lt;br&gt;&lt;font style='font-size:9px'&gt;object_type: resistor_divider&lt;br&gt;reuse: True&lt;br&gt;tolerance_percent: 0.1&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b3b3b3;" vertex="1" parent="1">
+            <mxGeometry as="geometry" x="520" y="110" width="320" height="190"/>
+          </mxCell>
+        </object>
+        <object label="VOUT Sense" kind="port" object_id="VOUT_SENSE" object_name="VOUT Sense" attributes_json="{}" type="analog" parent_block_id="OBJ_Feedback_Divider_Reusable_1" fqid="OBJ_Feedback_Divider_Reusable_1.VOUT_SENSE">
+          <mxCell id="PORT_OBJ_Feedback_Divider_Reusable_1_VOUT_SENSE" value="VOUT Sense" style="shape=ellipse;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=8;" vertex="1" parent="BLOCK_OBJ_Feedback_Divider_Reusable_1">
+            <mxGeometry as="geometry" x="0" y="0.3333333333333333" width="22" height="22" relative="1">
+              <mxPoint x="-11" y="-11" as="offset"/>
+            </mxGeometry>
+          </mxCell>
+        </object>
+        <object label="FB Out" kind="port" object_id="FB_OUT" object_name="FB Out" attributes_json="{}" type="analog" parent_block_id="OBJ_Feedback_Divider_Reusable_1" fqid="OBJ_Feedback_Divider_Reusable_1.FB_OUT">
+          <mxCell id="PORT_OBJ_Feedback_Divider_Reusable_1_FB_OUT" value="FB Out" style="shape=ellipse;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=8;" vertex="1" parent="BLOCK_OBJ_Feedback_Divider_Reusable_1">
+            <mxGeometry as="geometry" x="0" y="0.6666666666666666" width="22" height="22" relative="1">
+              <mxPoint x="-11" y="-11" as="offset"/>
+            </mxGeometry>
+          </mxCell>
+        </object>
+        <object label="BUCK_FB" kind="connection" object_id="NET_BUCK_FB" object_name="BUCK_FB" attributes_json="{&quot;constraint_class&quot;:&quot;ANALOG_FB&quot;}" type="net" source="OBJ_Feedback_Divider_Reusable_1.FB_OUT" target="OBJ_Buck_Controller_Reusable_1.FB" attr_constraint_class="ANALOG_FB">
+          <mxCell id="CONN_NET_BUCK_FB" value="BUCK_FB" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;endArrow=block;strokeWidth=2;" edge="1" parent="1" source="PORT_OBJ_Feedback_Divider_Reusable_1_FB_OUT" target="PORT_OBJ_Buck_Controller_Reusable_1_FB">
+            <mxGeometry as="geometry" relative="1"/>
+          </mxCell>
+        </object>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

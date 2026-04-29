@@ -1,0 +1,13 @@
+Struktur:
+
+Level 1 --> Domänen (PSU_THOR, PSU_ETH, SoM, SafetyMicro, Radar, ...)
+Level 2 --> Architekturelemente (PSU_THOR_Core_Voltage_1, PSU_ETH_VDDIO_1, ...)
+Level 3 --> Konfigurationsebene (hier werden externe funktionale Bauteile an die funktionalen Instanzen angeschlossen um diese zu konfigurieren)
+Level 4 --> funktionale Instanzen von wiederverwendbaren Objekten
+
+Anforderungen für die Blöcke:
+
+Block: Eindeutiger Name + ID, ggf. weitere Attribute die proprietär an das Objekt gehängt werden können
+Ports: Portname + ID, Port Type als Attribut (In, Out, Bidi, Power, Ground, Analog)
+Verbindungen/(Netze,Busse): eindeutiger Verbindername als Attribut + ID, Type als Bus oder Net als Attribut
+

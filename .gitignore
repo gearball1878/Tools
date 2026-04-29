@@ -1,0 +1,78 @@
+# 🔁 Rekursiv alle Build-/Release-Ordner
+**/build/
+**/dist/
+**/out/
+**/release/
+**/debug/
+**/target/
+**/__archive__
+
+# 🔒 Archives / Pakete
+*.zip
+*.tar
+*.gz
+*.bz2
+*.7z
+*.rar
+
+# 📦 Installer / Packages
+*.exe
+*.msi
+*.pkg
+*.deb
+*.rpm
+*.dmg
+*.iso
+
+# 🧱 Binary / Compiled Files
+*.bin
+*.dll
+*.so
+*.o
+*.a
+*.class
+*.pyc
+
+# 📁 Logs & Temp
+*.log
+*.tmp
+*.temp
+*.swp
+*.bak
+*.cache
+
+# 👻 Versteckte Dateien (typisch)
+.*
+!.gitignore
+!.gitattributes
+
+# Office Temp Files
+
+~$*
+
+# Allgemeine versteckte temporäre Dateien
+
+*.tmp
+*.temp
+
+
+# 🧑‍💻 IDE / Editor Files
+.vscode/
+.idea/
+*.iml
+
+# 🖥️ OS Files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 🐍 Python Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+
+# 🐍 Python Cache & Tools
+__pycache__/
+.pytest_cache/
+.mypy_cache/
