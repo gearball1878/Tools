@@ -1,0 +1,890 @@
+{
+  "global_attributes": [
+    "RefDes",
+    "Package",
+    "Order Code",
+    "Value"
+  ],
+  "types": {
+    "R": {
+      "prefix": "R",
+      "subtypes": {
+        "Generic Resistor": {
+          "body": {
+            "shape": "resistor"
+          }
+        },
+        "Shunt": {
+          "attributes": [
+            "Power",
+            "Current Rating",
+            "Sense Tolerance"
+          ],
+          "body": {
+            "shape": "resistor"
+          }
+        },
+        "NTC": {
+          "attributes": [
+            "B-Value",
+            "R25",
+            "Temperature Range"
+          ],
+          "body": {
+            "shape": "resistor"
+          }
+        },
+        "PTC": {
+          "attributes": [
+            "Trip Current",
+            "Hold Current"
+          ],
+          "body": {
+            "shape": "resistor"
+          }
+        },
+        "Varistor": {
+          "attributes": [
+            "Clamping Voltage",
+            "Energy",
+            "Surge Current"
+          ],
+          "body": {
+            "shape": "resistor"
+          }
+        }
+      },
+      "attributes": [
+        "Resistance",
+        "Tolerance",
+        "Power",
+        "Voltage Rating",
+        "Technology",
+        "Temperature Coefficient"
+      ],
+      "body": {
+        "width": 8,
+        "height": 4,
+        "shape": "resistor"
+      },
+      "default_pins": [
+        {
+          "number": "1",
+          "name": "A",
+          "type": "PASSIVE",
+          "side": "left"
+        },
+        {
+          "number": "2",
+          "name": "B",
+          "type": "PASSIVE",
+          "side": "right"
+        }
+      ]
+    },
+    "L": {
+      "prefix": "L",
+      "subtypes": {
+        "Generic Inductor": {
+          "body": {
+            "shape": "inductor"
+          }
+        },
+        "Choke": {
+          "attributes": [
+            "Current Rating",
+            "DCR",
+            "Impedance"
+          ],
+          "body": {
+            "shape": "inductor"
+          }
+        },
+        "Ferrite Bead": {
+          "attributes": [
+            "Impedance",
+            "Frequency",
+            "Current Rating"
+          ],
+          "body": {
+            "shape": "inductor"
+          }
+        }
+      },
+      "attributes": [
+        "Inductance",
+        "Tolerance",
+        "Current Rating",
+        "DCR",
+        "SRF",
+        "Core Material"
+      ],
+      "body": {
+        "width": 8,
+        "height": 4,
+        "shape": "inductor"
+      },
+      "default_pins": [
+        {
+          "number": "1",
+          "name": "A",
+          "type": "PASSIVE",
+          "side": "left"
+        },
+        {
+          "number": "2",
+          "name": "B",
+          "type": "PASSIVE",
+          "side": "right"
+        }
+      ]
+    },
+    "C": {
+      "prefix": "C",
+      "subtypes": {
+        "Kerko": {
+          "attributes": [
+            "Dielectric",
+            "Voltage Rating",
+            "DC Bias"
+          ],
+          "body": {
+            "shape": "capacitor"
+          }
+        },
+        "Elko": {
+          "attributes": [
+            "Polarity",
+            "Ripple Current",
+            "ESR",
+            "Lifetime"
+          ],
+          "body": {
+            "shape": "capacitor"
+          }
+        },
+        "Tantal": {
+          "attributes": [
+            "Polarity",
+            "ESR",
+            "Surge Current"
+          ],
+          "body": {
+            "shape": "capacitor"
+          }
+        },
+        "Film": {
+          "attributes": [
+            "Dielectric",
+            "Pulse Rating"
+          ],
+          "body": {
+            "shape": "capacitor"
+          }
+        }
+      },
+      "attributes": [
+        "Capacitance",
+        "Tolerance",
+        "Voltage Rating",
+        "Dielectric",
+        "ESR",
+        "Temperature Coefficient"
+      ],
+      "body": {
+        "width": 8,
+        "height": 4,
+        "shape": "capacitor"
+      },
+      "default_pins": [
+        {
+          "number": "1",
+          "name": "P1",
+          "type": "PASSIVE",
+          "side": "left"
+        },
+        {
+          "number": "2",
+          "name": "P2",
+          "type": "PASSIVE",
+          "side": "right"
+        }
+      ]
+    },
+    "Oscillator": {
+      "prefix": "X",
+      "subtypes": {
+        "XO": {},
+        "TCXO": {
+          "attributes": [
+            "Stability",
+            "Control Voltage"
+          ]
+        },
+        "VCXO": {
+          "attributes": [
+            "Pull Range",
+            "Control Voltage"
+          ]
+        }
+      },
+      "attributes": [
+        "Frequency",
+        "Stability",
+        "Supply Voltage",
+        "Output Type",
+        "Enable Pin"
+      ],
+      "body": {
+        "width": 12,
+        "height": 8,
+        "shape": "rect"
+      },
+      "default_pins": [
+        {
+          "number": "1",
+          "name": "EN",
+          "type": "IN",
+          "side": "left"
+        },
+        {
+          "number": "2",
+          "name": "GND",
+          "type": "GROUND",
+          "side": "left"
+        },
+        {
+          "number": "3",
+          "name": "OUT",
+          "type": "OUT",
+          "side": "right"
+        },
+        {
+          "number": "4",
+          "name": "VDD",
+          "type": "POWER",
+          "side": "right"
+        }
+      ]
+    },
+    "IC": {
+      "prefix": "U",
+      "subtypes": {
+        "Generic IC": {},
+        "OpAmp": {
+          "attributes": [
+            "Gain Bandwidth",
+            "Input Offset",
+            "Slew Rate"
+          ],
+          "body": {
+            "shape": "opamp"
+          }
+        },
+        "Logic": {
+          "attributes": [
+            "Logic Family",
+            "Propagation Delay"
+          ]
+        },
+        "Regulator": {
+          "attributes": [
+            "Output Voltage",
+            "Output Current",
+            "Dropout Voltage"
+          ]
+        }
+      },
+      "attributes": [
+        "Manufacturer",
+        "Technology",
+        "Supply Voltage",
+        "Operating Temperature",
+        "Lifecycle"
+      ],
+      "body": {
+        "width": 16,
+        "height": 24,
+        "shape": "rect"
+      },
+      "default_pins": []
+    },
+    "SoC": {
+      "prefix": "U",
+      "subtypes": {
+        "MCU": {
+          "attributes": [
+            "Core",
+            "Flash",
+            "RAM"
+          ]
+        },
+        "MPU": {
+          "attributes": [
+            "Core",
+            "RAM Interface"
+          ]
+        },
+        "Wireless SoC": {
+          "attributes": [
+            "Radio",
+            "Antenna Interface"
+          ]
+        }
+      },
+      "attributes": [
+        "Core",
+        "Frequency",
+        "Flash",
+        "RAM",
+        "Supply Voltage",
+        "Package",
+        "Temperature Grade"
+      ],
+      "body": {
+        "width": 20,
+        "height": 32,
+        "shape": "rect"
+      },
+      "default_pins": []
+    },
+    "SoM": {
+      "prefix": "M",
+      "subtypes": {
+        "Compute Module": {},
+        "Radio Module": {},
+        "Power Module": {}
+      },
+      "attributes": [
+        "Module Type",
+        "Interface",
+        "Supply Voltage",
+        "Power",
+        "Certification"
+      ],
+      "body": {
+        "width": 22,
+        "height": 32,
+        "shape": "rect"
+      },
+      "default_pins": []
+    },
+    "FET": {
+      "prefix": "Q",
+      "subtypes": {
+        "N-MOSFET": {
+          "attributes": [
+            "Vds",
+            "RdsOn",
+            "Gate Charge"
+          ]
+        },
+        "P-MOSFET": {
+          "attributes": [
+            "Vds",
+            "RdsOn",
+            "Gate Charge"
+          ]
+        },
+        "JFET": {
+          "attributes": [
+            "Vds",
+            "Idss"
+          ]
+        }
+      },
+      "attributes": [
+        "Vds",
+        "Id",
+        "RdsOn",
+        "Vgs",
+        "Power",
+        "Package"
+      ],
+      "body": {
+        "width": 10,
+        "height": 8,
+        "shape": "transistor"
+      },
+      "default_pins": [
+        {
+          "number": "1",
+          "name": "G",
+          "type": "IN",
+          "side": "left"
+        },
+        {
+          "number": "2",
+          "name": "D",
+          "type": "ANALOG",
+          "side": "right"
+        },
+        {
+          "number": "3",
+          "name": "S",
+          "type": "ANALOG",
+          "side": "right"
+        }
+      ]
+    },
+    "Bipolar Transistor": {
+      "prefix": "Q",
+      "subtypes": {
+        "NPN": {},
+        "PNP": {},
+        "Darlington": {}
+      },
+      "attributes": [
+        "Vce",
+        "Ic",
+        "hFE",
+        "Power",
+        "Package"
+      ],
+      "body": {
+        "width": 10,
+        "height": 8,
+        "shape": "transistor"
+      },
+      "default_pins": [
+        {
+          "number": "1",
+          "name": "B",
+          "type": "IN",
+          "side": "left"
+        },
+        {
+          "number": "2",
+          "name": "C",
+          "type": "ANALOG",
+          "side": "right"
+        },
+        {
+          "number": "3",
+          "name": "E",
+          "type": "ANALOG",
+          "side": "right"
+        }
+      ]
+    },
+    "Quartz": {
+      "prefix": "Y",
+      "subtypes": {
+        "2-Pin Crystal": {},
+        "4-Pin Crystal": {
+          "pins": 4
+        },
+        "Resonator": {}
+      },
+      "attributes": [
+        "Frequency",
+        "Load Capacitance",
+        "Tolerance",
+        "ESR",
+        "Drive Level"
+      ],
+      "body": {
+        "width": 10,
+        "height": 6,
+        "shape": "capacitor"
+      },
+      "default_pins": [
+        {
+          "number": "1",
+          "name": "XTAL1",
+          "type": "PASSIVE",
+          "side": "left"
+        },
+        {
+          "number": "2",
+          "name": "XTAL2",
+          "type": "PASSIVE",
+          "side": "right"
+        }
+      ]
+    },
+    "Diode": {
+      "prefix": "D",
+      "subtypes": {
+        "Signal Diode": {
+          "body": {
+            "shape": "diode"
+          }
+        },
+        "Schottky": {
+          "attributes": [
+            "Vf",
+            "If",
+            "Vr"
+          ],
+          "body": {
+            "shape": "diode"
+          }
+        },
+        "Zener": {
+          "attributes": [
+            "Vz",
+            "Power",
+            "Tolerance"
+          ],
+          "body": {
+            "shape": "diode"
+          }
+        },
+        "LED": {
+          "attributes": [
+            "Color",
+            "Wavelength",
+            "Luminous Intensity"
+          ],
+          "body": {
+            "shape": "diode"
+          }
+        },
+        "TVS": {
+          "attributes": [
+            "Breakdown Voltage",
+            "Clamping Voltage",
+            "Peak Pulse Current"
+          ],
+          "body": {
+            "shape": "diode"
+          }
+        }
+      },
+      "attributes": [
+        "Vf",
+        "If",
+        "Vr",
+        "Power",
+        "Package"
+      ],
+      "body": {
+        "width": 8,
+        "height": 4,
+        "shape": "diode"
+      },
+      "default_pins": [
+        {
+          "number": "1",
+          "name": "A",
+          "type": "PASSIVE",
+          "side": "left"
+        },
+        {
+          "number": "2",
+          "name": "K",
+          "type": "PASSIVE",
+          "side": "right"
+        }
+      ]
+    },
+    "Connector": {
+      "prefix": "J",
+      "subtypes": {
+        "Header": {},
+        "USB": {
+          "attributes": [
+            "USB Type",
+            "Speed",
+            "Shield"
+          ]
+        },
+        "Board-to-Board": {
+          "attributes": [
+            "Pitch",
+            "Rows",
+            "Positions"
+          ]
+        },
+        "Terminal Block": {
+          "attributes": [
+            "Pitch",
+            "Current Rating"
+          ]
+        }
+      },
+      "attributes": [
+        "Positions",
+        "Pitch",
+        "Rows",
+        "Gender",
+        "Current Rating",
+        "Voltage Rating"
+      ],
+      "body": {
+        "width": 12,
+        "height": 18,
+        "shape": "connector"
+      },
+      "default_pins": [
+        {
+          "number": "1",
+          "name": "PIN1",
+          "type": "BIDI",
+          "side": "left"
+        },
+        {
+          "number": "2",
+          "name": "PIN2",
+          "type": "BIDI",
+          "side": "right"
+        }
+      ]
+    },
+    "Fuse": {
+      "prefix": "F",
+      "subtypes": {
+        "Fuse": {},
+        "Polyfuse": {
+          "attributes": [
+            "Hold Current",
+            "Trip Current"
+          ]
+        }
+      },
+      "attributes": [
+        "Current Rating",
+        "Voltage Rating",
+        "Breaking Capacity",
+        "Resistance"
+      ],
+      "body": {
+        "width": 8,
+        "height": 4,
+        "shape": "fuse"
+      },
+      "default_pins": [
+        {
+          "number": "1",
+          "name": "A",
+          "type": "PASSIVE",
+          "side": "left"
+        },
+        {
+          "number": "2",
+          "name": "B",
+          "type": "PASSIVE",
+          "side": "right"
+        }
+      ]
+    },
+    "Battery": {
+      "prefix": "BT",
+      "subtypes": {
+        "Cell": {},
+        "Pack": {
+          "attributes": [
+            "Cell Count",
+            "Protection"
+          ]
+        },
+        "Supercap": {
+          "attributes": [
+            "Capacitance",
+            "ESR"
+          ],
+          "body": {
+            "shape": "capacitor"
+          }
+        }
+      },
+      "attributes": [
+        "Voltage",
+        "Capacity",
+        "Chemistry",
+        "Rechargeable",
+        "Max Current"
+      ],
+      "body": {
+        "width": 10,
+        "height": 8,
+        "shape": "battery"
+      },
+      "default_pins": [
+        {
+          "number": "1",
+          "name": "PLUS",
+          "type": "POWER",
+          "side": "right"
+        },
+        {
+          "number": "2",
+          "name": "MINUS",
+          "type": "GROUND",
+          "side": "left"
+        }
+      ]
+    },
+    "Transformer": {
+      "prefix": "T",
+      "subtypes": {
+        "Power Transformer": {},
+        "Signal Transformer": {},
+        "Current Transformer": {}
+      },
+      "attributes": [
+        "Turns Ratio",
+        "Primary Voltage",
+        "Secondary Voltage",
+        "Power",
+        "Isolation Voltage"
+      ],
+      "body": {
+        "width": 16,
+        "height": 16,
+        "shape": "transformer"
+      },
+      "default_pins": [
+        {
+          "number": "1",
+          "name": "PRI1",
+          "type": "PASSIVE",
+          "side": "left"
+        },
+        {
+          "number": "2",
+          "name": "PRI2",
+          "type": "PASSIVE",
+          "side": "left"
+        },
+        {
+          "number": "3",
+          "name": "SEC1",
+          "type": "PASSIVE",
+          "side": "right"
+        },
+        {
+          "number": "4",
+          "name": "SEC2",
+          "type": "PASSIVE",
+          "side": "right"
+        }
+      ]
+    },
+    "Relay": {
+      "prefix": "K",
+      "subtypes": {
+        "SPST": {},
+        "SPDT": {},
+        "DPDT": {},
+        "Solid State Relay": {}
+      },
+      "attributes": [
+        "Coil Voltage",
+        "Contact Rating",
+        "Coil Resistance",
+        "Contact Form"
+      ],
+      "body": {
+        "width": 16,
+        "height": 12,
+        "shape": "rect"
+      },
+      "default_pins": [
+        {
+          "number": "1",
+          "name": "COIL+",
+          "type": "POWER",
+          "side": "left"
+        },
+        {
+          "number": "2",
+          "name": "COIL-",
+          "type": "GROUND",
+          "side": "left"
+        },
+        {
+          "number": "3",
+          "name": "COM",
+          "type": "BIDI",
+          "side": "right"
+        },
+        {
+          "number": "4",
+          "name": "NO",
+          "type": "BIDI",
+          "side": "right"
+        }
+      ]
+    },
+    "Switch": {
+      "prefix": "S",
+      "subtypes": {
+        "Push Button": {},
+        "DIP Switch": {},
+        "Toggle": {},
+        "Rotary": {}
+      },
+      "attributes": [
+        "Contact Rating",
+        "Positions",
+        "Poles",
+        "Actuator"
+      ],
+      "body": {
+        "width": 10,
+        "height": 8,
+        "shape": "rect"
+      },
+      "default_pins": [
+        {
+          "number": "1",
+          "name": "A",
+          "type": "PASSIVE",
+          "side": "left"
+        },
+        {
+          "number": "2",
+          "name": "B",
+          "type": "PASSIVE",
+          "side": "right"
+        }
+      ]
+    },
+    "Sensor": {
+      "prefix": "U",
+      "subtypes": {
+        "Temperature": {},
+        "Pressure": {},
+        "Current": {},
+        "Hall": {},
+        "IMU": {}
+      },
+      "attributes": [
+        "Measurement Range",
+        "Accuracy",
+        "Interface",
+        "Supply Voltage",
+        "Output Type"
+      ],
+      "body": {
+        "width": 14,
+        "height": 14,
+        "shape": "circle"
+      },
+      "default_pins": []
+    },
+    "Mechanical": {
+      "prefix": "MP",
+      "subtypes": {
+        "Mounting Hole": {},
+        "Test Point": {
+          "prefix": "TP"
+        },
+        "Fiducial": {}
+      },
+      "attributes": [
+        "Mechanical Type",
+        "Diameter",
+        "Plating"
+      ],
+      "body": {
+        "width": 6,
+        "height": 6,
+        "shape": "circle"
+      },
+      "default_pins": []
+    }
+  }
+}

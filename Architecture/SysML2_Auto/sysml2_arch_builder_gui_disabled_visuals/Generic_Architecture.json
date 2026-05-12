@@ -1,0 +1,188 @@
+{
+  "name": "Generic_Architecture",
+  "blocks": [
+    {
+      "name": "PSU",
+      "level": "Level1_Domain",
+      "id": "BLK-EC175E18CE",
+      "kind": "Domain",
+      "is_host": false,
+      "color": "#f8cecc",
+      "attributes": {
+        "domainColor": "#f8cecc"
+      },
+      "ports": [],
+      "children": [
+        {
+          "name": "PSU_1",
+          "level": "Level2_ArchitectureElement",
+          "id": "BLK-2C9CF8DE48",
+          "kind": "ArchitectureElement",
+          "is_host": false,
+          "color": "#f8cecc",
+          "attributes": {
+            "domainColor": "#f8cecc"
+          },
+          "ports": [
+            {
+              "name": "SPI_Link_1",
+              "port_type": "Bidi",
+              "id": "PRT-F272E72EB3",
+              "attributes": {
+                "interfaceName": "SPI_Link_1",
+                "connectionType": "Bus",
+                "signals": [
+                  "SPI_Link_1_SCLK",
+                  "SPI_Link_1_CS0#",
+                  "SPI_Link_1_CS1#",
+                  "SPI_Link_1_CS2#",
+                  "SPI_Link_1_CS3#",
+                  "SPI_Link_1_MOSI",
+                  "SPI_Link_1_MISO"
+                ],
+                "ecadSignals": [
+                  "SPI_Link_1_SCLK",
+                  "SPI_Link_1_CS0#",
+                  "SPI_Link_1_CS1#",
+                  "SPI_Link_1_CS2#",
+                  "SPI_Link_1_CS3#",
+                  "SPI_Link_1_MOSI",
+                  "SPI_Link_1_MISO"
+                ],
+                "generatedBy": "BusContentWizard",
+                "netId": "NET-A135C368A8",
+                "family": "interface",
+                "template": "SPI_[Link/Port]",
+                "instanceIndex": 1,
+                "bcLine": "SPI_Link_1 SPI_Link_1_SCLK,SPI_Link_1_CS0#,SPI_Link_1_CS1#,SPI_Link_1_CS2#,SPI_Link_1_CS3#,SPI_Link_1_MOSI,SPI_Link_1_MISO",
+                "busContentName": "SPI_Link_1",
+                "propagateToParent": false
+              }
+            },
+            {
+              "name": "SPI_Link_2",
+              "port_type": "Bidi",
+              "id": "PRT-8F8CF863D0",
+              "attributes": {
+                "interfaceName": "SPI_Link_2",
+                "connectionType": "Bus",
+                "signals": [
+                  "SPI_Link_2_SCLK",
+                  "SPI_Link_2_CS0#",
+                  "SPI_Link_2_CS1#",
+                  "SPI_Link_2_CS2#",
+                  "SPI_Link_2_CS3#",
+                  "SPI_Link_2_MOSI",
+                  "SPI_Link_2_MISO"
+                ],
+                "ecadSignals": [
+                  "SPI_Link_2_SCLK",
+                  "SPI_Link_2_CS0#",
+                  "SPI_Link_2_CS1#",
+                  "SPI_Link_2_CS2#",
+                  "SPI_Link_2_CS3#",
+                  "SPI_Link_2_MOSI",
+                  "SPI_Link_2_MISO"
+                ],
+                "generatedBy": "BusContentWizard",
+                "netId": "NET-EABE268B1E",
+                "family": "interface",
+                "template": "SPI_[Link/Port]",
+                "instanceIndex": 2,
+                "bcLine": "SPI_Link_2 SPI_Link_2_SCLK,SPI_Link_2_CS0#,SPI_Link_2_CS1#,SPI_Link_2_CS2#,SPI_Link_2_CS3#,SPI_Link_2_MOSI,SPI_Link_2_MISO",
+                "busContentName": "SPI_Link_2",
+                "propagateToParent": false
+              }
+            }
+          ],
+          "children": []
+        }
+      ]
+    }
+  ],
+  "connections": [],
+  "net_references": [
+    {
+      "name": "SPI_Link_1",
+      "reference_type": "Bus",
+      "end": {
+        "block_path": "PSU.PSU_1",
+        "port_name": "SPI_Link_1"
+      },
+      "direction": "Bidi",
+      "id": "REF-9E144FF7D4",
+      "net_id": "NET-A135C368A8",
+      "attributes": {
+        "interfaceName": "SPI_Link_1",
+        "connectionType": "Bus",
+        "signals": [
+          "SPI_Link_1_SCLK",
+          "SPI_Link_1_CS0#",
+          "SPI_Link_1_CS1#",
+          "SPI_Link_1_CS2#",
+          "SPI_Link_1_CS3#",
+          "SPI_Link_1_MOSI",
+          "SPI_Link_1_MISO"
+        ],
+        "ecadSignals": [
+          "SPI_Link_1_SCLK",
+          "SPI_Link_1_CS0#",
+          "SPI_Link_1_CS1#",
+          "SPI_Link_1_CS2#",
+          "SPI_Link_1_CS3#",
+          "SPI_Link_1_MOSI",
+          "SPI_Link_1_MISO"
+        ],
+        "generatedBy": "BusContentWizard",
+        "netId": "NET-A135C368A8",
+        "family": "interface",
+        "template": "SPI_[Link/Port]",
+        "instanceIndex": 1,
+        "bcLine": "SPI_Link_1 SPI_Link_1_SCLK,SPI_Link_1_CS0#,SPI_Link_1_CS1#,SPI_Link_1_CS2#,SPI_Link_1_CS3#,SPI_Link_1_MOSI,SPI_Link_1_MISO",
+        "busContentName": "SPI_Link_1",
+        "propagateToParent": false
+      }
+    },
+    {
+      "name": "SPI_Link_2",
+      "reference_type": "Bus",
+      "end": {
+        "block_path": "PSU.PSU_1",
+        "port_name": "SPI_Link_2"
+      },
+      "direction": "Bidi",
+      "id": "REF-52818B3B55",
+      "net_id": "NET-EABE268B1E",
+      "attributes": {
+        "interfaceName": "SPI_Link_2",
+        "connectionType": "Bus",
+        "signals": [
+          "SPI_Link_2_SCLK",
+          "SPI_Link_2_CS0#",
+          "SPI_Link_2_CS1#",
+          "SPI_Link_2_CS2#",
+          "SPI_Link_2_CS3#",
+          "SPI_Link_2_MOSI",
+          "SPI_Link_2_MISO"
+        ],
+        "ecadSignals": [
+          "SPI_Link_2_SCLK",
+          "SPI_Link_2_CS0#",
+          "SPI_Link_2_CS1#",
+          "SPI_Link_2_CS2#",
+          "SPI_Link_2_CS3#",
+          "SPI_Link_2_MOSI",
+          "SPI_Link_2_MISO"
+        ],
+        "generatedBy": "BusContentWizard",
+        "netId": "NET-EABE268B1E",
+        "family": "interface",
+        "template": "SPI_[Link/Port]",
+        "instanceIndex": 2,
+        "bcLine": "SPI_Link_2 SPI_Link_2_SCLK,SPI_Link_2_CS0#,SPI_Link_2_CS1#,SPI_Link_2_CS2#,SPI_Link_2_CS3#,SPI_Link_2_MOSI,SPI_Link_2_MISO",
+        "busContentName": "SPI_Link_2",
+        "propagateToParent": false
+      }
+    }
+  ]
+}

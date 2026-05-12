@@ -1,0 +1,6 @@
+Pin Name|Pin Type|Pin Function|Pin Number
+VDD|POWER||1
+VSS|GROUND||2
+PA0|BIDI|ADC_IN0|A1
+PA1|BIDI|USART2_TX|A2
+RESET|IN||R1

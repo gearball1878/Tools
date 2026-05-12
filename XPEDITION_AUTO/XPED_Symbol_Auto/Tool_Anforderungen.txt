@@ -1,0 +1,43 @@
+Ich möchte mit Pyside6 einen automatisierten Symboleditor bauen, welcher folgende Features bereitstellt:
+
+--> es müssen klassische grafische 2D-Objekte gezeichnet werden können.
+--> Das Rastermaß ist 0.100 inch, aber auch veränderbar im Bereich 0.05inch wenn erforderlich.
+--> Textuelle Felder sollen auch möglich sein, so dass man ggf. Informationen hinzufügen kann.
+	--> Font und Farbe sollen als Attribute wählbar sein
+--> Die gezeichneten Objekte sollen je nach Typ mit Attributen versehen werden.
+	--> TYPE:
+		--> Symbolbody (attribute-type: SYMBOL): 
+			- Order Code
+			- Package
+			- RefDes
+			- Value
+			- Frequency
+			- Tolerance
+			- Technology
+			--> ist ggf. einfachh erweiterbar
+		--> Pin (attribute-type: PIN): 
+			- Pin Number (kann auch ein Array Code mit Buschstaben und Zahlen sein, z.B. A14 o.Ä.)
+			- Pin Type (IN, OUT, BIDI, POWER, GROUND, ANALOG)
+			- Pin Name (übergeorneter Pin-Name, vorallem Interessant, wenn es mehrere Funktionen gibt)
+			- Pin Function (ist interessant,, wenn ein Pin mit unterschiedlichen Funktionen belegt ist)
+			--> ist ggf. einfachh erweiterbar
+--> Es müssen aufgeteilte Symbole möglich sein. Es sollen ja nach Anzahl der Symbole entprechende Reiter mit Funktionsgruppen angelegt werden.
+	--> Die Funktionsgruppen können aus einer Pinmuxliste in einem adäquaten Format bereitgestellt werden (bitte geeignetes Format vorschlagen).
+		hier wäre ein intelligenter Wizard von Vorteil um eine initiale Aufteilung vorzuschlagen
+--> Der ORIGO liegt immer beim Symbolbody (die Lage kann über ein Dropdown ausgesucht werden --> unten links, unten rechts, mittig zentriert, oben links, oben rechts)
+			--> Es muss immer darauf geachtet werden, dass neu angelegte Objekte auf dem vorgewählten Raster liegen!
+--> Die Farbe der Symbole bzw. der Pins muss RGB-wählbar sein.
+--> invertierte Pins sind mit einem kleinen Kreis richtung Symbolbody zu versehen.
+--> Pins können entweder links oder rechts an das Symbol angedockt werden. 
+--> minimaler Abstand der Pins beträgt für POWER und Ground 1x das eingestellte Rastermaß, für alle anderen Funktionen 2x das eingestellte Rastermaß.
+--> Pin Name und Pin Function werden mit 1 x eingestelltem Rastermaß, auf der linken Seite linksbündig rechts und auf der rechten Seite rechtsbündig links auf der Höhe des entsprechenden Pins zunächst nebeneinander
+eingeblendet, Es kann über eine Visbility Funktion ausgewählt werde, was später im Symbol angezeigt werden soll.
+--> Pin Nummer wird in halber Rastermaßgröße, oberhalb vom Pin, mittig eingeblendet. Die Ausrichtung findet in halben selektieren Rastermaß statt.
+--> Der RefDes am Symbolbody steht immer oberhalb vom Symbol, entweder linksbündig oder rechtsbündig. Die Schriftgröße entspricht 90% des Rastermaßes, jedoch macimal 0.100 inch!
+	--> Die Ausrichtung erfolgt innerhalb des Rastermaßes unten links oder unten rechts.
+--> Alle anderen Symbolbody Attribute werden unterhalb dees Symbolbodies untereinander im Abstand des Rastermaßes angeordnet.
+	--> Die Auswahl der sichtbaren Attribute kann auch defineirt werden. Empfohlen sind je nach Bauteiltyp ein anderes Set von Attributen (wird später noch genauer defineirt pro Bauteilgruppe).
+	--> Die Ausrichtung erfolgt innerhalb des Rastermaßes oben links oder oben rechts.
+ 
+
+	

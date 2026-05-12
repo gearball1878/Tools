@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" type="device">
+  <diagram id="page__01_Domains" name="01_Domains">
+    <mxGraphModel grid="1" gridSize="10" page="1" pageWidth="12000" pageHeight="8000">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="mx_title_1" value="01_Domains" style="text;html=1;fontSize=15;fontStyle=1;align=left;" vertex="1" parent="1">
+          <mxGeometry x="40" y="30" width="900" height="30" as="geometry" />
+        </mxCell>
+        <UserObject id="mx_BLK_EC175E18CE_2" label="&lt;b&gt;PSU&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:15px'&gt;ID: BLK-EC175E18CE&lt;/font&gt;&lt;br&gt;&lt;font style='font-size:15px'&gt;Level1_Domain&lt;/font&gt;" link="data:page/id,page__02_PSU" targetPage="02_PSU" targetPageId="page__02_PSU">
+          <mxCell style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;fillColor=#f8cecc;strokeColor=#666666;" vertex="1" parent="1" objectType="Block" blockId="BLK-EC175E18CE" blockPath="PSU" architectureLevel="Level1_Domain" isHost="False" domainColor="#f8cecc">
+            <mxGeometry x="160" y="160" width="680" height="300" as="geometry" />
+          </mxCell>
+        </UserObject>
+      </root>
+    </mxGraphModel>
+  </diagram>
+  <diagram id="page__02_PSU" name="02_PSU">
+    <mxGraphModel grid="1" gridSize="10" page="1" pageWidth="12000" pageHeight="8000">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="mx_title_3" value="02_PSU" style="text;html=1;fontSize=15;fontStyle=1;align=left;" vertex="1" parent="1">
+          <mxGeometry x="40" y="30" width="900" height="30" as="geometry" />
+        </mxCell>
+        <UserObject id="mx_BLK_2C9CF8DE48_4" label="&lt;b&gt;PSU_1&lt;/b&gt;&lt;br&gt;&lt;font style='font-size:15px'&gt;ID: BLK-2C9CF8DE48&lt;/font&gt;&lt;br&gt;&lt;font style='font-size:15px'&gt;Level2_ArchitectureElement&lt;/font&gt;">
+          <mxCell style="rounded=1;whiteSpace=wrap;html=1;align=left;verticalAlign=top;spacingLeft=10;spacingTop=8;fillColor=#f8cecc;strokeColor=#666666;" vertex="1" parent="1" objectType="Block" blockId="BLK-2C9CF8DE48" blockPath="PSU.PSU_1" architectureLevel="Level2_ArchitectureElement" isHost="False" domainColor="#f8cecc">
+            <mxGeometry x="160" y="160" width="680" height="300" as="geometry" />
+          </mxCell>
+        </UserObject>
+        <mxCell id="mx_PRT_F272E72EB3_5" value="" style="ellipse;html=1;connectable=1;fillColor=#ffffff;strokeColor=#333333;" vertex="1" parent="mx_BLK_2C9CF8DE48_4" objectType="Port" portId="PRT-F272E72EB3" portName="SPI_Link_1" portType="Bidi" connectionType="Bus" netId="NET-A135C368A8" referenceId="REF-9E144FF7D4" family="interface" side="right" powerDirection="">
+          <mxGeometry x="675" y="103.0" width="10" height="10" as="geometry" />
+        </mxCell>
+        <mxCell id="mx_PRT_F272E72EB3_label_6" value="&lt;font style='font-size:15px'&gt;&lt;b&gt;SPI_Link_1&lt;/b&gt;&lt;/font&gt;" style="text;html=1;align=right;verticalAlign=middle;resizable=0;movable=0;spacing=0;overflow=hidden;" vertex="1" parent="mx_BLK_2C9CF8DE48_4" objectType="PortLabel" portId="PRT-F272E72EB3" portName="SPI_Link_1" portType="Bidi" connectionType="Bus" netId="NET-A135C368A8" referenceId="REF-9E144FF7D4">
+          <mxGeometry x="260" y="94" width="390" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="mx_PRT_8F8CF863D0_7" value="" style="ellipse;html=1;connectable=1;fillColor=#ffffff;strokeColor=#333333;" vertex="1" parent="mx_BLK_2C9CF8DE48_4" objectType="Port" portId="PRT-8F8CF863D0" portName="SPI_Link_2" portType="Bidi" connectionType="Bus" netId="NET-EABE268B1E" referenceId="REF-52818B3B55" family="interface" side="right" powerDirection="">
+          <mxGeometry x="675" y="149.0" width="10" height="10" as="geometry" />
+        </mxCell>
+        <mxCell id="mx_PRT_8F8CF863D0_label_8" value="&lt;font style='font-size:15px'&gt;&lt;b&gt;SPI_Link_2&lt;/b&gt;&lt;/font&gt;" style="text;html=1;align=right;verticalAlign=middle;resizable=0;movable=0;spacing=0;overflow=hidden;" vertex="1" parent="mx_BLK_2C9CF8DE48_4" objectType="PortLabel" portId="PRT-8F8CF863D0" portName="SPI_Link_2" portType="Bidi" connectionType="Bus" netId="NET-EABE268B1E" referenceId="REF-52818B3B55">
+          <mxGeometry x="260" y="140" width="390" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="mx_REF_9E144FF7D4_9" value="SPI_Link_1" edge="1" parent="1" objectType="NetReference" referenceId="REF-9E144FF7D4" referenceName="SPI_Link_1" referenceType="Bus" connectionType="Bus" referenceDirection="Bidi" netId="NET-A135C368A8" portName="SPI_Link_1" blockPath="PSU.PSU_1" visibleOwner="PSU.PSU_1" family="interface" style="html=1;rounded=0;orthogonal=0;edgeStyle=none;fontSize=15;labelBackgroundColor=#ffffff;strokeColor=#003f9e;strokeWidth=4;dashed=1;startArrow=block;endArrow=block;" source="mx_PRT_F272E72EB3_5">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1520" y="268.0" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="mx_REF_52818B3B55_10" value="SPI_Link_2" edge="1" parent="1" objectType="NetReference" referenceId="REF-52818B3B55" referenceName="SPI_Link_2" referenceType="Bus" connectionType="Bus" referenceDirection="Bidi" netId="NET-EABE268B1E" portName="SPI_Link_2" blockPath="PSU.PSU_1" visibleOwner="PSU.PSU_1" family="interface" style="html=1;rounded=0;orthogonal=0;edgeStyle=none;fontSize=15;labelBackgroundColor=#ffffff;strokeColor=#003f9e;strokeWidth=4;dashed=1;startArrow=block;endArrow=block;" source="mx_PRT_8F8CF863D0_7">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="1520" y="314.0" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

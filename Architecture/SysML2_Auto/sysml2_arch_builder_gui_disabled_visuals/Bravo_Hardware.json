@@ -1,0 +1,231 @@
+{
+  "name": "Bravo_Hardware",
+  "blocks": [
+    {
+      "name": "RaspberryPi_5",
+      "level": "Level1_Domain",
+      "id": "BLK-0B70BA30C5",
+      "kind": "Domain",
+      "is_host": true,
+      "color": "#f3e8ff",
+      "attributes": {
+        "domainColor": "#f3e8ff",
+        "isHost": true
+      },
+      "ports": [],
+      "children": []
+    },
+    {
+      "name": "RF_Transceiver_Array",
+      "level": "Level1_Domain",
+      "id": "BLK-6BDC725AC3",
+      "kind": "Domain",
+      "is_host": false,
+      "color": "#edf7ed",
+      "attributes": {
+        "domainColor": "#edf7ed",
+        "isHost": false
+      },
+      "ports": [],
+      "children": []
+    },
+    {
+      "name": "Power_Amplifier",
+      "level": "Level1_Domain",
+      "id": "BLK-D52CEE7D7F",
+      "kind": "Domain",
+      "is_host": false,
+      "color": "#f8cecc",
+      "attributes": {
+        "domainColor": "#f8cecc",
+        "isHost": false
+      },
+      "ports": [],
+      "children": []
+    },
+    {
+      "name": "Beamformer_Array",
+      "level": "Level1_Domain",
+      "id": "BLK-12884C1B27",
+      "kind": "Domain",
+      "is_host": false,
+      "color": "#e8f6f3",
+      "attributes": {
+        "domainColor": "#e8f6f3",
+        "isHost": false
+      },
+      "ports": [],
+      "children": []
+    },
+    {
+      "name": "Edge_Communication",
+      "level": "Level1_Domain",
+      "id": "BLK-E5F1CA1EEB",
+      "kind": "Domain",
+      "is_host": false,
+      "color": "#e8f6f3",
+      "attributes": {
+        "domainColor": "#e8f6f3",
+        "isHost": false
+      },
+      "ports": [],
+      "children": []
+    },
+    {
+      "name": "TelemetricsDrone",
+      "level": "Level1_Domain",
+      "id": "BLK-DCA7060A96",
+      "kind": "Domain",
+      "is_host": false,
+      "color": "#edf7ed",
+      "attributes": {
+        "domainColor": "#edf7ed",
+        "isHost": false
+      },
+      "ports": [],
+      "children": []
+    },
+    {
+      "name": "TelemetricsBarvoMesh",
+      "level": "Level1_Domain",
+      "id": "BLK-7E925D4EE3",
+      "kind": "Domain",
+      "is_host": false,
+      "color": "#e8f6f3",
+      "attributes": {
+        "domainColor": "#e8f6f3",
+        "isHost": false
+      },
+      "ports": [],
+      "children": []
+    },
+    {
+      "name": "Battery_Management",
+      "level": "Level1_Domain",
+      "id": "BLK-7072CC0CBD",
+      "kind": "Domain",
+      "is_host": false,
+      "color": "#fce4ec",
+      "attributes": {
+        "domainColor": "#fce4ec",
+        "isHost": false
+      },
+      "ports": [],
+      "children": []
+    },
+    {
+      "name": "PSU_Input",
+      "level": "Level1_Domain",
+      "id": "BLK-6FE918FE92",
+      "kind": "Domain",
+      "is_host": false,
+      "color": "#f8cecc",
+      "attributes": {
+        "domainColor": "#f8cecc",
+        "isHost": false
+      },
+      "ports": [],
+      "children": []
+    },
+    {
+      "name": "PSU_RaspberryPi_5",
+      "level": "Level1_Domain",
+      "id": "BLK-D0D2FB4AD3",
+      "kind": "Domain",
+      "is_host": false,
+      "color": "#f8cecc",
+      "attributes": {
+        "domainColor": "#f8cecc",
+        "isHost": false
+      },
+      "ports": [],
+      "children": []
+    },
+    {
+      "name": "PSU_Power_Amplifier",
+      "level": "Level1_Domain",
+      "id": "BLK-4EF82E0C73",
+      "kind": "Domain",
+      "is_host": false,
+      "color": "#f8cecc",
+      "attributes": {
+        "domainColor": "#f8cecc",
+        "isHost": false
+      },
+      "ports": [],
+      "children": []
+    },
+    {
+      "name": "PSU_Beamformer_Array",
+      "level": "Level1_Domain",
+      "id": "BLK-A40D2EDF6C",
+      "kind": "Domain",
+      "is_host": false,
+      "color": "#f8cecc",
+      "attributes": {
+        "domainColor": "#f8cecc",
+        "isHost": false
+      },
+      "ports": [],
+      "children": []
+    },
+    {
+      "name": "PSU_Edge_Com",
+      "level": "Level1_Domain",
+      "id": "BLK-4A2588ED07",
+      "kind": "Domain",
+      "is_host": false,
+      "color": "#f8cecc",
+      "attributes": {
+        "domainColor": "#f8cecc",
+        "isHost": false
+      },
+      "ports": [],
+      "children": []
+    },
+    {
+      "name": "PSU_Telemetrics",
+      "level": "Level1_Domain",
+      "id": "BLK-20403C6C49",
+      "kind": "Domain",
+      "is_host": false,
+      "color": "#f8cecc",
+      "attributes": {
+        "domainColor": "#f8cecc",
+        "isHost": false
+      },
+      "ports": [],
+      "children": []
+    },
+    {
+      "name": "Ethernet",
+      "level": "Level1_Domain",
+      "id": "BLK-FB2509DFF6",
+      "kind": "Domain",
+      "is_host": false,
+      "color": "#dae8fc",
+      "attributes": {
+        "domainColor": "#dae8fc",
+        "isHost": false
+      },
+      "ports": [],
+      "children": []
+    },
+    {
+      "name": "PSU_Ethernet",
+      "level": "Level1_Domain",
+      "id": "BLK-9660862337",
+      "kind": "Domain",
+      "is_host": false,
+      "color": "#f8cecc",
+      "attributes": {
+        "domainColor": "#f8cecc",
+        "isHost": false
+      },
+      "ports": [],
+      "children": []
+    }
+  ],
+  "connections": [],
+  "net_references": []
+}

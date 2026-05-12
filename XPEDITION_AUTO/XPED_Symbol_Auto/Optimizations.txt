@@ -1,0 +1,110 @@
+Optimierung 11.05.2026 vormittags (Symbol_Wizard_31):
+
+Auffälligkieten aktuelle Implementierung:
+
+--> Es fehlt der Dropdown für Pin Type, Side, Inverted!
+--> es fehlen die Symbolreiter im Symbols Tab um durchzuswitchen!
+
+Die Aufteilung von BODY und Attributen, bzw. Pin und Attributen soll wieder klarer ersichtlich sein.
+	--> Zudem soll das Attribut Fenster scrollbar sein, wenn es mehr Attribute gibt, als Das Fenster groß ist.
+	
+Zum Template für die unterschiedlichen Symbole:
+--> Die Typen und Subtypen sind ja bereits vordefiniert.
+--> Wenn ich nun ein Template hinsichtlich Body, Attributes und Pins anpassen möchte, dann ist das eine spezielle Operation.
+	--> Im obersten Window Ribbon 'Tools' einfügen mit der unterkategorie 'Symbol Templates editieren' vesehen
+		-> Ich möchte dort sowohl den Body, als auch die Pins und die dargestellten Attribute editieren können.
+			-> Ich kann also den Body auch löschen und komplett neu zeichnen wenn ich will!
+
+Die Idee ist, dass die Templates einmalig angepasst werden können. Wenn dann ein entsprechendes Symbol Template ausgewählt wird, soll sich das im Haupt Canvas ändern. 
+	--> Split Symbols gibt es nur für ICs!
+	--> Sollte es bei einer Neuauswahl schon Änderungen am aktuellen Symbol geben, so soll ein Prompt geöffnet werden, ob man die Änderungen wirklich verwerfen möchte.
+	--> Editiert man das Template welches gerade in einem Symbol eingesetzt wird, dann soll das im Stil angepasst werden. Allerdings sollen bestehende Änderungen nicht vwerworfen werden, auch hinsichtlich Gemetrie und bereits angelegter Pins.
+	
+Origo braucht ncoh einen Reset Knof, damit man, wenn man im CANVAS ausversehen den Body verschiebt, den Origo mit einem Klick nachziehen kann.
+
+Ich hätte gerne noch STRG+z als Rückgngig mit einer 10-Schritt Historie und STRG+y als Redo. Zudem gerne noch STRG+a im Canvas um alles zu markieren und STRG+c umd ausgewählte Objekte zu kopieren. Dieselben Funktionen soll es auch it einem RMT Menü im CANVAS geben 
+
+
+Optimierung 11.05.2026 nachmittags(Symbol_Wizard_32):
+
+--> Der Dropdown bei den Pins für Pin Type, Side und Inverted funktioniert immer noch nicht
+--> Ich möchte für den ORIGO weiterhin die Möglichkeit ihn an allen ecken und in der mitte vom Body festzumachen
+
+--> Für den Template Editor habe ich mir folgendes vorgestellt:
+	--> Ich kann jedes template öffnen und eitieren. Das läuft unabhängig vom Symbol Wizard selbst.
+	--> Ich möchte dort wirklich das aktuelle Template sehen und bearbeiten können, sowohl den Body als auch die Pins. Das läuft in einem weiteren CANVAS ab mit allen erforderlichen Funktionen. 
+		Der Body kann beliebig editiert, entfernt, vergrößert, verkleinert oder mit Grafikobjekten angepasst werden, ganz nach belieben. Proprietäre  Weiterentwicklungen finden dann nach Auswahl der Vorlage im Symbol wizard statt.
+	--> Bitte füge für die Templates schon alle zuvor definierten Typen und Subtypen hinzu.
+	--> Wenn ich ein neues Symbol erstelle, soll ein Popup aufgehen, welches Template ich für das neue Symbol nutzen möchte. Dort soll dann auch schon der Symbolname einmalig festgelegt werden. Möchte ich das Symbol renamen kann ich das entweder über edit oder pber einen RMT Funktion auf dem entsprechenden Symbolreiter machen
+	--> Die Auswahl der Templates hängt davon ab, ob ich ein Symbol oder ein Split Symbol anlege. Bei Split Symbolen können nur ICs ausgewählt werden. Für Symbole soll die maximale Auswahl zur Verfügung stehen.
+	
+
+Optimierung 11.05.2026 nachmittags (Symbol_Wizard_33):
+Wenn ich ein neues Symbol anlege, hängt das Tool in einer Schleife!
+
+Das Feld Symbol Name kann entfallen, da wir das Symbol ja beim erstellen benamen!
+
+Wenn ich den ORIGIO ändere, dann soll automatisch resettet werden, aber wenn er gleich bleibt, soll origo reset der neuaurichtung im CANVAS dienen!
+
+Zoom to fit on body ist default, wenn das Programm startet!
+
+Wenn ich ein Tempalte speichere soll das ein merge speicher der aktuellen template datei sein!.
+
+Zudem brauche ich eine Vorschau der Attribute, auch wenn nichts drin steht um zu sehen, welche eingeblendet sind. Ideal wäre hier der Attributname, wenn es einen wert gibt, steht er dann halt dabei.
+
+
+Entfernen von markierten Objekten soll natürlich auch über die ENTF Taste funktionieren.
+
+Ich brauche im Template Editor oben folgende Buttons nicht: Body löschen, Body neu, Kopieren, Einfügen, Löschen. Das funktioniert ja alles schon intuitiv im CANVAS oder über die RMT.
+
+Wenn ein Template Subtypen hat, dann ist es nicht Sinnvoll den Typen zu editieren. Man braucht ja dann nur die Subtypen!
+
+DIe Templates werden ja beim Starten des Wizards geladen. Allerdings sollen diese auch upgedated werden, wenn ich die Templates speichere!
+
+
+Optimierung 11.05.2026 nachmittags (Symbol_Wizard_34):
+--> Ich mcöhte im Template Canvas ebenfalls Hoheit über die Visibility der Attribute haben.
+--> Wenn ich etwas ausgewählt habe und im Attributteil oder im Bodyteil etwas ndere, soll die Auswahl nicht aufgehoben werden (gilt für wizard und template canvas)
+--> Ich habe ein Überlagerungsproblem beim greifen von Objekten. Ich möchte wieder die Auswahl der Objekte, die ich im CANVAS markieren können möchte (gilt für wizard und template canvas)
+--> Das Fenster wo ich die Auswahl für das Template treffe, ist Zeitgleich der Dialog in dem ich dem Symbol einen Namen gebe (leer geht nicht, mindestens 3 Zeichen, maximal 24 Zeichen)
+--> Ich möchte mit folgenden Aktionen zurück in den Select/Edit Mode im Canvas: ESC, MMT, nach Undo, Redo, STRG+a, STRG+c, STRG+x
+--> STRG+x ist auschschneiden btw (gilt für wizard und template canvas)
+
+Optimierung 11.05.2026 nachmittags (Symbol_Wizard_35):
+--> Es soll keine Abfrage geben, wenn ich zwischen Symbols und Split Symbols switche, zudem soll der Canvas immer mit der vorherigen aktuellen Auswahl upgedated werden, wenn ich switche!
+--> Ich brauche im RMT Menü der Symbolreiter noch die Funktion 'Symbol löschen' zustzlich zu Symbol umbenennen.
+--> Ich möchte die Auswahl der zu markierenden und editierenden Objekte im CANVAS über ienen Dropdown realisieren (ALL, BODY, PIN, TEXT, GRAPHIC oder Customer um eine eigene Auswahl zu treffen!)
+--> Bei den PINS möchte ich im Template mode ebenfalls darüber entscheiden, elche Attribute eingeblendet werden können und welche nicht.
+--> Die Schriftfamilien aller Fonts sollen über ein Dropdown selektierbar sein
+--> Wenn ich Pins kopiere und einfüge, so darf sich der Pin Name nicht wiederholen. Bitte dann einfach enumerieren.
+--> Achso, beim neuanlegen von Pins müssen die Pin Namen auch schon enumeriert werden
+
+Optimierung 11.05.2026 nachmittags (Symbol_Wizard_36/37):
+--> Optimierung bzgl. Objektauswahl im Canvas (Wizard und Template!)
+
+Optimierung 12.05.2026 vormittags (Symbol_Wizard_38):
+--> Ich möchte alle Objekte transfromieren können, sprich drehen und spiegeln können. Sowohl über Icons, als auch direkt am Objekt. Rotation im Urzeigersinn sollte direkt am Objekt gehen. Andere Transformationen über die RMT.
+--> Sowohl im Symbol Wizard, als auch im Template Canvas. 
+--> Zudem möchte ich allen Text im gesamten Tool auf englisch.
+--> Wenn ich eine Linie Drehe möchte ich natürlich, dass diese sich an dem Ende dreht, an dem ich greife. 
+--> Zudem sollen beim skalieren im Canvas die Kanten und Ecken besser greifbar sein und wenn zum skalieren getroffen, soll sich der Cursor in einen Transformations Doppelpfeil in die Entsrechende Richtung ändern.
+--> Wenn ich den Symbol Template Editor schließe, soll ein Prompt mit 'Save Changes?' kommen
+
+Optimierung 12.05.2026 vormittags (Symbol_Wizard_39):
+--> Wenn ich ein Objekt drehe, soll es sich an das Raster halten. 
+--> An den graphischen Objekten sind jetzt additive Punkte dran, mit welchen man das Objekt wohl im Canvas direkt drehen können soll. Funktioniert allerdings noch nicht.
+--> Wenn ich eine Linie einfüge möchte ich diese mit den Enpunkten skalieren können, und mit dem Punkt in der Mitte möchte ich die Linie mit Radius versehen, ohne, dass sich die Endpunkte verschieben. Der Radius soll sich nicht ans Raster halten.
+--> Bitte versehe alle Dropdowns it funktionalen Trennern, wenn sinnvoll (File Edit, Tools, View, RMT Menüs)
+--> Ich möchte auch die  sichtbaren Attribute und den Text im Canvas greifen und transformieren können (drehen, spiegeln, Allignment (volle Permutation aus Vertikal: upper, center, lower Horizontal: left, center right))
+
+
+
+
+
+	
+
+
+
+
+
+
