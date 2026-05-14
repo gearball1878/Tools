@@ -357,9 +357,13 @@ class TextItem(TransformMixin, QGraphicsTextItem):
         super().keyPressEvent(event)
 
     def focusOutEvent(self, e):
-        # Do not leave edit mode just because properties/tree rebuild focus changed.
-        # Text edit is intentionally committed with Enter only.
+        # When the user clicks out of a canvas text item, commit the text and
+        # immediately return the item to normal canvas-object mode so it can be
+        # selected, moved, copied and transformed again.
         self.model.text = self.toPlainText()
+        self.setTextInteractionFlags(Qt.NoTextInteraction)
+        self.common_flags()
+        self.scene().window.live_refresh()
         super().focusOutEvent(e)
 
     def update_model_pos(self):
