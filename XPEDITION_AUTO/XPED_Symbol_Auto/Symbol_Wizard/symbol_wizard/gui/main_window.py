@@ -5,7 +5,7 @@ import re
 from PySide6.QtCore import Qt, QTimer, QRectF
 from PySide6.QtGui import QAction, QColor, QKeySequence, QFontDatabase
 from PySide6.QtWidgets import *
-from symbol_wizard.config import load_symbol_type_config
+from symbol_wizard.config import load_symbol_type_config, save_symbol_type_config
 
 from symbol_wizard.models.document import *
 from symbol_wizard.rules.grid import PX_PER_INCH, duplicate_pin_numbers, next_pin_number
@@ -48,6 +48,8 @@ class MainWindow(QMainWindow):
         self.default_color = (0, 0, 0)
         self._refresh_visual_only = False
         self.body_edit = False
+        self.template_edit_mode = False
+        self.template_unit = None
         self.symbol_type_config = load_symbol_type_config()
         self.refresh_timer = QTimer(self)
         self.refresh_timer.setSingleShot(True)
@@ -65,6 +67,8 @@ class MainWindow(QMainWindow):
 
     @property
     def current_unit(self) -> SymbolUnitModel:
+        if getattr(self, 'template_edit_mode', False) and self.template_unit is not None:
+            return self.template_unit
         if not self.symbol.units:
             self.symbol.units.append(SymbolUnitModel())
         self.current_unit_index = max(0, min(self.current_unit_index, len(self.symbol.units) - 1))
@@ -187,34 +191,42 @@ class MainWindow(QMainWindow):
         for col in range(table.columnCount()):
             table.setColumnWidth(col, max(table.columnWidth(col) + 18, 90))
 
-    def _fill_pin_table(self, table: QTableWidget, rows):
-        """Fill the pin table using QTableWidgetItems + delegates only.
+    def _pin_combo(self, values, current, meta):
+        combo = QComboBox()
+        combo.addItems([str(v) for v in values])
+        combo.setCurrentText(str(current))
+        combo.setProperty('pin_meta', meta)
+        combo.currentTextChanged.connect(self.pin_table_combo_changed)
+        return combo
 
-        No setCellWidget() is used; this prevents stale ComboBox/text
-        overpainting while still giving dropdown editors for Pin Type, Side
-        and Inverted. Persistent editors keep the dropdowns visible.
+    def _fill_pin_table(self, table: QTableWidget, rows):
+        """Fill pin table without overpainting.
+
+        Text columns use QTableWidgetItem. Dropdown columns use clean cell widgets
+        only; no hidden item text is painted underneath the combobox. Existing
+        widgets are explicitly removed before refill.
         """
         table.blockSignals(True)
         self.suspend = True
         for rr in range(table.rowCount()):
             for cc in range(table.columnCount()):
-                table.closePersistentEditor(table.item(rr, cc)) if table.item(rr, cc) else None
+                w = table.cellWidget(rr, cc)
+                if w is not None:
+                    table.removeCellWidget(rr, cc)
+                    w.deleteLater()
         table.clearContents()
         table.setRowCount(len(rows))
         for r, (si, ui, pi, pin) in enumerate(rows):
-            values = [pin.number, pin.name, pin.function, pin.pin_type, pin.side, 'yes' if pin.inverted else 'no']
-            for c, v in enumerate(values):
+            for c, v in enumerate([pin.number, pin.name, pin.function]):
                 it = QTableWidgetItem(str(v))
                 it.setData(Qt.UserRole, (si, ui, pi, c))
                 it.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
                 table.setItem(r, c, it)
+            table.setCellWidget(r, 3, self._pin_combo([x.value for x in PinType], pin.pin_type, (si, ui, pi, 3)))
+            table.setCellWidget(r, 4, self._pin_combo([x.value for x in PinSide], pin.side, (si, ui, pi, 4)))
+            table.setCellWidget(r, 5, self._pin_combo(['no', 'yes'], 'yes' if pin.inverted else 'no', (si, ui, pi, 5)))
         self.suspend = False
         table.blockSignals(False)
-        for r in range(table.rowCount()):
-            for c in (3, 4, 5):
-                item = table.item(r, c)
-                if item is not None:
-                    table.openPersistentEditor(item)
         self._autosize_table(table)
 
     def _menu(self):
@@ -272,6 +284,7 @@ class MainWindow(QMainWindow):
             (DrawTool.PIN_RIGHT, 'Pin R'),
             (DrawTool.TEXT, 'Text'),
             (DrawTool.LINE, 'Line'),
+            (DrawTool.CURVE, 'Curve'),
             (DrawTool.RECT, 'Rect'),
             (DrawTool.ELLIPSE, 'Ellipse'),
         ]:
@@ -318,6 +331,17 @@ class MainWindow(QMainWindow):
         self.body_edit_button.setCheckable(True)
         self.body_edit_button.toggled.connect(self.set_body_edit_mode)
         tb.addWidget(self.body_edit_button)
+        self.template_edit_button = QPushButton('Edit Type Template')
+        self.template_edit_button.clicked.connect(self.start_template_edit_mode)
+        tb.addWidget(self.template_edit_button)
+        self.template_save_button = QPushButton('Save Template + Exit')
+        self.template_save_button.clicked.connect(self.save_template_and_exit)
+        self.template_save_button.setVisible(False)
+        tb.addWidget(self.template_save_button)
+        self.template_cancel_button = QPushButton('Cancel Template')
+        self.template_cancel_button.clicked.connect(self.cancel_template_edit_mode)
+        self.template_cancel_button.setVisible(False)
+        tb.addWidget(self.template_cancel_button)
 
         tb.addSeparator()
         tb.addWidget(QLabel('Style target:'))
@@ -413,6 +437,7 @@ class MainWindow(QMainWindow):
         self.format_combo.blockSignals(False)
         self.update_symbol_type_controls()
         self.update_name_editors()
+        self.update_template_buttons()
         self.left_tabs.setCurrentIndex(1 if self.symbol.kind == SymbolKind.SPLIT.value else 0)
 
     def _symbol_indices(self, kind: str):
@@ -530,6 +555,8 @@ class MainWindow(QMainWindow):
             body.width = float(body_tpl.get('width', body.width))
             body.height = float(body_tpl.get('height', body.height))
             body.body_shape = str(body_tpl.get('shape', getattr(body, 'body_shape', 'rect')))
+            body.line_style = str(body_tpl.get('line_style', getattr(body, 'line_style', LineStyle.SOLID.value)))
+            body.line_width = float(body_tpl.get('line_width', getattr(body, 'line_width', 0.03)))
             body.x = -body.width / 2.0
             body.y = body.height / 2.0
             global_attrs = self.symbol_type_config.get('global_attributes', ['RefDes', 'Package', 'Order Code', 'Value'])
@@ -552,7 +579,7 @@ class MainWindow(QMainWindow):
             # Keep existing pins unless there are none or caller requests template replacement.
             if reset_pins or not u.pins:
                 u.pins.clear()
-                pins = list(data.get('default_pins', []))
+                pins = list(subdata.get('default_pins', data.get('default_pins', [])))
                 # 4-pin crystal shortcut if subtype declares pins=4.
                 if typ == 'Quartz' and int(subdata.get('pins', 2)) == 4:
                     pins = [
@@ -573,6 +600,22 @@ class MainWindow(QMainWindow):
                         side=side,
                         x=x,
                         y=y,
+                        length=float(pd.get('length', 2.0)),
+                        inverted=bool(pd.get('inverted', False)),
+                        rotation=float(pd.get('rotation', 0.0)),
+                    ))
+            # Body-attached graphics saved in a subtype template replace prior template graphics.
+            if 'graphics' in subdata:
+                u.graphics = [g for g in u.graphics if not getattr(g, 'body_attached', False)]
+                for gd in subdata.get('graphics', []):
+                    style = StyleModel(
+                        stroke=tuple(gd.get('stroke', (0, 0, 0))),
+                        line_width=float(gd.get('line_width', 0.03)),
+                        line_style=str(gd.get('line_style', LineStyle.SOLID.value)),
+                    )
+                    u.graphics.append(GraphicModel(
+                        shape=str(gd.get('shape', 'line')), x=float(gd.get('x', 0)), y=float(gd.get('y', 0)),
+                        w=float(gd.get('w', 2)), h=float(gd.get('h', 2)), style=style, body_attached=True
                     ))
             self.dock_pins_to_body(u)
             self.ensure_unique_pin_names(self.symbol)
@@ -940,7 +983,7 @@ class MainWindow(QMainWindow):
         attr_outer = QVBoxLayout(attr_group)
         attr_font_row = QFormLayout()
         attr_font_row.addRow('Font family', self.font_family_combo(m.attribute_font.family, lambda v: self.set_font_attr(m.attribute_font, 'family', v, True)))
-        attr_font_row.addRow('Font size [grid]', self._dbl(getattr(m.attribute_font, 'size_grid', 0.9), lambda v: self.set_font_attr(m.attribute_font, 'size_grid', v, True), .1, 5, .1))
+        attr_font_row.addRow('Font size [grid]', self._dbl(getattr(m.attribute_font, 'size_grid', 0.5), lambda v: self.set_font_attr(m.attribute_font, 'size_grid', v, True), .1, 5, .1))
         fb = QPushButton('Font Color RGB')
         fb.clicked.connect(lambda: self.color_font(m.attribute_font, True))
         attr_font_row.addRow('Font color', fb)
@@ -990,13 +1033,13 @@ class MainWindow(QMainWindow):
         m = item.model
         self.form.addRow('Text', self._line(m.text, lambda v: self.set_text_attr(item, 'text', v)))
         self.form.addRow('Font', self.font_family_combo(m.font_family, lambda v: self.set_text_attr(item, 'font_family', v)))
-        self.form.addRow('Size [grid]', self._dbl(getattr(m, 'font_size_grid', 0.9), lambda v: self.set_text_attr(item, 'font_size_grid', v), .1, 5, .1))
+        self.form.addRow('Size [grid]', self._dbl(getattr(m, 'font_size_grid', 0.5), lambda v: self.set_text_attr(item, 'font_size_grid', v), .1, 5, .1))
         self.transform_props(m)
         b = QPushButton('Color RGB'); b.clicked.connect(lambda: self.color_model(m)); self.form.addRow('Color', b)
 
     def graphic_props(self, item):
         m = item.model
-        self.form.addRow('Shape', self._combo(['line', 'rect', 'ellipse'], m.shape, lambda v: self.set_and_refresh(m, 'shape', v)))
+        self.form.addRow('Shape', self._combo(['line', 'curve', 'rect', 'ellipse'], m.shape, lambda v: self.set_and_refresh(m, 'shape', v)))
         self.form.addRow('Width [grid]', self._dbl(m.w, lambda v: self.set_and_refresh(m, 'w', v), -100, 300))
         self.form.addRow('Height [grid]', self._dbl(m.h, lambda v: self.set_and_refresh(m, 'h', v), -100, 300))
         self.form.addRow('Line style', self._combo([x.value for x in LineStyle], m.style.line_style, lambda v: self.set_style(m, 'line_style', v)))
@@ -1007,7 +1050,7 @@ class MainWindow(QMainWindow):
     def font_props(self, title, f, refresh_attrs=False):
         self.form.addRow(QLabel(title))
         self.form.addRow('Family', self.font_family_combo(f.family, lambda v: self.set_font_attr(f, 'family', v, refresh_attrs)))
-        self.form.addRow('Size [grid]', self._dbl(getattr(f, 'size_grid', 0.9), lambda v: self.set_font_attr(f, 'size_grid', v, refresh_attrs), .1, 5, .1))
+        self.form.addRow('Size [grid]', self._dbl(getattr(f, 'size_grid', 0.5), lambda v: self.set_font_attr(f, 'size_grid', v, refresh_attrs), .1, 5, .1))
         b = QPushButton('Font Color RGB')
         b.clicked.connect(lambda: self.color_font(f, refresh_attrs))
         self.form.addRow('Font color', b)
@@ -1144,6 +1187,77 @@ class MainWindow(QMainWindow):
             elif target == 'label_font.color':
                 it.model.label_font.color = rgb
         self.schedule_scene_refresh()
+
+
+    # ------------------------------------------------------------------ Template editing
+    def update_template_buttons(self):
+        if not hasattr(self, 'template_save_button'):
+            return
+        editing = bool(getattr(self, 'template_edit_mode', False))
+        self.template_save_button.setVisible(editing)
+        self.template_cancel_button.setVisible(editing)
+        self.template_edit_button.setVisible(not editing)
+        if editing:
+            self.statusBar().showMessage('Template Edit Mode: edit body, attached graphics and default pins only. Save Template + Exit writes symbol_types.json.', 6000)
+
+    def start_template_edit_mode(self):
+        if self.template_edit_mode:
+            return
+        self.template_unit = copy.deepcopy(self.current_unit)
+        self.template_edit_mode = True
+        self.update_template_buttons()
+        self.rebuild_scene()
+        self.rebuild_tree()
+        self.rebuild_pin_table()
+        self.zoom_to_fit_symbol()
+
+    def cancel_template_edit_mode(self):
+        self.template_edit_mode = False
+        self.template_unit = None
+        self.update_template_buttons()
+        self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
+
+    def save_template_and_exit(self):
+        if not self.template_edit_mode or self.template_unit is None:
+            return
+        typ = getattr(self.symbol, 'symbol_type', self.symbol_type_combo.currentText() if hasattr(self, 'symbol_type_combo') else 'IC')
+        subtype = getattr(self.symbol, 'symbol_subtype', self.symbol_subtype_combo.currentText() if hasattr(self, 'symbol_subtype_combo') else 'Generic')
+        cfg = self.symbol_type_config
+        types = cfg.setdefault('types', {})
+        tdata = types.setdefault(typ, {'prefix': typ[:1] or 'U', 'subtypes': {}})
+        subtypes = tdata.setdefault('subtypes', {})
+        sdata = subtypes.setdefault(subtype, {})
+        u = self.template_unit
+        body = u.body
+        sdata['body'] = {
+            'width': body.width, 'height': body.height,
+            'shape': getattr(body, 'body_shape', 'rect'),
+            'line_style': getattr(body, 'line_style', LineStyle.SOLID.value),
+            'line_width': getattr(body, 'line_width', 0.03),
+        }
+        # Persist template pins. Pins are template defaults; values stay grid-based.
+        sdata['default_pins'] = [
+            {
+                'number': p.number, 'name': p.name, 'function': p.function,
+                'type': p.pin_type, 'side': p.side, 'length': p.length,
+                'inverted': bool(p.inverted), 'rotation': getattr(p, 'rotation', 0.0),
+            } for p in u.pins
+        ]
+        # Keep body-attached template graphics as part of subtype.
+        sdata['graphics'] = [
+            {
+                'shape': g.shape, 'x': g.x, 'y': g.y, 'w': g.w, 'h': g.h,
+                'line_style': g.style.line_style, 'line_width': g.style.line_width,
+                'stroke': list(g.style.stroke), 'body_attached': bool(getattr(g, 'body_attached', False)),
+            } for g in u.graphics if getattr(g, 'body_attached', False)
+        ]
+        save_symbol_type_config(cfg)
+        self.symbol_type_config = load_symbol_type_config()
+        self.template_edit_mode = False
+        self.template_unit = None
+        self.apply_symbol_template(typ, subtype, reset_pins=True)
+        self.update_template_buttons()
+        self.statusBar().showMessage(f'Template saved globally for {typ}/{subtype}.', 8000)
 
     # ------------------------------------------------------------------ Canvas selection / body edit / bulk pins
     def set_body_edit_mode(self, enabled: bool):
@@ -1485,6 +1599,8 @@ class MainWindow(QMainWindow):
         self.rebuild_pin_table()
         self._refresh_visual_only = False
         self.body_edit = False
+        self.template_edit_mode = False
+        self.template_unit = None
         self.symbol_type_config = load_symbol_type_config()
 
     # ------------------------------------------------------------------ Grouping / constraints
@@ -1630,10 +1746,10 @@ class MainWindow(QMainWindow):
         self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
 
     def add_graphic(self, tool, x, y):
-        shape = {DrawTool.LINE.value: 'line', DrawTool.RECT.value: 'rect', DrawTool.ELLIPSE.value: 'ellipse'}[tool]
-        if shape == 'line':
-            # Linien werden initial gerade eingefügt: horizontal, auf Raster, Länge 2 Grid.
-            model = GraphicModel(shape=shape, x=x, y=y, w=2.0, h=0.0, style=StyleModel(stroke=self.default_color, line_width=self.line_width.value(), line_style=self.line_style.currentText()))
+        shape = {DrawTool.LINE.value: 'line', DrawTool.CURVE.value: 'curve', DrawTool.RECT.value: 'rect', DrawTool.ELLIPSE.value: 'ellipse'}[tool]
+        if shape in ('line', 'curve'):
+            # Lines/curves are inserted horizontally on the grid. Curve uses h as control offset.
+            model = GraphicModel(shape=shape, x=x, y=y, w=2.0, h=(1.0 if shape == 'curve' else 0.0), style=StyleModel(stroke=self.default_color, line_width=self.line_width.value(), line_style=self.line_style.currentText()))
         else:
             model = GraphicModel(shape=shape, x=x, y=y, style=StyleModel(stroke=self.default_color, line_width=self.line_width.value(), line_style=self.line_style.currentText()))
         if getattr(self, 'body_edit', False):
@@ -1803,27 +1919,36 @@ class MainWindow(QMainWindow):
         self.refresh_properties()
 
     # ------------------------------------------------------------------ Navigation / tables
-    def pin_table_combo_changed(self, meta, col, value):
+    def pin_table_combo_changed(self, value):
         if self.suspend:
             return
-        si, ui, pi = meta
+        combo = self.sender()
+        meta = combo.property('pin_meta') if combo is not None else None
+        if not meta:
+            return
+        si, ui, pi, col = meta
+        self.apply_pin_table_value(si, ui, pi, col, str(value))
+
+    def apply_pin_table_value(self, si, ui, pi, col, value):
         if si >= len(self.library.symbols):
             return
         sym = self.library.symbols[si]
         if ui >= len(sym.units) or pi >= len(sym.units[ui].pins):
             return
         p = sym.units[ui].pins[pi]
-        if col == 3:
-            allowed = [x.value for x in PinType]
-            if value in allowed:
-                p.pin_type = value
-        elif col == 4:
-            allowed = [x.value for x in PinSide]
-            if value in allowed:
-                p.side = value
-                # Keep pin docked on selected side.
-                body = sym.units[ui].body
-                p.x = body.x if p.side == PinSide.LEFT.value else body.x + body.width
+        if col == 0:
+            p.number = str(value).strip()
+        elif col == 1:
+            p.name = str(value).strip()
+            self.ensure_unique_pin_names(sym)
+        elif col == 2:
+            p.function = str(value).strip()
+        elif col == 3 and value in [x.value for x in PinType]:
+            p.pin_type = value
+        elif col == 4 and value in [x.value for x in PinSide]:
+            p.side = value
+            body = sym.units[ui].body
+            p.x = body.x if p.side == PinSide.LEFT.value else body.x + body.width
         elif col == 5:
             p.inverted = str(value).lower() in ('1', 'true', 'yes', 'ja', 'x')
         self.validate_pins(silent=True)
@@ -1837,30 +1962,11 @@ class MainWindow(QMainWindow):
         it = table.item(r, c)
         if not it:
             return
-        si, ui, pi, col = it.data(Qt.UserRole)
-        if si >= len(self.library.symbols):
+        meta = it.data(Qt.UserRole)
+        if not meta:
             return
-        sym = self.library.symbols[si]
-        if ui >= len(sym.units) or pi >= len(sym.units[ui].pins):
-            return
-        p = sym.units[ui].pins[pi]
-        val = it.text().strip()
-        if col == 0:
-            p.number = val
-        elif col == 1:
-            p.name = val
-            self.ensure_unique_pin_names(sym)
-        elif col == 2:
-            p.function = val
-        elif col == 3:
-            p.pin_type = val if val in [x.value for x in PinType] else p.pin_type
-        elif col == 4:
-            p.side = val if val in [x.value for x in PinSide] else p.side
-        elif col == 5:
-            p.inverted = str(val).lower() in ('1', 'true', 'yes', 'ja', 'x')
-        self.validate_pins(silent=True)
-        if si == self.library.current_symbol_index:
-            self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
+        si, ui, pi, col = meta
+        self.apply_pin_table_value(si, ui, pi, col, it.text().strip())
 
     def pin_table_clicked(self, r, c):
         table = self.sender()
@@ -2090,7 +2196,7 @@ class MainWindow(QMainWindow):
         self.rebuild_canvas_tabs(); self.rebuild_unit_tabs(); self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
 
 
-    def grid_font_pt(self, size_grid=0.9):
+    def grid_font_pt(self, size_grid=0.5):
         """Return the canvas pixel font size for a grid-relative text height.
 
         A value of 0.9 means the visible text should be about 90% of one
@@ -2102,7 +2208,7 @@ class MainWindow(QMainWindow):
         try:
             sg = float(size_grid)
         except (TypeError, ValueError):
-            sg = 0.9
+            sg = 0.5
         return round(float(self.grid_px) * sg * 1.28, 2)
 
     def sync_font_points_to_grid(self):
@@ -2110,7 +2216,7 @@ class MainWindow(QMainWindow):
             if not f:
                 return
             if not getattr(f, 'size_grid', None):
-                f.size_grid = 0.9
+                f.size_grid = 0.5
             f.size_pt = self.grid_font_pt(f.size_grid)
         for sym in self.library.symbols:
             old_symbol = getattr(self, '_sync_symbol_backup', None)
@@ -2122,7 +2228,7 @@ class MainWindow(QMainWindow):
                     sync_font(p.label_font)
                 for t in u.texts:
                     if not getattr(t, 'font_size_grid', None):
-                        t.font_size_grid = 0.9
+                        t.font_size_grid = 0.5
                     t.font_size_pt = round(float(sym.grid_inch) * PX_PER_INCH * float(t.font_size_grid) * 1.28, 2)
 
     def set_origin_mode(self, mode: str):

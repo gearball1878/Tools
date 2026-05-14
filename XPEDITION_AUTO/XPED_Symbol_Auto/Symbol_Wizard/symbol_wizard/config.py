@@ -13,3 +13,8 @@ def load_symbol_type_config():
         return json.loads(SYMBOL_TYPES_FILE.read_text(encoding="utf-8"))
     except Exception:
         return {"global_attributes": ["RefDes", "Package", "Order Code", "Value"], "types": {}}
+
+
+def save_symbol_type_config(config):
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    SYMBOL_TYPES_FILE.write_text(json.dumps(config, indent=2, ensure_ascii=False), encoding="utf-8")

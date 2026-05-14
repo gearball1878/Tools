@@ -10,7 +10,7 @@ class PinSide(str, Enum):
 class OriginMode(str, Enum):
     BOTTOM_LEFT='bottom_left'; BOTTOM_RIGHT='bottom_right'; CENTER='center'; TOP_LEFT='top_left'; TOP_RIGHT='top_right'; CUSTOM='custom'
 class DrawTool(str, Enum):
-    SELECT='select'; PIN_LEFT='pin_left'; PIN_RIGHT='pin_right'; TEXT='text'; LINE='line'; RECT='rect'; ELLIPSE='ellipse'
+    SELECT='select'; PIN_LEFT='pin_left'; PIN_RIGHT='pin_right'; TEXT='text'; LINE='line'; CURVE='curve'; RECT='rect'; ELLIPSE='ellipse'
 class SymbolKind(str, Enum):
     SINGLE='single'; SPLIT='split'
 class SheetFormat(str, Enum):
@@ -25,8 +25,8 @@ class FontModel:
     # Font size is grid-relative. size_grid=0.9 means 90% of the active grid.
     # size_pt is derived from grid_inch * 72 * size_grid at runtime and stored
     # only for compatibility/export visibility.
-    size_pt: float=6.48
-    size_grid: float=0.9
+    size_pt: float=3.60
+    size_grid: float=0.5
     color: Tuple[int,int,int]=(0,0,0)
 
 @dataclass
@@ -76,8 +76,8 @@ class SymbolBodyModel(TransformModel):
     x: float=-8.0; y: float=12.0; width: float=16.0; height: float=24.0
     color: Tuple[int,int,int]=(0,0,0); line_width: float=0.03; line_style: str=LineStyle.SOLID.value
     body_shape: str='rect'
-    attribute_font: FontModel=field(default_factory=lambda: FontModel(size_pt=6.48, size_grid=0.9))
-    refdes_font: FontModel=field(default_factory=lambda: FontModel(size_pt=6.48, size_grid=0.9))
+    attribute_font: FontModel=field(default_factory=lambda: FontModel(size_pt=3.60, size_grid=0.5))
+    refdes_font: FontModel=field(default_factory=lambda: FontModel(size_pt=3.60, size_grid=0.5))
     attributes: Dict[str,str]=field(default_factory=lambda:{'Order Code':'','Package':'','RefDes':'U?','Value':'','Frequency':'','Tolerance':'','Technology':''})
     visible_attributes: Dict[str,bool]=field(default_factory=lambda:{'Order Code':False,'Package':True,'RefDes':True,'Value':True,'Frequency':False,'Tolerance':False,'Technology':False})
     refdes_align: str='left'; body_attr_align: str='left'

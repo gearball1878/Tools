@@ -402,6 +402,12 @@ class TextItem(TransformMixin, QGraphicsTextItem):
         g = window.grid_px
         self.setPos(model.x * g, -model.y * g)
         self.setDefaultTextColor(rgb(model.color))
+        
+        try:
+            sg = float(getattr(model, 'font_size_grid', 0.5) or 0.5)
+        except (TypeError, ValueError):
+            sg = 0.5
+        model.font_size_pt = round(g * sg * 1.28, 2)
         self.setFont(qfont_for(model.font_family, model.font_size_pt))
         self.common_flags()
         # Text remains movable/selectable in edit mode. Text editing starts only on double click.
@@ -485,6 +491,10 @@ class GraphicItem(TransformMixin, QGraphicsItem):
         painter.setBrush(QBrush(rgb(m.style.fill)) if m.style.fill else QBrush(Qt.NoBrush))
         if m.shape == 'line':
             painter.drawLine(QPointF(0, 0), QPointF(m.w * g, m.h * g))
+        elif m.shape == 'curve':
+            path = QPainterPath(QPointF(0, 0))
+            path.quadTo(QPointF((m.w * g) / 2.0, -abs(m.h * g)), QPointF(m.w * g, 0))
+            painter.drawPath(path)
         elif m.shape == 'rect':
             painter.drawRect(QRectF(0, 0, m.w * g, m.h * g))
         elif m.shape == 'ellipse':
