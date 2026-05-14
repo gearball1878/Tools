@@ -158,26 +158,46 @@ class SplitPinManagerDialog(QDialog):
             ('Mark selected rows', self.mark_selected_rows),
             ('Mark filtered rows', self.mark_filtered_rows),
             ('Clear marks', self.clear_marks),
-            ('Go to selected pin', self.goto_selected_pin),
         ]:
             b = QPushButton(label); b.clicked.connect(slot); mark_row.addWidget(b)
+        mark_hint = QLabel('Double-click a table row to jump to that pin.')
+        mark_hint.setStyleSheet('color: #666;')
+        mark_row.addWidget(mark_hint)
         mark_row.addStretch(1)
         layout.addLayout(mark_row)
 
         bulk_box = QGroupBox('Bulk edit display attributes')
         bulk = QHBoxLayout(bulk_box)
+        bulk.setContentsMargins(8, 8, 8, 8)
+        bulk.setSpacing(12)
         self.show_number_combo = self._tri_combo()
         self.show_name_combo = self._tri_combo()
         self.show_function_combo = self._tri_combo()
-        bulk.addWidget(QLabel('Pin Number')); bulk.addWidget(self.show_number_combo)
-        bulk.addWidget(QLabel('Pin Name')); bulk.addWidget(self.show_name_combo)
-        bulk.addWidget(QLabel('Pin Function')); bulk.addWidget(self.show_function_combo)
+
+        def add_bulk_pair(label_text, combo):
+            pair = QHBoxLayout()
+            pair.setContentsMargins(0, 0, 0, 0)
+            pair.setSpacing(4)
+            lbl = QLabel(label_text)
+            lbl.setMinimumWidth(82)
+            combo.setMinimumWidth(120)
+            pair.addWidget(lbl)
+            pair.addWidget(combo)
+            container = QWidget()
+            container.setLayout(pair)
+            bulk.addWidget(container)
+
+        add_bulk_pair('Pin Number', self.show_number_combo)
+        add_bulk_pair('Pin Name', self.show_name_combo)
+        add_bulk_pair('Pin Function', self.show_function_combo)
+        bulk.addSpacing(10)
         for label, slot in [
             ('Apply to marked', self.apply_bulk_marked),
             ('Apply to filtered', self.apply_bulk_filtered),
             ('Apply to all pins', self.apply_bulk_all),
         ]:
             b = QPushButton(label); b.clicked.connect(slot); bulk.addWidget(b)
+        bulk.addStretch(1)
         layout.addWidget(bulk_box)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Close)

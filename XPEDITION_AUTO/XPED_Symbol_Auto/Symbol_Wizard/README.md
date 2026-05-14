@@ -97,10 +97,21 @@ New symbols place the symbol origin at the center of the symbol body by default.
 
 ## Mentor/Xpedition import and export notes
 
+### Import and export from the File menu
+
+Mentor/Xpedition exchange is handled from the **File** menu. Depending on the current build, the actions may be grouped directly under **File** or inside **File → Import** and **File → Export** submenus.
+
+Use these workflows:
+
+- **Import Mentor Single Symbol** / **Import Mentor Symbol .sym**: imports one `.sym` or `.1` file as one single symbol.
+- **Import Mentor Split ZIP**: imports a ZIP archive as one split symbol; every Mentor file inside the ZIP becomes one split part/unit.
+- **Export Mentor Single Symbol** / **Export Current Mentor Symbol .sym**: exports the current single symbol as one native Mentor ASCII file.
+- **Export Mentor Split ZIP**: exports the current split symbol as a ZIP archive; every split part/unit is written as its own native Mentor ASCII file.
+
 ### Split versus single files
 
-- Mentor split symbols are imported and exported as ZIP archives. Each file inside the ZIP is one split part/unit.
-- Mentor single symbols are imported and exported as one `.sym` or `.1` file.
+- Mentor split symbols always come and go as ZIP archives. Each file inside the ZIP is one split part/unit.
+- Mentor single symbols always come and go as one `.sym` or `.1` file.
 
 ### Native Mentor origin
 
@@ -141,6 +152,16 @@ Features:
   - Pin Name
   - Pin Function
 - Apply bulk changes to marked pins, filtered pins, or all pins.
-- Double-click a row or use **Go to selected pin** to jump to the corresponding split part and select the pin on the canvas.
+- Double-click any row to jump to the corresponding split part and select the pin on the canvas.
+- The bulk editor at the bottom keeps every attribute label next to its matching dropdown: **Pin Number**, **Pin Name**, and **Pin Function** can each be set to `Unchanged`, `Show`, or `Hide`.
+
+Typical workflow:
+
+1. Open **Tools → Split Pin Manager / Multi-Edit Pins**.
+2. Filter the table, for example by bank, unit name, `GROUND`, `POWER`, or a pin-name fragment.
+3. Mark selected rows or mark all filtered rows.
+4. Set the desired visibility dropdowns in the bulk area.
+5. Apply the change to marked, filtered, or all pins.
+6. Double-click a row whenever you want to jump back to that pin on the canvas.
 
 This display visibility is stored in the pin model and is also respected by Mentor export/import workflows where applicable.
