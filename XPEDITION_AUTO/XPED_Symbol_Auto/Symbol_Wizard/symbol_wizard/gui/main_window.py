@@ -15,6 +15,7 @@ from symbol_wizard.graphics.scene import SymbolScene, SHEET_INCHES, sheet_rect_f
 from symbol_wizard.graphics.view import SymbolView
 from symbol_wizard.graphics.items import BodyItem, PinItem, TextItem, GraphicItem, pen_for
 from symbol_wizard.io.json_store import save_library, load_library, save_symbol, load_symbol
+from symbol_wizard.io.mentor_sym import import_mentor_sym, export_mentor_sym
 
 
 class NoWheelOnValueWidgets(QObject):
@@ -1559,6 +1560,8 @@ class MainWindow(QMainWindow):
             ('Save Current Symbol JSON', self.save_current_symbol, 'Ctrl+S'),
             ('Save All Symbols JSON', self.save_all_symbols, 'Ctrl+Shift+S'),
             ('Import Symbol JSON', self.import_symbol, None),
+            ('Import Mentor Symbol .sym', self.import_mentor_symbol, None),
+            ('Export Current Mentor Symbol .sym', self.export_current_mentor_symbol, None),
             ('Import PINMUX CSV', self.import_pinmux_csv, None),
             ('---', None, None),
             ('Exit', self.close, None),
@@ -4019,17 +4022,25 @@ Use **File > Import PINMUX CSV** to import pin information from a CSV file. Afte
             return
         self.push_undo_state()
         self.symbol.origin = mode
-        # Origin Reset is local to the active split part / current canvas only.
-        # Other split units must not be moved or recalculated while editing one unit.
-        self.shift_unit_geometry(self.current_unit, -ax, -ay)
-        self.dock_pins_to_body(self.current_unit)
+        # Symbol Editor: Origin Reset is intentionally global for split symbols.
+        # Each split part is reset independently to the same selected anchor, so
+        # body-attached pins/text/graphics/body attributes keep their local layout
+        # while every unit receives a consistent zero point.
+        units = list(getattr(self.symbol, 'units', []) or [self.current_unit])
+        if getattr(self.symbol, 'kind', None) != SymbolKind.SPLIT.value:
+            units = [self.current_unit]
+        for unit in units:
+            uax, uay = self.body_anchor_point(unit.body, mode)
+            if abs(uax) > 1e-9 or abs(uay) > 1e-9:
+                self.shift_unit_geometry(unit, -uax, -uay)
+            self.dock_pins_to_body(unit)
         if hasattr(self, 'origin_combo'):
             self.origin_combo.blockSignals(True)
             self.origin_combo.setCurrentText(mode)
             self.origin_combo.blockSignals(False)
         self.set_format_guide_to_active_origin()
         self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
-        self.statusBar().showMessage(f'Origin auf {mode} nachgezogen.', 3000)
+        self.statusBar().showMessage(f'Origin auf {mode} global nachgezogen.', 3000)
 
     def unit_tab_context_menu(self, pos):
         # Context menu for split-part tabs in the Units / Split Parts row.
@@ -4533,3 +4544,37 @@ Use **File > Import PINMUX CSV** to import pin information from a CSV file. Afte
         self.library.current_symbol_index = len(self.library.symbols) - 1
         self.current_unit_index = 0
         self.rebuild_all()
+
+    def import_mentor_symbol(self):
+        p, _ = QFileDialog.getOpenFileName(self, 'Import Mentor Symbol .sym', '', 'Mentor Symbol (*.sym);;All Files (*)')
+        if not p:
+            return
+        try:
+            s = import_mentor_sym(p)
+        except Exception as exc:
+            QMessageBox.critical(self, 'Import Mentor Symbol .sym', f'Die Mentor Symboldatei konnte nicht importiert werden:\n{exc}')
+            return
+        # Keep source scale; normalize origin per selected mode without autoscaling.
+        self.normalize_symbol_origins_for_import(s)
+        s.name = self.library.unique_import_name(s.name)
+        self.library.symbols.append(s)
+        self.library.current_symbol_index = len(self.library.symbols) - 1
+        self.current_unit_index = 0
+        self.dirty = True
+        self.undo_stack.clear(); self.redo_stack.clear()
+        self.rebuild_all()
+        self.statusBar().showMessage(f'Mentor Symbol importiert: {Path(p).name}', 5000)
+
+    def export_current_mentor_symbol(self):
+        if not self.validate_pins():
+            return
+        default_name = (self.symbol.name or 'symbol').replace(' ', '_') + '.sym'
+        p, _ = QFileDialog.getSaveFileName(self, 'Export Current Mentor Symbol .sym', default_name, 'Mentor Symbol (*.sym);;All Files (*)')
+        if not p:
+            return
+        try:
+            export_mentor_sym(p, self.symbol)
+        except Exception as exc:
+            QMessageBox.critical(self, 'Export Mentor Symbol .sym', f'Die Mentor Symboldatei konnte nicht exportiert werden:\n{exc}')
+            return
+        self.statusBar().showMessage(f'Mentor Symbol exportiert: {Path(p).name}', 5000)
