@@ -78,6 +78,8 @@ class TemplateEditorDialog(QDialog):
         self.undo_stack = []
         self.redo_stack = []
         self.max_history = 10
+        self.selection_enabled = {'BODY': True, 'PIN': True, 'TEXT': True, 'GRAPHIC': True}
+        self._selection_restore_ids: set[int] = set()
         self.setWindowTitle('Symbol Templates editieren')
         self.resize(1200, 800)
         self._build_ui()
@@ -112,6 +114,11 @@ class TemplateEditorDialog(QDialog):
         self.tool_buttons[self.draw_tool].setChecked(True)
         for label, fn in [('Alles markieren', self.select_all_canvas), ('Undo', self.undo), ('Redo', self.redo)]:
             b = QPushButton(label); b.clicked.connect(fn); tools.addWidget(b)
+        tools.addWidget(QLabel('Markierbar:'))
+        for kind in ('BODY', 'PIN', 'TEXT', 'GRAPHIC'):
+            cb = QCheckBox(kind); cb.setChecked(True)
+            cb.toggled.connect(lambda checked, k=kind: self.set_selection_enabled(k, checked))
+            tools.addWidget(cb)
         tools.addStretch(); layout.addLayout(tools)
         splitter = QSplitter()
         splitter.addWidget(self.view)
@@ -131,10 +138,14 @@ class TemplateEditorDialog(QDialog):
         self.redo_stack.clear()
 
     def undo(self):
+        self.set_tool(DrawTool.SELECT.value)
         if not self.undo_stack: return
+        self.set_tool(DrawTool.SELECT.value)
         self.redo_stack.append(copy.deepcopy(self.unit)); self.unit = self.undo_stack.pop(); self.symbol.units=[self.unit]; self.rebuild_scene()
     def redo(self):
+        self.set_tool(DrawTool.SELECT.value)
         if not self.redo_stack: return
+        self.set_tool(DrawTool.SELECT.value)
         self.undo_stack.append(copy.deepcopy(self.unit)); self.unit = self.redo_stack.pop(); self.symbol.units=[self.unit]; self.rebuild_scene()
 
     def load_selected_template(self):
@@ -159,12 +170,18 @@ class TemplateEditorDialog(QDialog):
         QMessageBox.information(self, 'Template', f'Template "{name}" gespeichert.')
 
     def rebuild_scene(self):
+        selected_ids = self._selection_restore_ids or self._capture_selection_ids()
+        self._selection_restore_ids = set()
         self.scene.blockSignals(True); self.scene.clear()
         if self.unit.body and self.unit.body.width > 0 and self.unit.body.height > 0:
-            self.scene.addItem(BodyItem(self.unit.body, self))
-        for g in self.unit.graphics: self.scene.addItem(GraphicItem(g, self))
-        for p in self.unit.pins: self.scene.addItem(PinItem(p, self))
-        for t in self.unit.texts: self.scene.addItem(TextItem(t, self))
+            item = BodyItem(self.unit.body, self); self.apply_item_selectability(item); self.scene.addItem(item); self._restore_item_selection(item, selected_ids)
+        self.add_attribute_text_items(self.unit)
+        for g in self.unit.graphics:
+            item = GraphicItem(g, self); self.apply_item_selectability(item); self.scene.addItem(item); self._restore_item_selection(item, selected_ids)
+        for p in self.unit.pins:
+            item = PinItem(p, self); self.apply_item_selectability(item); self.scene.addItem(item); self._restore_item_selection(item, selected_ids)
+        for t in self.unit.texts:
+            item = TextItem(t, self); self.apply_item_selectability(item); self.scene.addItem(item); self._restore_item_selection(item, selected_ids)
         self.scene.blockSignals(False); self.scene.update(); self.refresh_properties()
 
     def refresh_properties(self):
@@ -172,6 +189,13 @@ class TemplateEditorDialog(QDialog):
         sel = self.scene.selectedItems()
         if not sel:
             self.form.addRow(QLabel('Keine Auswahl. Template-Canvas ist unabhängig vom Symbol Wizard.'))
+            self.form.addRow(QLabel('<b>Attribut-Visibility des Templates</b>'))
+            for k in list(self.unit.body.attributes.keys()):
+                row=QWidget(); l=QHBoxLayout(row); l.setContentsMargins(0,0,0,0)
+                cb=QCheckBox('sichtbar'); cb.setChecked(self.unit.body.visible_attributes.get(k, False))
+                preview=QLabel(f'{k}: {self.unit.body.attributes.get(k, '')}' if str(self.unit.body.attributes.get(k, '')).strip() else k)
+                cb.toggled.connect(lambda v, key=k: self._set_attr_vis(key, v))
+                l.addWidget(cb); l.addWidget(preview); self.form.addRow(k, row)
             return
         item = sel[0]; kind = item.data(0); m = item.model
         self.form.addRow(QLabel(f'<b>{kind}</b>'))
@@ -209,11 +233,57 @@ class TemplateEditorDialog(QDialog):
     def _combo(self, items, val, fn):
         w=QComboBox(); w.addItems(items); w.setCurrentText(str(val)); w.currentTextChanged.connect(fn); return w
     def _set(self, m, a, v):
-        self.push_undo_state(); setattr(m, a, v); self.rebuild_scene()
+        self.push_undo_state(); self._selection_restore_ids={id(m)}; setattr(m, a, v); self.rebuild_scene()
     def _set_pin_side(self, m, v):
-        self.push_undo_state(); m.side=v; self.dock_pins_to_body(self.unit); self.rebuild_scene()
-    def _set_attr_vis(self, key, val): self.unit.body.visible_attributes.__setitem__(key, val); self.rebuild_scene()
-    def _set_attr_val(self, key, val): self.unit.body.attributes.__setitem__(key, val); self.rebuild_scene()
+        self.push_undo_state(); self._selection_restore_ids={id(m)}; m.side=v; self.dock_pins_to_body(self.unit); self.rebuild_scene()
+    def _set_attr_vis(self, key, val): self._selection_restore_ids=self._capture_selection_ids(); self.unit.body.visible_attributes.__setitem__(key, val); self.rebuild_scene()
+    def _set_attr_val(self, key, val): self._selection_restore_ids=self._capture_selection_ids(); self.unit.body.attributes.__setitem__(key, val); self.rebuild_scene()
+
+
+    def _capture_selection_ids(self):
+        return {id(getattr(i, 'model', None)) for i in self.scene.selectedItems() if getattr(i, 'model', None) is not None}
+
+    def _restore_item_selection(self, item, selected_ids):
+        model = getattr(item, 'model', None)
+        if model is not None and id(model) in selected_ids:
+            item.setSelected(True)
+
+    def apply_item_selectability(self, item):
+        kind = item.data(0)
+        selectable = self.selection_enabled.get(kind, True)
+        item.setFlag(QGraphicsItem.ItemIsSelectable, selectable)
+        item.setFlag(QGraphicsItem.ItemIsMovable, selectable and kind not in ('ATTR_REF_DES', 'ATTR_BODY'))
+        if not selectable:
+            item.setSelected(False)
+        z = {'BODY': 0, 'GRAPHIC': 1, 'TEXT': 2, 'PIN': 3}.get(kind, -1)
+        item.setZValue(z)
+
+    def set_selection_enabled(self, kind, checked):
+        self.selection_enabled[kind] = bool(checked)
+        for item in self.scene.items():
+            if item.data(0) == kind:
+                self.apply_item_selectability(item)
+        self.refresh_properties()
+
+    def add_attribute_text_items(self, u):
+        b = u.body
+        row = 1
+        ref = b.attributes.get('RefDes', '')
+        if b.visible_attributes.get('RefDes', False):
+            label = ref if str(ref).strip() else 'RefDes'
+            txt = TextItem(TextModel(text=label, x=b.x, y=b.y + 1, font_family=b.refdes_font.family, font_size_grid=b.refdes_font.size_grid, color=b.refdes_font.color), self)
+            txt.setData(0, 'ATTR_REF_DES'); txt.setZValue(-1)
+            txt.setFlag(QGraphicsItem.ItemIsSelectable, False); txt.setFlag(QGraphicsItem.ItemIsMovable, False)
+            self.scene.addItem(txt)
+        for k, v in b.attributes.items():
+            if k == 'RefDes' or not b.visible_attributes.get(k, False):
+                continue
+            label = f'{k}: {v}' if str(v).strip() else str(k)
+            txt = TextItem(TextModel(text=label, x=b.x, y=b.y - b.height - row, font_family=b.attribute_font.family, font_size_grid=b.attribute_font.size_grid, color=b.attribute_font.color), self)
+            txt.setData(0, 'ATTR_BODY'); txt.setZValue(-1)
+            txt.setFlag(QGraphicsItem.ItemIsSelectable, False); txt.setFlag(QGraphicsItem.ItemIsMovable, False)
+            self.scene.addItem(txt)
+            row += 1
 
     def add_pin(self, side, x=None, y=None):
         self.push_undo_state(); p=PinModel(number=str(len(self.unit.pins)+1), side=side, name='PIN', function='')
@@ -227,9 +297,20 @@ class TemplateEditorDialog(QDialog):
     def new_body(self): self.push_undo_state(); self.unit.body=SymbolBodyModel(); self.rebuild_scene()
     def delete_body(self): self.push_undo_state(); self.unit.body.width=0.01; self.unit.body.height=0.01; self.rebuild_scene()
     def select_all_canvas(self):
-        for item in self.scene.items(): item.setSelected(True)
-    def copy_selected(self): self.clipboard=[(i.data(0), copy.deepcopy(i.model)) for i in self.scene.selectedItems()]
+        self.set_tool(DrawTool.SELECT.value)
+        for item in self.scene.items():
+            if item.data(0) in ('BODY','PIN','TEXT','GRAPHIC') and self.selection_enabled.get(item.data(0), True): item.setSelected(True)
+        self.refresh_properties()
+    def copy_selected(self):
+        self.set_tool(DrawTool.SELECT.value)
+        self.clipboard=[(i.data(0), copy.deepcopy(i.model)) for i in self.scene.selectedItems() if i.data(0) in ('BODY','PIN','TEXT','GRAPHIC')]
+    def cut_selected(self):
+        self.set_tool(DrawTool.SELECT.value)
+        self.copy_selected()
+        self.delete_selected()
+
     def paste_selected(self):
+        self.set_tool(DrawTool.SELECT.value)
         self.push_undo_state()
         for kind, m in self.clipboard:
             if hasattr(m,'x'): m.x += 1
@@ -240,6 +321,7 @@ class TemplateEditorDialog(QDialog):
             elif kind=='BODY': self.unit.body=m
         self.rebuild_scene()
     def delete_selected(self):
+        self.set_tool(DrawTool.SELECT.value)
         self.push_undo_state()
         for it in list(self.scene.selectedItems()):
             if it.data(0)=='PIN': self.unit.pins=[p for p in self.unit.pins if p is not it.model]
@@ -257,6 +339,24 @@ class TemplateEditorDialog(QDialog):
     def update_current_unit_canvas_positions(self): pass
     def update_attribute_items_for_unit(self): pass
     def enforce_symbol_size_limit(self, silent=False): return True
+
+    def apply_item_selectability(self, item):
+        kind = item.data(0)
+        selectable = self.selection_enabled.get(kind, True)
+        item.setFlag(QGraphicsItem.ItemIsSelectable, selectable)
+        item.setFlag(QGraphicsItem.ItemIsMovable, selectable and kind not in ('ATTR_REF_DES', 'ATTR_BODY'))
+        if not selectable:
+            item.setSelected(False)
+        z = {'BODY': 0, 'GRAPHIC': 1, 'TEXT': 2, 'PIN': 3}.get(kind, -1)
+        item.setZValue(z)
+
+    def set_selection_enabled(self, kind, checked):
+        self.selection_enabled[kind] = bool(checked)
+        for item in self.scene.items():
+            if item.data(0) == kind:
+                self.apply_item_selectability(item)
+        self.refresh_properties()
+
     def rebuild_tree(self): pass
     def rebuild_pin_table(self): pass
 
@@ -280,6 +380,7 @@ class MainWindow(QMainWindow):
         self._selection_restore_ids: set[int] = set()
         self.default_color = (0, 0, 0)
         self._refresh_visual_only = False
+        self.selection_enabled = {'BODY': True, 'PIN': True, 'TEXT': True, 'GRAPHIC': True}
         self.refresh_timer = QTimer(self)
         self.refresh_timer.setSingleShot(True)
         self.refresh_timer.timeout.connect(self._scheduled_refresh)
@@ -491,6 +592,7 @@ class MainWindow(QMainWindow):
             ('Redo', self.redo, 'Ctrl+Y'),
             ('Select All Canvas Objects', self.select_all_canvas, 'Ctrl+A'),
             ('Copy', self.copy_selected, 'Ctrl+C'),
+            ('Cut', self.cut_selected, 'Ctrl+X'),
             ('Paste', self.paste_selected, 'Ctrl+V'),
             ('Delete', self.delete_selected, 'Del'),
             ('Validate Pins', self.validate_pins, None),
@@ -551,6 +653,12 @@ class MainWindow(QMainWindow):
             draw_tb.addAction(a)
             self.tool_buttons[tool.value] = a
         self.tool_buttons[self.draw_tool].setChecked(True)
+        draw_tb.addSeparator()
+        draw_tb.addWidget(QLabel('Markierbar:'))
+        for kind in ('BODY', 'PIN', 'TEXT', 'GRAPHIC'):
+            cb = QCheckBox(kind); cb.setChecked(True)
+            cb.toggled.connect(lambda checked, k=kind: self.set_selection_enabled(k, checked))
+            draw_tb.addWidget(cb)
 
         # --- Symbol setup -----------------------------------------------
         self.addToolBarBreak()
@@ -793,20 +901,24 @@ class MainWindow(QMainWindow):
         self.dock_pins_to_body(u)
 
         body_item = BodyItem(u.body, self)
+        self.apply_item_selectability(body_item)
         self.scene.addItem(body_item)
         self._restore_or_select_item(body_item, selected_ids)
 
         self.add_attribute_text_items(u)
         for g in u.graphics:
             item = GraphicItem(g, self)
+            self.apply_item_selectability(item)
             self.scene.addItem(item)
             self._restore_or_select_item(item, selected_ids)
         for p in u.pins:
             item = PinItem(p, self)
+            self.apply_item_selectability(item)
             self.scene.addItem(item)
             self._restore_or_select_item(item, selected_ids)
         for t in u.texts:
             item = TextItem(t, self)
+            self.apply_item_selectability(item)
             self.scene.addItem(item)
             self._restore_or_select_item(item, selected_ids)
         self.scene.update()
@@ -819,9 +931,9 @@ class MainWindow(QMainWindow):
     def add_attribute_text_items(self, u: SymbolUnitModel):
         b = u.body
         ref = b.attributes.get('RefDes', '')
-        if b.visible_attributes.get('RefDes', False) and ref:
-            txt = TextItem(TextModel(text=ref, x=b.x, y=b.y + 1, font_family=b.refdes_font.family, font_size_grid=b.refdes_font.size_grid, color=b.refdes_font.color), self)
-            txt.setFlag(QGraphicsItem.ItemIsMovable, False)
+        if b.visible_attributes.get('RefDes', False):
+            txt = TextItem(TextModel(text=(ref if str(ref).strip() else 'RefDes'), x=b.x, y=b.y + 1, font_family=b.refdes_font.family, font_size_grid=b.refdes_font.size_grid, color=b.refdes_font.color), self)
+            txt.setFlag(QGraphicsItem.ItemIsMovable, False); txt.setFlag(QGraphicsItem.ItemIsSelectable, False); txt.setZValue(-1)
             txt.setData(0, 'ATTR_REF_DES')
             self.scene.addItem(txt)
         row = 1
@@ -830,10 +942,28 @@ class MainWindow(QMainWindow):
                 continue
             label = f'{k}: {v}' if str(v).strip() else str(k)
             txt = TextItem(TextModel(text=label, x=b.x, y=b.y - b.height - row, font_family=b.attribute_font.family, font_size_grid=b.attribute_font.size_grid, color=b.attribute_font.color), self)
-            txt.setFlag(QGraphicsItem.ItemIsMovable, False)
+            txt.setFlag(QGraphicsItem.ItemIsMovable, False); txt.setFlag(QGraphicsItem.ItemIsSelectable, False); txt.setZValue(-1)
             txt.setData(0, 'ATTR_BODY')
             self.scene.addItem(txt)
             row += 1
+
+
+    def apply_item_selectability(self, item):
+        kind = item.data(0)
+        selectable = self.selection_enabled.get(kind, True)
+        item.setFlag(QGraphicsItem.ItemIsSelectable, selectable)
+        item.setFlag(QGraphicsItem.ItemIsMovable, selectable and kind not in ('ATTR_REF_DES', 'ATTR_BODY'))
+        if not selectable:
+            item.setSelected(False)
+        z = {'BODY': 0, 'GRAPHIC': 1, 'TEXT': 2, 'PIN': 3}.get(kind, -1)
+        item.setZValue(z)
+
+    def set_selection_enabled(self, kind, checked):
+        self.selection_enabled[kind] = bool(checked)
+        for item in self.scene.items():
+            if item.data(0) == kind:
+                self.apply_item_selectability(item)
+        self.refresh_properties()
 
     def rebuild_tree(self):
         # Upper left areas show only pin tables; lower areas keep the object hierarchy.
@@ -1406,6 +1536,7 @@ class MainWindow(QMainWindow):
         self.schedule_scene_refresh(visual_only=True)
 
     def copy_selected(self):
+        self.set_tool(DrawTool.SELECT.value)
         self.clipboard = []
         for it in self.scene.selectedItems():
             if it.data(0) in ('PIN', 'TEXT', 'GRAPHIC', 'BODY'):
@@ -1413,7 +1544,13 @@ class MainWindow(QMainWindow):
         if self.clipboard:
             self.statusBar().showMessage(f'Copied {len(self.clipboard)} object(s).', 2500)
 
+    def cut_selected(self):
+        self.set_tool(DrawTool.SELECT.value)
+        self.copy_selected()
+        self.delete_selected()
+
     def paste_selected(self):
+        self.set_tool(DrawTool.SELECT.value)
         self.push_undo_state()
         if not self.clipboard:
             return
@@ -1445,6 +1582,7 @@ class MainWindow(QMainWindow):
         self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
 
     def delete_selected(self):
+        self.set_tool(DrawTool.SELECT.value)
         self.push_undo_state()
         sel = [i for i in self.scene.selectedItems() if i.data(0) in ('PIN', 'TEXT', 'GRAPHIC')]
         if not sel: return
@@ -1789,6 +1927,7 @@ class MainWindow(QMainWindow):
         self.dirty = True
 
     def undo(self):
+        self.set_tool(DrawTool.SELECT.value)
         if not self.undo_stack:
             self.statusBar().showMessage('Undo-Historie ist leer.', 2000)
             return
@@ -1800,6 +1939,7 @@ class MainWindow(QMainWindow):
         self.rebuild_all()
 
     def redo(self):
+        self.set_tool(DrawTool.SELECT.value)
         if not self.redo_stack:
             self.statusBar().showMessage('Redo-Historie ist leer.', 2000)
             return
@@ -1831,8 +1971,9 @@ class MainWindow(QMainWindow):
         return True
 
     def select_all_canvas(self):
+        self.set_tool(DrawTool.SELECT.value)
         for item in self.scene.items():
-            if item.data(0) in ('BODY', 'PIN', 'TEXT', 'GRAPHIC'):
+            if item.data(0) in ('BODY', 'PIN', 'TEXT', 'GRAPHIC') and self.selection_enabled.get(item.data(0), True):
                 item.setSelected(True)
         self.refresh_properties()
 
@@ -2118,6 +2259,7 @@ class MainWindow(QMainWindow):
                 subtypes = type_def.get('subtypes') or {}
                 if not subtypes:
                     templates[type_name] = self.unit_from_template_def(type_name, None, data)
+                # Bei Typen mit Subtypen wird nur der konkrete Subtyp editiert/ausgewählt.
                 for subtype_name in subtypes.keys():
                     templates[f'{type_name} / {subtype_name}'] = self.unit_from_template_def(type_name, subtype_name, data)
         except Exception as exc:
@@ -2159,19 +2301,32 @@ class MainWindow(QMainWindow):
     def ask_new_symbol_template(self, kind: str):
         templates = self.available_templates(split_only=(kind == SymbolKind.SPLIT.value))
         dlg = QDialog(self)
-        dlg.setWindowTitle('Neues Symbol')
+        dlg.setWindowTitle('Neues Symbol anlegen')
         layout = QFormLayout(dlg)
         combo = QComboBox(); combo.addItems(sorted(templates.keys()))
+        name_edit = QLineEdit()
+        name_edit.setMaxLength(24)
+        def update_default_name():
+            if not name_edit.text().strip():
+                base = combo.currentText().split('/')[-1].strip().replace(' ', '_') or ('Split_Symbol' if kind == SymbolKind.SPLIT.value else 'Symbol')
+                name_edit.setPlaceholderText(base[:24])
+        combo.currentTextChanged.connect(lambda *_: update_default_name())
+        update_default_name()
         layout.addRow('Template', combo)
+        layout.addRow('Symbolname', name_edit)
+        hint = QLabel('3 bis 24 Zeichen. Der Name wird beim Erstellen festgelegt und kann später per Edit oder RMT am Symbolreiter geändert werden.')
+        hint.setWordWrap(True); layout.addRow('', hint)
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         layout.addRow(buttons)
-        buttons.accepted.connect(dlg.accept); buttons.rejected.connect(dlg.reject)
+        def accept_if_valid():
+            n = name_edit.text().strip()
+            if len(n) < 3 or len(n) > 24:
+                QMessageBox.warning(dlg, 'Symbolname', 'Bitte einen Symbolnamen mit 3 bis 24 Zeichen eingeben.')
+                return
+            dlg.accept()
+        buttons.accepted.connect(accept_if_valid); buttons.rejected.connect(dlg.reject)
         if dlg.exec() == QDialog.Accepted:
-            tmpl = combo.currentText()
-            base = 'Split Symbol' if kind == SymbolKind.SPLIT.value else 'Symbol'
-            if tmpl:
-                base = tmpl.split('/')[-1].strip().replace(' ', '_')
-            return base, tmpl
+            return name_edit.text().strip(), combo.currentText()
         return None
 
 

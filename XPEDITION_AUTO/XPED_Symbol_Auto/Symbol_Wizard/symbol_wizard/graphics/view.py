@@ -47,6 +47,7 @@ class SymbolView(QGraphicsView):
         menu = QMenu(self)
         menu.addAction('Alles markieren', self.window.select_all_canvas)
         menu.addAction('Kopieren', self.window.copy_selected)
+        menu.addAction('Ausschneiden', self.window.cut_selected)
         menu.addAction('Einfügen', self.window.paste_selected)
         menu.addSeparator()
         menu.addAction('Rückgängig', self.window.undo)
@@ -61,17 +62,21 @@ class SymbolView(QGraphicsView):
         if focus_item is not None and hasattr(focus_item, 'textInteractionFlags') and focus_item.textInteractionFlags() != Qt.NoTextInteraction:
             super().keyPressEvent(event)
             return
+        if event.key() == Qt.Key_Escape:
+            self.window.set_tool(DrawTool.SELECT.value); event.accept(); return
         if event.key() == Qt.Key_Delete:
-            self.window.delete_selected(); event.accept(); return
+            self.window.set_tool(DrawTool.SELECT.value); self.window.delete_selected(); event.accept(); return
         if event.modifiers() & Qt.ControlModifier:
             if event.key() == Qt.Key_A:
-                self.window.select_all_canvas(); event.accept(); return
+                self.window.set_tool(DrawTool.SELECT.value); self.window.select_all_canvas(); event.accept(); return
             if event.key() == Qt.Key_C:
-                self.window.copy_selected(); event.accept(); return
+                self.window.set_tool(DrawTool.SELECT.value); self.window.copy_selected(); event.accept(); return
+            if event.key() == Qt.Key_X:
+                self.window.set_tool(DrawTool.SELECT.value); self.window.cut_selected(); event.accept(); return
             if event.key() == Qt.Key_Z:
-                self.window.undo(); event.accept(); return
+                self.window.set_tool(DrawTool.SELECT.value); self.window.undo(); event.accept(); return
             if event.key() == Qt.Key_Y:
-                self.window.redo(); event.accept(); return
+                self.window.set_tool(DrawTool.SELECT.value); self.window.redo(); event.accept(); return
         selected = self.scene().selectedItems()
         if selected:
             if event.key() in (Qt.Key_R, Qt.Key_E):
@@ -105,8 +110,12 @@ class SymbolView(QGraphicsView):
         super().keyPressEvent(event)
 
     def mousePressEvent(self, event):
-        # Right mouse button always returns the canvas to Select/Edit mode.
-        # This works from every draw tool and avoids getting stuck in insert mode.
+        # Right and middle mouse button return the canvas to Select/Edit mode.
+        # Right mouse still opens the context menu through contextMenuEvent.
+        if event.button() == Qt.MiddleButton:
+            self.window.set_tool(DrawTool.SELECT.value)
+            event.accept()
+            return
         if event.button() == Qt.RightButton:
             self.window.set_tool(DrawTool.SELECT.value)
             event.accept()
