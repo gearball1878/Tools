@@ -1,0 +1,21 @@
+{
+  "global_attributes": ["RefDes", "Package", "Order Code", "Value"],
+  "types": {
+    "IC": {"refdes_prefix":"U", "attributes":["Technology", "Frequency", "Supply Voltage", "Manufacturer"], "subtypes":{"Generic IC":{"template":{"body":{"width":16,"height":24},"graphics":[],"default_pins":[]}}}},
+    "R": {"refdes_prefix":"R", "attributes":["Resistance", "Tolerance", "Power", "Temperature Coefficient"], "subtypes":{"Generic Resistor":{"template":{"body":{"width":6,"height":2},"graphics":[{"shape":"line","x":-5,"y":0,"w":2,"h":0},{"shape":"line","x":3,"y":0,"w":2,"h":0}],"default_pins":[{"number":"1","name":"A","side":"left"},{"number":"2","name":"B","side":"right"}]}}}},
+    "C": {"refdes_prefix":"C", "attributes":["Capacitance","Tolerance","Voltage Rating","Dielectric"], "subtypes":{"Kerko":{"template":{"body":{"width":4,"height":4},"graphics":[],"default_pins":[{"number":"1","name":"1","side":"left"},{"number":"2","name":"2","side":"right"}]}},"Elko":{},"Tantal":{}}},
+    "L": {"refdes_prefix":"L", "attributes":["Inductance","Current Rating","DCR","Tolerance"], "subtypes":{"Inductor":{},"Choke":{},"Transformer":{}}},
+    "Diode": {"refdes_prefix":"D", "attributes":["Vr","If","Vf"], "subtypes":{"Signal Diode":{},"Schottky":{},"Zener":{},"LED":{}}},
+    "FET": {"refdes_prefix":"Q", "attributes":["Vds","Id","RdsOn"], "subtypes":{"NMOS":{},"PMOS":{},"Dual MOSFET":{}}},
+    "Bipolar Transistor": {"refdes_prefix":"Q", "attributes":["Vceo","Ic","hFE"], "subtypes":{"NPN":{},"PNP":{},"Darlington":{}}},
+    "Connector": {"refdes_prefix":"J", "attributes":["Positions","Pitch","Gender"], "subtypes":{"Header":{},"Socket":{},"USB":{},"Board-to-Board":{}}},
+    "Oscillator": {"refdes_prefix":"X", "attributes":["Frequency","Stability","Voltage"], "subtypes":{"XO":{},"VCXO":{},"TCXO":{}}},
+    "Quartz": {"refdes_prefix":"Y", "attributes":["Frequency","Load Capacitance","ESR"], "subtypes":{"2 Pin Quartz":{},"4 Pin Quartz":{}}},
+    "SoC": {"refdes_prefix":"U", "attributes":["Core","Frequency","Memory","Package"], "subtypes":{"MCU":{},"MPU":{},"Wireless SoC":{}}},
+    "SoM": {"refdes_prefix":"U", "attributes":["Processor","Memory","Storage"], "subtypes":{"Generic SoM":{},"Compute Module":{}}},
+    "Fuse": {"refdes_prefix":"F", "attributes":["Current Rating","Voltage Rating"], "subtypes":{"Fuse":{},"PTC":{},"eFuse":{}}},
+    "Battery": {"refdes_prefix":"BT", "attributes":["Voltage","Capacity","Chemistry"], "subtypes":{"Cell":{},"Battery Pack":{},"Supercap":{}}},
+    "Varistor": {"refdes_prefix":"RV", "attributes":["Voltage Rating","Energy","Clamping Voltage"], "subtypes":{"MOV":{}}},
+    "Shunt": {"refdes_prefix":"R", "attributes":["Resistance","Tolerance","Power","Current Rating"], "subtypes":{"Current Shunt":{}}}
+  }
+}
