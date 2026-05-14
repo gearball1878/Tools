@@ -7,6 +7,12 @@ from symbol_wizard.models.document import DrawTool, GraphicModel, PinSide, TextM
 class SymbolView(QGraphicsView):
     def __init__(self, scene, window):
         super().__init__(scene)
+        try:
+            self.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
+            self.setOptimizationFlag(QGraphicsView.DontAdjustForAntialiasing, False)
+            self.viewport().setAttribute(Qt.WA_StaticContents, False)
+        except Exception:
+            pass
         self.window = window
         self.setRenderHint(QPainter.Antialiasing)
         self.setCacheMode(QGraphicsView.CacheBackground)

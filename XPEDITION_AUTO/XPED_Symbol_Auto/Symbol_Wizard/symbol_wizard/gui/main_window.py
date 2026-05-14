@@ -53,6 +53,12 @@ class PinComboDelegate(QStyledItemDelegate):
     """
     def __init__(self, values: list[str], parent=None):
         super().__init__(parent)
+        try:
+            self.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
+            self.setOptimizationFlag(QGraphicsView.DontAdjustForAntialiasing, False)
+            self.viewport().setAttribute(Qt.WA_StaticContents, False)
+        except Exception:
+            pass
         self.values = values
 
     def createEditor(self, parent, option, index):
@@ -92,6 +98,12 @@ class TemplateEditorDialog(QDialog):
     """Independent canvas-based editor for reusable symbol templates."""
     def __init__(self, parent: 'MainWindow'):
         super().__init__(parent)
+        try:
+            self.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
+            self.setOptimizationFlag(QGraphicsView.DontAdjustForAntialiasing, False)
+            self.viewport().setAttribute(Qt.WA_StaticContents, False)
+        except Exception:
+            pass
         install_no_wheel_value_filter(self)
         self.main = parent
         self.templates = parent.available_templates()
@@ -1258,6 +1270,36 @@ class TemplateEditorDialog(QDialog):
 
     def rebuild_tree(self): pass
     def rebuild_pin_table(self): pass
+
+
+
+    def _schedule_property_panel_refresh(self):
+        """Refresh property panel after canvas-driven edits without forcing global rebuilds."""
+        try:
+            from PySide6.QtCore import QTimer
+        except Exception:
+            try:
+                from PyQt5.QtCore import QTimer
+            except Exception:
+                QTimer = None
+        def _do():
+            for name in ("refresh_property_panel", "refresh_properties", "update_property_panel", "populate_property_panel", "update_properties_panel"):
+                fn = getattr(self, name, None)
+                if callable(fn):
+                    try:
+                        fn()
+                    except TypeError:
+                        try:
+                            fn(getattr(self, "selected_items", None))
+                        except Exception:
+                            pass
+                    except Exception:
+                        pass
+                    break
+        if QTimer is not None:
+            QTimer.singleShot(0, _do)
+        else:
+            _do()
 
 
 class MainWindow(QMainWindow):
