@@ -66,6 +66,13 @@ class MainWindow(QMainWindow):
         self.split_tabs = QTabWidget()
         self.split_tabs.currentChanged.connect(lambda i: self.change_symbol_from_tab(SymbolKind.SPLIT.value, i))
 
+        # Tree-oriented overview for the Symbols workspace. The former dedicated
+        # Pins tab is intentionally removed; pins are shown where they belong in
+        # the symbol hierarchy.
+        self.single_symbol_tree = QTreeWidget()
+        self.single_symbol_tree.setHeaderLabels(['Symbol / Object / Pin', 'Info'])
+        self.single_symbol_tree.itemClicked.connect(self.tree_clicked)
+
         self.unit_tabs = QTabWidget()
         self.unit_tabs.currentChanged.connect(self.change_unit)
         self.add_unit_button = QPushButton('Add Unit / Split Part')
@@ -91,7 +98,7 @@ class MainWindow(QMainWindow):
         single_page = QWidget()
         single_layout = QVBoxLayout(single_page)
         single_layout.addWidget(QLabel('Single Symbols'))
-        single_layout.addWidget(self.single_tabs)
+        single_layout.addWidget(self.single_symbol_tree, 2)
         single_layout.addWidget(QLabel('Object Tree'))
         single_layout.addWidget(self.object_tree)
 
@@ -115,7 +122,6 @@ class MainWindow(QMainWindow):
         self.left_tabs = left_tabs
         left_tabs.addTab(single_page, 'Symbols')
         left_tabs.addTab(split_page, 'Split Symbols')
-        left_tabs.addTab(self.pin_table, 'Pins')
 
         self.props = QWidget()
         self.form = QFormLayout(self.props)
@@ -308,6 +314,15 @@ class MainWindow(QMainWindow):
         self.single_tabs.blockSignals(False)
         self.split_tabs.blockSignals(False)
 
+    def canvas_label_for_symbol(self, symbol: SymbolModel, index: int) -> str:
+        """Label for the canvas tab. Split symbols show the active split part."""
+        if symbol.kind == SymbolKind.SPLIT.value:
+            ui = self.current_unit_index if index == self.library.current_symbol_index else 0
+            if symbol.units:
+                ui = max(0, min(ui, len(symbol.units) - 1))
+                return f'{symbol.name}.{symbol.units[ui].name}'
+        return symbol.name
+
     def rebuild_canvas_tabs(self):
         """Top-level canvas tabs. Each symbol gets its own canvas tab name; switching changes the model shown in the canvas."""
         if not hasattr(self, 'canvas_tabs'):
@@ -317,18 +332,18 @@ class MainWindow(QMainWindow):
         # Remove all tabs without deleting the view widget.
         while self.canvas_tabs.count():
             self.canvas_tabs.removeTab(0)
-        for s in self.library.symbols:
-            self.canvas_tabs.addTab(current_widget if self.canvas_tabs.count() == self.library.current_symbol_index else QWidget(), s.name)
+        for idx, s in enumerate(self.library.symbols):
+            self.canvas_tabs.addTab(current_widget if self.canvas_tabs.count() == self.library.current_symbol_index else QWidget(), self.canvas_label_for_symbol(s, idx))
         # Make sure the real canvas widget is placed at the current symbol index.
         cur = self.library.current_symbol_index
         for i in range(self.canvas_tabs.count()):
             if self.canvas_tabs.widget(i) is current_widget and i != cur:
                 self.canvas_tabs.removeTab(i)
-                self.canvas_tabs.insertTab(i, QWidget(), self.library.symbols[i].name)
+                self.canvas_tabs.insertTab(i, QWidget(), self.canvas_label_for_symbol(self.library.symbols[i], i))
                 break
         if self.canvas_tabs.widget(cur) is not current_widget:
             self.canvas_tabs.removeTab(cur)
-            self.canvas_tabs.insertTab(cur, current_widget, self.symbol.name)
+            self.canvas_tabs.insertTab(cur, current_widget, self.canvas_label_for_symbol(self.symbol, cur))
         self.canvas_tabs.setCurrentIndex(cur)
         self.canvas_tabs.blockSignals(False)
 
@@ -353,6 +368,7 @@ class MainWindow(QMainWindow):
         base = self.unit_name_edit.text().strip() or self.current_unit.name
         self.current_unit.name = base
         self.rebuild_unit_tabs()
+        self.rebuild_canvas_tabs()
         self.rebuild_tree()
         self.update_name_editors()
 
@@ -373,6 +389,7 @@ class MainWindow(QMainWindow):
         self.rebuild_symbol_tabs()
         self.rebuild_canvas_tabs()
         self.rebuild_unit_tabs()
+        self.rebuild_canvas_tabs()
         self.rebuild_tree()
         self.update_name_editors()
 
@@ -452,11 +469,61 @@ class MainWindow(QMainWindow):
             row += 1
 
     def rebuild_tree(self):
+        if hasattr(self, 'single_symbol_tree'):
+            self._populate_single_symbol_tree()
         self._populate_current_object_tree(self.object_tree)
         if hasattr(self, 'split_object_tree'):
             self._populate_current_object_tree(self.split_object_tree)
         if hasattr(self, 'split_symbol_tree'):
             self._populate_split_symbol_tree()
+
+    def _populate_single_symbol_tree(self):
+        """Tree for the Symbols workspace: single symbols with their pins and objects."""
+        tree = self.single_symbol_tree
+        tree.clear()
+        for si, symbol in enumerate(self.library.symbols):
+            if symbol.kind != SymbolKind.SINGLE.value:
+                continue
+            sym_item = QTreeWidgetItem([symbol.name, 'Single Symbol'])
+            sym_item.setData(0, Qt.UserRole, ('symbol', si, None))
+            tree.addTopLevelItem(sym_item)
+            for ui, u in enumerate(symbol.units):
+                unit_item = QTreeWidgetItem([u.name, 'Symbol Body / Unit'])
+                unit_item.setData(0, Qt.UserRole, ('single_unit', si, ui))
+                sym_item.addChild(unit_item)
+
+                body = QTreeWidgetItem(['Body', f'{u.body.width:g} x {u.body.height:g}'])
+                body.setData(0, Qt.UserRole, ('single_body', si, ui))
+                unit_item.addChild(body)
+
+                attrs = QTreeWidgetItem(['Attributes', 'Body'])
+                unit_item.addChild(attrs)
+                for k, v in u.body.attributes.items():
+                    attrs.addChild(QTreeWidgetItem([k, f'{v} / visible={u.body.visible_attributes.get(k, False)}']))
+
+                pins = QTreeWidgetItem(['Pins', str(len(u.pins))])
+                unit_item.addChild(pins)
+                for pi, pin in enumerate(u.pins):
+                    pin_item = QTreeWidgetItem([f'Pin {pin.number}', f'{pin.name} | {pin.function} | {pin.pin_type} | {pin.side}'])
+                    pin_item.setData(0, Qt.UserRole, ('single_pin', si, ui, pi))
+                    pins.addChild(pin_item)
+
+                texts = QTreeWidgetItem(['Text', str(len(u.texts))])
+                unit_item.addChild(texts)
+                for ti, t in enumerate(u.texts):
+                    text_item = QTreeWidgetItem([t.text[:30], f'{t.font_family} {t.font_size_grid:g}'])
+                    text_item.setData(0, Qt.UserRole, ('single_text', si, ui, ti))
+                    texts.addChild(text_item)
+
+                graphics = QTreeWidgetItem(['Graphics', str(len(u.graphics))])
+                unit_item.addChild(graphics)
+                for gi, g in enumerate(u.graphics):
+                    gr_item = QTreeWidgetItem([g.shape, f'{g.w:g} x {g.h:g}'])
+                    gr_item.setData(0, Qt.UserRole, ('single_graphic', si, ui, gi))
+                    graphics.addChild(gr_item)
+        tree.expandAll()
+        tree.resizeColumnToContents(0)
+        tree.resizeColumnToContents(1)
 
     def _populate_current_object_tree(self, tree: QTreeWidget):
         tree.clear()
@@ -1076,18 +1143,39 @@ class MainWindow(QMainWindow):
             self.current_unit_index = 0
             self.rebuild_all()
             return
-        if kind == 'split_unit':
+        if kind in ('split_unit', 'single_unit'):
             _, si, ui = data
             self.library.current_symbol_index = si
             self.current_unit_index = ui
             self.rebuild_all()
             return
-        if kind == 'split_pin':
+        if kind in ('single_body',):
+            _, si, ui = data
+            self.library.current_symbol_index = si
+            self.current_unit_index = ui
+            self.rebuild_all()
+            self.select_model_in_scene(self.symbol.units[ui].body)
+            return
+        if kind in ('split_pin', 'single_pin'):
             _, si, ui, pi = data
             self.library.current_symbol_index = si
             self.current_unit_index = ui
             self.rebuild_all()
             self.select_model_in_scene(self.symbol.units[ui].pins[pi])
+            return
+        if kind in ('single_text',):
+            _, si, ui, ti = data
+            self.library.current_symbol_index = si
+            self.current_unit_index = ui
+            self.rebuild_all()
+            self.select_model_in_scene(self.symbol.units[ui].texts[ti])
+            return
+        if kind in ('single_graphic',):
+            _, si, ui, gi = data
+            self.library.current_symbol_index = si
+            self.current_unit_index = ui
+            self.rebuild_all()
+            self.select_model_in_scene(self.symbol.units[ui].graphics[gi])
             return
         _, ui, idx = data
         self.current_unit_index = ui
@@ -1104,10 +1192,10 @@ class MainWindow(QMainWindow):
             self.select_model_in_scene(u.graphics[idx])
 
     def left_workspace_changed(self, idx):
-        # 0 = single, 1 = split, 2 = pins; only switch when a symbol exists there.
-        if idx == 0 and self._symbol_indices(SymbolKind.SINGLE.value):
-            self.change_symbol_from_tab(SymbolKind.SINGLE.value, self.single_tabs.currentIndex())
-        elif idx == 1 and self._symbol_indices(SymbolKind.SPLIT.value):
+        # 0 = single, 1 = split. Pins are part of the respective hierarchy trees.
+        if idx == 0 and self.symbol.kind != SymbolKind.SINGLE.value and self._symbol_indices(SymbolKind.SINGLE.value):
+            self.change_symbol_from_tab(SymbolKind.SINGLE.value, 0)
+        elif idx == 1 and self.symbol.kind != SymbolKind.SPLIT.value and self._symbol_indices(SymbolKind.SPLIT.value):
             self.change_symbol_from_tab(SymbolKind.SPLIT.value, self.split_tabs.currentIndex())
 
     def change_symbol_from_canvas_tab(self, tab_index: int):
@@ -1133,7 +1221,7 @@ class MainWindow(QMainWindow):
     def change_unit(self, i):
         if i < 0: return
         self.current_unit_index = i
-        self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
+        self.rebuild_canvas_tabs(); self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table(); self.update_name_editors()
 
     def new_single_symbol(self):
         self.library.add_symbol('Symbol', SymbolKind.SINGLE.value)
@@ -1152,7 +1240,7 @@ class MainWindow(QMainWindow):
             return
         self.symbol.units.append(SymbolUnitModel(name=f'{self.symbol.name}_{len(self.symbol.units) + 1}'))
         self.current_unit_index = len(self.symbol.units) - 1
-        self.rebuild_unit_tabs(); self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
+        self.rebuild_canvas_tabs(); self.rebuild_unit_tabs(); self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
 
     def set_grid(self, v):
         self.symbol.grid_inch = v

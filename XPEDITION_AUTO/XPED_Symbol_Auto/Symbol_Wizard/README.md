@@ -12,7 +12,9 @@ python main.py
 ## Current MVP features
 
 - Separate workspaces: **Symbols** for single symbols and **Split Symbols** for multi-unit symbols.
-- Each symbol has its own tab; default names are generated as `Symbol {n}`.
+- The separate **Pins** tab was removed; pins are now shown as child objects inside the Symbols/Split Symbols trees.
+- Each symbol has its own canvas tab; split-symbol canvas tabs show the active part as `SplitSymbol.PartName` such as `AURIX.AURIX_1`.
+- Default names are generated as `Symbol {n}`.
 - New imports with the same name are renamed using `_{n}` suffixes.
 - JSON exchange format:
   - Save current symbol as JSON.
@@ -22,6 +24,10 @@ python main.py
 - Verification: pin numbers must be unique across the whole symbol.
   - For split symbols, all units are checked together.
   - Copy/paste of pins assigns the next free pin number automatically.
+- Left workspace trees:
+  - **Symbols** shows every single symbol with body, attributes, pins, text and graphics.
+  - **Split Symbols** keeps the split-symbol selector and unit/split-part tabs; the split tree shows symbols with their corresponding pins.
+
 - Canvas editing:
   - Select, move, resize and rotate objects.
   - Body and its related pins/text/graphics move as a grouped unit.
