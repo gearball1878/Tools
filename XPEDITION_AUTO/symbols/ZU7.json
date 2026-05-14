@@ -1,0 +1,532 @@
+{
+  "name": "ZU7",
+  "kind": "split",
+  "is_split": true,
+  "grid_inch": 0.1,
+  "sheet_format": "A3",
+  "origin": "center",
+  "template_name": "IC / Generic IC",
+  "units": [
+    {
+      "name": "ZU7_1",
+      "body": {
+        "rotation": 0.0,
+        "scale_x": 1.0,
+        "scale_y": 1.0,
+        "x": -8.0,
+        "y": 12.0,
+        "width": 16.0,
+        "height": 24.0,
+        "color": [
+          0,
+          0,
+          0
+        ],
+        "line_width": 0.03,
+        "line_style": "solid",
+        "attribute_font": {
+          "family": "Arial",
+          "size_grid": 0.75,
+          "color": [
+            0,
+            0,
+            0
+          ]
+        },
+        "refdes_font": {
+          "family": "Arial",
+          "size_grid": 0.9,
+          "color": [
+            0,
+            0,
+            0
+          ]
+        },
+        "attributes": {
+          "RefDes": "U?",
+          "Package": "",
+          "Order Code": "",
+          "Value": "",
+          "Manufacturer": "",
+          "Technology": "",
+          "Supply Voltage": "",
+          "Operating Temperature": "",
+          "Lifecycle": ""
+        },
+        "visible_attributes": {
+          "RefDes": true,
+          "Package": true,
+          "Order Code": false,
+          "Value": true,
+          "Manufacturer": false,
+          "Technology": false,
+          "Supply Voltage": false,
+          "Operating Temperature": false,
+          "Lifecycle": false
+        },
+        "attribute_texts": {
+          "RefDes": {
+            "rotation": 0.0,
+            "scale_x": 1.0,
+            "scale_y": 1.0,
+            "text": "U?",
+            "x": -8.0,
+            "y": 13.0,
+            "font_family": "Arial",
+            "font_size_grid": 0.9,
+            "color": [
+              0,
+              0,
+              0
+            ],
+            "h_align": "left",
+            "v_align": "lower"
+          },
+          "Package": {
+            "rotation": 0.0,
+            "scale_x": 1.0,
+            "scale_y": 1.0,
+            "text": "Package",
+            "x": -8.0,
+            "y": -13.0,
+            "font_family": "Arial",
+            "font_size_grid": 0.75,
+            "color": [
+              0,
+              0,
+              0
+            ],
+            "h_align": "left",
+            "v_align": "upper"
+          },
+          "Value": {
+            "rotation": 0.0,
+            "scale_x": 1.0,
+            "scale_y": 1.0,
+            "text": "Value",
+            "x": -8.0,
+            "y": -14.0,
+            "font_family": "Arial",
+            "font_size_grid": 0.75,
+            "color": [
+              0,
+              0,
+              0
+            ],
+            "h_align": "left",
+            "v_align": "upper"
+          }
+        },
+        "refdes_align": "left",
+        "body_attr_align": "left"
+      },
+      "pins": [],
+      "texts": [],
+      "graphics": []
+    },
+    {
+      "name": "ZU7_2",
+      "body": {
+        "rotation": 0.0,
+        "scale_x": 1.0,
+        "scale_y": 1.0,
+        "x": -8.0,
+        "y": 12.0,
+        "width": 16.0,
+        "height": 24.0,
+        "color": [
+          0,
+          0,
+          0
+        ],
+        "line_width": 0.03,
+        "line_style": "solid",
+        "attribute_font": {
+          "family": "Arial",
+          "size_grid": 0.75,
+          "color": [
+            0,
+            0,
+            0
+          ]
+        },
+        "refdes_font": {
+          "family": "Arial",
+          "size_grid": 0.9,
+          "color": [
+            0,
+            0,
+            0
+          ]
+        },
+        "attributes": {
+          "RefDes": "U?",
+          "Package": "",
+          "Order Code": "",
+          "Value": "",
+          "Manufacturer": "",
+          "Technology": "",
+          "Supply Voltage": "",
+          "Operating Temperature": "",
+          "Lifecycle": ""
+        },
+        "visible_attributes": {
+          "RefDes": true,
+          "Package": true,
+          "Order Code": false,
+          "Value": true,
+          "Manufacturer": false,
+          "Technology": false,
+          "Supply Voltage": false,
+          "Operating Temperature": false,
+          "Lifecycle": false
+        },
+        "attribute_texts": {},
+        "refdes_align": "left",
+        "body_attr_align": "left"
+      },
+      "pins": [],
+      "texts": [],
+      "graphics": []
+    },
+    {
+      "name": "ZU7_3",
+      "body": {
+        "rotation": 0.0,
+        "scale_x": 1.0,
+        "scale_y": 1.0,
+        "x": -8.0,
+        "y": 12.0,
+        "width": 16.0,
+        "height": 24.0,
+        "color": [
+          0,
+          0,
+          0
+        ],
+        "line_width": 0.03,
+        "line_style": "solid",
+        "attribute_font": {
+          "family": "Arial",
+          "size_grid": 0.75,
+          "color": [
+            0,
+            0,
+            0
+          ]
+        },
+        "refdes_font": {
+          "family": "Arial",
+          "size_grid": 0.9,
+          "color": [
+            0,
+            0,
+            0
+          ]
+        },
+        "attributes": {
+          "Order Code": "",
+          "Package": "",
+          "RefDes": "U?",
+          "Value": "",
+          "Frequency": "",
+          "Tolerance": "",
+          "Technology": ""
+        },
+        "visible_attributes": {
+          "Order Code": false,
+          "Package": true,
+          "RefDes": true,
+          "Value": true,
+          "Frequency": false,
+          "Tolerance": false,
+          "Technology": false
+        },
+        "attribute_texts": {
+          "RefDes": {
+            "rotation": 0.0,
+            "scale_x": 1.0,
+            "scale_y": 1.0,
+            "text": "U?",
+            "x": -8.0,
+            "y": 13.0,
+            "font_family": "Arial",
+            "font_size_grid": 0.9,
+            "color": [
+              0,
+              0,
+              0
+            ],
+            "h_align": "left",
+            "v_align": "lower"
+          },
+          "Package": {
+            "rotation": 0.0,
+            "scale_x": 1.0,
+            "scale_y": 1.0,
+            "text": "Package",
+            "x": -8.0,
+            "y": -13.0,
+            "font_family": "Arial",
+            "font_size_grid": 0.75,
+            "color": [
+              0,
+              0,
+              0
+            ],
+            "h_align": "left",
+            "v_align": "upper"
+          },
+          "Value": {
+            "rotation": 0.0,
+            "scale_x": 1.0,
+            "scale_y": 1.0,
+            "text": "Value",
+            "x": -8.0,
+            "y": -14.0,
+            "font_family": "Arial",
+            "font_size_grid": 0.75,
+            "color": [
+              0,
+              0,
+              0
+            ],
+            "h_align": "left",
+            "v_align": "upper"
+          }
+        },
+        "refdes_align": "left",
+        "body_attr_align": "left"
+      },
+      "pins": [],
+      "texts": [],
+      "graphics": []
+    },
+    {
+      "name": "ZU7_4",
+      "body": {
+        "rotation": 0.0,
+        "scale_x": 1.0,
+        "scale_y": 1.0,
+        "x": -8.0,
+        "y": 12.0,
+        "width": 16.0,
+        "height": 24.0,
+        "color": [
+          0,
+          0,
+          0
+        ],
+        "line_width": 0.03,
+        "line_style": "solid",
+        "attribute_font": {
+          "family": "Arial",
+          "size_grid": 0.75,
+          "color": [
+            0,
+            0,
+            0
+          ]
+        },
+        "refdes_font": {
+          "family": "Arial",
+          "size_grid": 0.9,
+          "color": [
+            0,
+            0,
+            0
+          ]
+        },
+        "attributes": {
+          "Order Code": "",
+          "Package": "",
+          "RefDes": "U?",
+          "Value": "",
+          "Frequency": "",
+          "Tolerance": "",
+          "Technology": ""
+        },
+        "visible_attributes": {
+          "Order Code": false,
+          "Package": true,
+          "RefDes": true,
+          "Value": true,
+          "Frequency": false,
+          "Tolerance": false,
+          "Technology": false
+        },
+        "attribute_texts": {
+          "RefDes": {
+            "rotation": 0.0,
+            "scale_x": 1.0,
+            "scale_y": 1.0,
+            "text": "U?",
+            "x": -8.0,
+            "y": 13.0,
+            "font_family": "Arial",
+            "font_size_grid": 0.9,
+            "color": [
+              0,
+              0,
+              0
+            ],
+            "h_align": "left",
+            "v_align": "lower"
+          },
+          "Package": {
+            "rotation": 0.0,
+            "scale_x": 1.0,
+            "scale_y": 1.0,
+            "text": "Package",
+            "x": -8.0,
+            "y": -13.0,
+            "font_family": "Arial",
+            "font_size_grid": 0.75,
+            "color": [
+              0,
+              0,
+              0
+            ],
+            "h_align": "left",
+            "v_align": "upper"
+          },
+          "Value": {
+            "rotation": 0.0,
+            "scale_x": 1.0,
+            "scale_y": 1.0,
+            "text": "Value",
+            "x": -8.0,
+            "y": -14.0,
+            "font_family": "Arial",
+            "font_size_grid": 0.75,
+            "color": [
+              0,
+              0,
+              0
+            ],
+            "h_align": "left",
+            "v_align": "upper"
+          }
+        },
+        "refdes_align": "left",
+        "body_attr_align": "left"
+      },
+      "pins": [],
+      "texts": [],
+      "graphics": []
+    },
+    {
+      "name": "ZU7_5",
+      "body": {
+        "rotation": 0.0,
+        "scale_x": 1.0,
+        "scale_y": 1.0,
+        "x": -8.0,
+        "y": 12.0,
+        "width": 16.0,
+        "height": 24.0,
+        "color": [
+          0,
+          0,
+          0
+        ],
+        "line_width": 0.03,
+        "line_style": "solid",
+        "attribute_font": {
+          "family": "Arial",
+          "size_grid": 0.75,
+          "color": [
+            0,
+            0,
+            0
+          ]
+        },
+        "refdes_font": {
+          "family": "Arial",
+          "size_grid": 0.9,
+          "color": [
+            0,
+            0,
+            0
+          ]
+        },
+        "attributes": {
+          "Order Code": "",
+          "Package": "",
+          "RefDes": "U?",
+          "Value": "",
+          "Frequency": "",
+          "Tolerance": "",
+          "Technology": ""
+        },
+        "visible_attributes": {
+          "Order Code": false,
+          "Package": true,
+          "RefDes": true,
+          "Value": true,
+          "Frequency": false,
+          "Tolerance": false,
+          "Technology": false
+        },
+        "attribute_texts": {
+          "RefDes": {
+            "rotation": 0.0,
+            "scale_x": 1.0,
+            "scale_y": 1.0,
+            "text": "U?",
+            "x": -8.0,
+            "y": 13.0,
+            "font_family": "Arial",
+            "font_size_grid": 0.9,
+            "color": [
+              0,
+              0,
+              0
+            ],
+            "h_align": "left",
+            "v_align": "lower"
+          },
+          "Package": {
+            "rotation": 0.0,
+            "scale_x": 1.0,
+            "scale_y": 1.0,
+            "text": "Package",
+            "x": -8.0,
+            "y": -13.0,
+            "font_family": "Arial",
+            "font_size_grid": 0.75,
+            "color": [
+              0,
+              0,
+              0
+            ],
+            "h_align": "left",
+            "v_align": "upper"
+          },
+          "Value": {
+            "rotation": 0.0,
+            "scale_x": 1.0,
+            "scale_y": 1.0,
+            "text": "Value",
+            "x": -8.0,
+            "y": -14.0,
+            "font_family": "Arial",
+            "font_size_grid": 0.75,
+            "color": [
+              0,
+              0,
+              0
+            ],
+            "h_align": "left",
+            "v_align": "upper"
+          }
+        },
+        "refdes_align": "left",
+        "body_attr_align": "left"
+      },
+      "pins": [],
+      "texts": [],
+      "graphics": []
+    }
+  ]
+}
