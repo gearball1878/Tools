@@ -390,6 +390,9 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------------ Rebuilds
     def rebuild_all(self):
+        # Font sizes are grid-derived. Sync before rebuilding the scene so
+        # generated attribute/RefDes text items use the current grid size.
+        self.sync_font_points_to_grid()
         self.rebuild_symbol_tabs()
         self.rebuild_canvas_tabs()
         self.rebuild_unit_tabs()
@@ -399,7 +402,6 @@ class MainWindow(QMainWindow):
         self.grid_spin.blockSignals(True)
         self.grid_spin.setValue(self.symbol.grid_inch)
         self.grid_spin.blockSignals(False)
-        self.sync_font_points_to_grid()
         self.origin_combo.blockSignals(True)
         self.origin_combo.setCurrentText(getattr(self.symbol, 'origin', OriginMode.CENTER.value))
         self.origin_combo.blockSignals(False)
@@ -683,7 +685,19 @@ class MainWindow(QMainWindow):
         b = u.body
         ref = b.attributes.get('RefDes', '')
         if b.visible_attributes.get('RefDes', False) and ref:
-            txt = TextItem(TextModel(text=ref, x=b.x, y=b.y + 1, font_family=b.refdes_font.family, font_size_pt=b.refdes_font.size_pt, font_size_grid=b.refdes_font.size_grid, color=b.refdes_font.color), self)
+            # RefDes is handled like all other body attributes: same font family,
+            # same grid-relative font size and same font color. It is positioned
+            # at the top body edge, but no longer has a separate font model that
+            # can get out of sync with the attribute controls.
+            txt = TextItem(TextModel(
+                text=ref,
+                x=b.x,
+                y=b.y + 1,
+                font_family=b.attribute_font.family,
+                font_size_pt=b.attribute_font.size_pt,
+                font_size_grid=b.attribute_font.size_grid,
+                color=b.attribute_font.color,
+            ), self)
             txt.setFlag(QGraphicsItem.ItemIsMovable, False)
             txt.setData(0, 'ATTR_REF_DES')
             self.scene.addItem(txt)
@@ -1014,6 +1028,8 @@ class MainWindow(QMainWindow):
         else:
             setattr(f, a, v)
         if refresh_attrs:
+            # Body-owned attribute/RefDes texts are generated items, so they
+            # must be regenerated after font changes instead of only repainting.
             self.update_attribute_items_for_unit()
         self.schedule_scene_refresh()
 
@@ -1048,13 +1064,21 @@ class MainWindow(QMainWindow):
 
     def set_attr_vis(self, m, k, v):
         m.visible_attributes[k] = v
+        self.sync_font_points_to_grid()
         self.update_attribute_items_for_unit()
         self.rebuild_tree()
+        self.scene.update()
 
     def set_attr_val(self, m, k, v):
         m.attributes[k] = v
+        # Attribute text is generated from the body attribute model. Keep font
+        # points derived from the active grid before regenerating these locked
+        # text items so RefDes changes are visible immediately and at the
+        # correct size.
+        self.sync_font_points_to_grid()
         self.update_attribute_items_for_unit()
         self.rebuild_tree()
+        self.scene.update()
 
     def set_pin_attr(self, m, a, v):
         if a == 'rotation':
