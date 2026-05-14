@@ -15,8 +15,10 @@ class SymbolView(QGraphicsView):
             pass
         self.window = window
         self.setRenderHint(QPainter.Antialiasing)
-        self.setCacheMode(QGraphicsView.CacheBackground)
-        self.setViewportUpdateMode(QGraphicsView.MinimalViewportUpdate)
+        # Dynamic grid/background must be repainted completely while scrolling.
+        # CacheBackground/MinimalViewportUpdate caused stale grid fragments (smearing).
+        self.setCacheMode(QGraphicsView.CacheNone)
+        self.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
         self.setDragMode(QGraphicsView.RubberBandDrag)
         self.setRubberBandSelectionMode(Qt.ContainsItemBoundingRect)
         self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
@@ -71,6 +73,24 @@ class SymbolView(QGraphicsView):
         bar.setValue(bar.value() - delta)
         event.accept()
 
+
+
+    def scrollContentsBy(self, dx, dy):
+        # Force a clean redraw of the dynamic grid and guide rectangles on every scroll.
+        # This prevents old grid lines from being kept by the viewport backing store.
+        try:
+            self.resetCachedContent()
+        except Exception:
+            pass
+        super().scrollContentsBy(dx, dy)
+        try:
+            self.scene().invalidate(self.mapToScene(self.viewport().rect()).boundingRect())
+        except Exception:
+            try:
+                self.scene().invalidate(self.scene().sceneRect())
+            except Exception:
+                pass
+        self.viewport().update()
 
     def contextMenuEvent(self, event):
         self.window.set_tool(DrawTool.SELECT.value)

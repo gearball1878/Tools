@@ -68,7 +68,10 @@ class TransformMixin:
         if change == QGraphicsItem.ItemPositionHasChanged and self.scene():
             self.update_model_pos()
             # Do not rebuild the scene while dragging; this keeps canvas editing smooth.
-            self.scene().window.live_refresh()
+            try:
+                self.scene().window.notify_canvas_model_changed()
+            except Exception:
+                self.scene().window.live_refresh()
         return super().itemChange(change, value)
 
     def update_model_pos(self):
@@ -229,7 +232,10 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
             delta = _angle_from(self._rotate_center_scene, event.scenePos()) - self._rotate_start_angle
             self.model.rotation = (round((self._rotate_start_model + delta) / 15.0) * 15.0) % 360
             self.apply_transform_from_model()
-            self.window.live_refresh()
+            try:
+                self.window.notify_canvas_model_changed()
+            except Exception:
+                self.window.live_refresh()
             event.accept(); return
         if self._resizing and self._resize_start is not None:
             g = self.window.grid_px
@@ -281,7 +287,10 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
 
             self.window.scale_current_unit_children_from_body_resize(st, self.model)
             self.window.update_current_unit_canvas_positions()
-            self.window.live_refresh()
+            try:
+                self.window.notify_canvas_model_changed()
+            except Exception:
+                self.window.live_refresh()
             self.update()
             event.accept()
             return
@@ -297,6 +306,10 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
         self.window.rebuild_tree()
         self.window.rebuild_pin_table()
         self.scene().update()
+        try:
+            self.window.refresh_properties()
+        except Exception:
+            pass
         super().mouseReleaseEvent(event)
 
     def scale_selected(self, factor):
@@ -315,6 +328,10 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
         self.window.scale_current_unit_children_from_body_resize(st, self.model)
         self.window.update_current_unit_canvas_positions()
         self.window.update_attribute_items_for_unit()
+        try:
+            self.window.refresh_properties()
+        except Exception:
+            pass
         self.update()
 
 
@@ -386,7 +403,10 @@ class PinItem(TransformMixin, QGraphicsItem):
             delta = _angle_from(self._rotate_center_scene, event.scenePos()) - self._rotate_start_angle
             self.model.rotation = (round((self._rotate_start_model + delta) / 15.0) * 15.0) % 360
             self.apply_transform_from_model()
-            self.window.live_refresh()
+            try:
+                self.window.notify_canvas_model_changed()
+            except Exception:
+                self.window.live_refresh()
             event.accept(); return
         super().mouseMoveEvent(event)
 
@@ -436,7 +456,10 @@ class TextItem(TransformMixin, QGraphicsTextItem):
                 return QPointF(snap(value.x(), g), snap(value.y(), g))
         if change == QGraphicsItem.ItemPositionHasChanged and self.scene():
             self.update_model_pos()
-            self.scene().window.live_refresh()
+            try:
+                self.scene().window.notify_canvas_model_changed()
+            except Exception:
+                self.scene().window.live_refresh()
         return super().itemChange(change, value)
 
     def _visual_text_rect(self):
@@ -546,7 +569,10 @@ class TextItem(TransformMixin, QGraphicsTextItem):
                 self.model.text = self.toPlainText()
             self.setTextInteractionFlags(Qt.NoTextInteraction)
             self.clearFocus()
-            self.scene().window.live_refresh()
+            try:
+                self.scene().window.notify_canvas_model_changed()
+            except Exception:
+                self.scene().window.live_refresh()
             event.accept()
             return
         if self.textInteractionFlags() != Qt.NoTextInteraction:
@@ -688,7 +714,10 @@ class GraphicItem(TransformMixin, QGraphicsItem):
             delta = _angle_from(self._rotate_center_scene, event.scenePos()) - self._rotate_start_angle
             self.model.rotation = (round((self._rotate_start_model + delta) / 15.0) * 15.0) % 360
             self.apply_transform_from_model()
-            self.window.live_refresh()
+            try:
+                self.window.notify_canvas_model_changed()
+            except Exception:
+                self.window.live_refresh()
             event.accept(); return
         if self._resizing and self._resize_start is not None:
             g = self.window.grid_px
@@ -745,7 +774,10 @@ class GraphicItem(TransformMixin, QGraphicsItem):
             self.model.y = -top / g
             self.model.w = (right - left) / g
             self.model.h = (bottom - top) / g
-            self.window.live_refresh()
+            try:
+                self.window.notify_canvas_model_changed()
+            except Exception:
+                self.window.live_refresh()
             self.update()
             event.accept()
             return

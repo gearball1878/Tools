@@ -171,6 +171,27 @@ class TemplateEditorDialog(QDialog):
         existing = [str(p.number) for p in self.unit.pins]
         return next_pin_number(existing)
 
+
+    def schedule_property_refresh(self):
+        """Template canvas model change throttle for live property-panel sync."""
+        if getattr(self, '_property_refresh_pending', False):
+            return
+        self._property_refresh_pending = True
+        def _do():
+            self._property_refresh_pending = False
+            try:
+                self.refresh_properties()
+            except Exception:
+                pass
+        QTimer.singleShot(0, _do)
+
+    def notify_canvas_model_changed(self):
+        try:
+            self.live_refresh()
+        except Exception:
+            pass
+        self.schedule_property_refresh()
+
     def _build_ui(self):
         layout = QVBoxLayout(self)
         top = QHBoxLayout()
@@ -1050,6 +1071,8 @@ class TemplateEditorDialog(QDialog):
             self._live_refresh_pending = False
             try:
                 if hasattr(self, 'view'):
+                    self.scene.invalidate(self.scene.sceneRect())
+                    self.scene.invalidate(self.scene.sceneRect())
                     self.view.viewport().update()
                 elif hasattr(self, 'scene'):
                     self.scene.update()
@@ -1273,35 +1296,6 @@ class TemplateEditorDialog(QDialog):
 
 
 
-    def _schedule_property_panel_refresh(self):
-        """Refresh property panel after canvas-driven edits without forcing global rebuilds."""
-        try:
-            from PySide6.QtCore import QTimer
-        except Exception:
-            try:
-                from PyQt5.QtCore import QTimer
-            except Exception:
-                QTimer = None
-        def _do():
-            for name in ("refresh_property_panel", "refresh_properties", "update_property_panel", "populate_property_panel", "update_properties_panel"):
-                fn = getattr(self, name, None)
-                if callable(fn):
-                    try:
-                        fn()
-                    except TypeError:
-                        try:
-                            fn(getattr(self, "selected_items", None))
-                        except Exception:
-                            pass
-                    except Exception:
-                        pass
-                    break
-        if QTimer is not None:
-            QTimer.singleShot(0, _do)
-        else:
-            _do()
-
-
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -1336,6 +1330,28 @@ class MainWindow(QMainWindow):
         self.rebuild_all()
         if self.library.symbols:
             QTimer.singleShot(0, self.zoom_to_fit_symbol)
+
+
+    def schedule_property_refresh(self):
+        """Throttle property-panel updates caused by live canvas edits."""
+        if getattr(self, '_property_refresh_pending', False):
+            return
+        self._property_refresh_pending = True
+        def _do():
+            self._property_refresh_pending = False
+            try:
+                self.refresh_properties()
+            except Exception:
+                pass
+        QTimer.singleShot(0, _do)
+
+    def notify_canvas_model_changed(self):
+        """Called by canvas items after move/resize/rotate/scale without rebuilding the scene."""
+        try:
+            self.live_refresh()
+        except Exception:
+            pass
+        self.schedule_property_refresh()
 
     @property
     def symbol(self) -> SymbolModel:
