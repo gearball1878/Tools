@@ -411,6 +411,24 @@ class TextItem(TransformMixin, QGraphicsTextItem):
         self._rotating = False
         self.apply_text_from_model()
 
+    def itemChange(self, change, value):
+        # Text/attribute objects are positioned by their selected grid anchor
+        # (left/center/right x upper/center/lower).  The anchor point, not the
+        # item top-left, must snap to the grid.
+        if change == QGraphicsItem.ItemPositionChange and self.scene():
+            g = self.scene().grid_px
+            try:
+                off = self._text_anchor_offset()
+                anchor = QPointF(value.x() + off.x(), value.y() + off.y())
+                snapped_anchor = QPointF(snap(anchor.x(), g), snap(anchor.y(), g))
+                return snapped_anchor - off
+            except Exception:
+                return QPointF(snap(value.x(), g), snap(value.y(), g))
+        if change == QGraphicsItem.ItemPositionHasChanged and self.scene():
+            self.update_model_pos()
+            self.scene().window.live_refresh()
+        return super().itemChange(change, value)
+
     def _visual_text_rect(self):
         """Tight local text rectangle used for grid anchoring.
 
@@ -474,25 +492,27 @@ class TextItem(TransformMixin, QGraphicsTextItem):
     def _model_pos_from_item_pos(self):
         g = self.window.grid_px
         anchor = self.pos() + self._text_anchor_offset()
-        self.model.x = anchor.x() / g
-        self.model.y = -anchor.y() / g
+        # Store the logical anchor on full grid coordinates.  This keeps the
+        # green anchor marker and all alignment permutations exactly on grid
+        # lines, independent of the visual width/height of the text.
+        self.model.x = round(anchor.x() / g)
+        self.model.y = round(-anchor.y() / g)
 
     def paint(self, painter, option, widget=None):
         super().paint(painter, option, widget)
         if self.isSelected():
-            # Text objects show only a thin selection rectangle. Resize/rotate
-            # anchors are intentionally reserved for graphical objects.
+            # Text objects show a thin text selection rectangle plus the active
+            # grid anchor.  The green marker has 9 possible positions inside the
+            # text box: left/center/right x upper/center/lower.
             painter.save()
             painter.setPen(QPen(QColor(80, 80, 80), 1, Qt.DashLine))
-            painter.drawRect(self.boundingRect())
-            # Small green grid-anchor point: this is the exact visual text
-            # anchor used for horizontal (left/center/right) and vertical
-            # (upper/center/lower) grid alignment. It is not a resize handle.
+            painter.setBrush(QBrush(Qt.NoBrush))
+            painter.drawRect(self._visual_text_rect())
             anchor = self._text_anchor_offset()
-            size = 4.0
-            painter.setPen(QPen(QColor(0, 120, 0), 1))
-            painter.setBrush(QBrush(QColor(0, 190, 80)))
-            painter.drawRect(QRectF(anchor.x() - size / 2, anchor.y() - size / 2, size, size))
+            s = max(4.0, self.window.grid_px * 0.12)
+            painter.setPen(QPen(QColor(0, 130, 0), 1))
+            painter.setBrush(QBrush(QColor(0, 180, 0)))
+            painter.drawRect(QRectF(anchor.x() - s / 2, anchor.y() - s / 2, s, s))
             painter.restore()
 
     def mouseDoubleClickEvent(self, event):
