@@ -203,23 +203,6 @@ class TemplateEditorDialog(QDialog):
                 it.flip_vertical()
         self.live_refresh()
 
-    def set_selected_text_alignment(self, h_align=None, v_align=None):
-        self.push_undo_state()
-        for it in self.scene.selectedItems():
-            if it.data(0) == 'TEXT' and hasattr(it, 'model'):
-                if h_align is not None:
-                    it.model.h_align = h_align
-                if v_align is not None:
-                    it.model.v_align = v_align
-                owner = getattr(it.model, '_attribute_owner', None)
-                key = getattr(it.model, '_attribute_key', None)
-                if owner is not None and key:
-                    if not hasattr(owner, 'attribute_h_align') or owner.attribute_h_align is None: owner.attribute_h_align = {}
-                    if not hasattr(owner, 'attribute_v_align') or owner.attribute_v_align is None: owner.attribute_v_align = {}
-                    owner.attribute_h_align[key] = getattr(it.model, 'h_align', 'left')
-                    owner.attribute_v_align[key] = getattr(it.model, 'v_align', 'center')
-        self.live_refresh()
-
     def load_selected_template(self):
         name = self.template_combo.currentText()
         if not name: return
@@ -329,16 +312,22 @@ class TemplateEditorDialog(QDialog):
             self.form.addRow('Length', self._dbl(m.length, lambda v: self._set(m, 'length', v), 0.5, 100))
             self.form.addRow('Number font', self._font_combo(m.number_font.family, lambda v: self._set(m.number_font, 'family', v)))
             self.form.addRow('Label font', self._font_combo(m.label_font.family, lambda v: self._set(m.label_font, 'family', v)))
-        elif kind == 'TEXT':
+        elif kind in ('TEXT', 'ATTR_REF_DES', 'ATTR_BODY'):
             self.form.addRow('Text', self._line(m.text, lambda v: self._set(m, 'text', v)))
             self.form.addRow('Font', self._font_combo(m.font_family, lambda v: self._set(m, 'font_family', v)))
             self.form.addRow('Size', self._dbl(m.font_size_grid, lambda v: self._set(m, 'font_size_grid', v), .1, 10))
+            self.form.addRow('Horizontal align', self._combo(['left','center','right'], getattr(m, 'h_align', 'left'), lambda v: self._set(m, 'h_align', v)))
+            self.form.addRow('Vertical align', self._combo(['upper','center','lower'], getattr(m, 'v_align', 'upper'), lambda v: self._set(m, 'v_align', v)))
+            self.form.addRow('Rotation [deg]', self._dbl(getattr(m, 'rotation', 0), lambda v: self._set(m, 'rotation', v), -360, 360, 15))
         elif kind == 'GRAPHIC':
             self.form.addRow('Shape', self._combo(['line','rect','ellipse'], m.shape, lambda v: self._set(m, 'shape', v)))
             self.form.addRow('X', self._dbl(m.x, lambda v: self._set(m, 'x', v)))
             self.form.addRow('Y', self._dbl(m.y, lambda v: self._set(m, 'y', v)))
-            self.form.addRow('W', self._dbl(m.w, lambda v: self._set(m, 'w', v), -500, 500))
-            self.form.addRow('H', self._dbl(m.h, lambda v: self._set(m, 'h', v), -500, 500))
+            self.form.addRow('Width', self._dbl(m.w, lambda v: self._set(m, 'w', v), -500, 500))
+            self.form.addRow('Height', self._dbl(m.h, lambda v: self._set(m, 'h', v), -500, 500))
+            if m.shape == 'line':
+                self.form.addRow('Curve radius', self._dbl(getattr(m, 'curve_radius', 0), lambda v: self._set(m, 'curve_radius', v), -100, 100, .1))
+            self.form.addRow('Rotation [deg]', self._dbl(getattr(m, 'rotation', 0), lambda v: self._set(m, 'rotation', v), -360, 360, 15))
 
     def _line(self, value, fn):
         w=QLineEdit(str(value)); w.returnPressed.connect(lambda widget=w: fn(widget.text())); return w
@@ -360,7 +349,10 @@ class TemplateEditorDialog(QDialog):
         cb.stateChanged.connect(lambda state, a=attr, items=pin_items: self._apply_multi_pin_visibility_state(items, a, state))
         return cb
     def _set(self, m, a, v):
-        self.push_undo_state(); self._selection_restore_ids={id(m)}; setattr(m, a, v); self.rebuild_scene()
+        self.push_undo_state(); self._selection_restore_ids={id(m)}
+        if a == 'rotation':
+            v = (round(float(v) / 15.0) * 15.0) % 360
+        setattr(m, a, v); self.rebuild_scene()
     def _set_pin_side(self, m, v):
         self.push_undo_state(); self._selection_restore_ids={id(m)}; m.side=v; self.dock_pins_to_body(self.unit); self.rebuild_scene()
     def _apply_multi_pin_visibility_choice(self, pin_items, attr, index):
@@ -400,7 +392,7 @@ class TemplateEditorDialog(QDialog):
         kind = item.data(0)
         selectable = self.selection_enabled.get(kind, True)
         item.setFlag(QGraphicsItem.ItemIsSelectable, selectable)
-        item.setFlag(QGraphicsItem.ItemIsMovable, selectable)
+        item.setFlag(QGraphicsItem.ItemIsMovable, selectable and kind not in ('ATTR_REF_DES', 'ATTR_BODY'))
         # Disabled object classes must not intercept mouse clicks. This makes
         # Custom selection behave like the Template Canvas also in the Wizard.
         try:
@@ -473,31 +465,17 @@ class TemplateEditorDialog(QDialog):
         ref = b.attributes.get('RefDes', '')
         if b.visible_attributes.get('RefDes', False):
             label = ref if str(ref).strip() else 'RefDes'
-            pos = getattr(b, 'attribute_positions', {}).get('RefDes', (b.x, b.y + 1))
-            tm = TextModel(text=label, x=pos[0], y=pos[1], font_family=b.refdes_font.family, font_size_grid=b.refdes_font.size_grid, color=b.refdes_font.color)
-            tm.rotation = getattr(b, 'attribute_rotations', {}).get('RefDes', 0.0)
-            tm.scale_x = getattr(b, 'attribute_scale_x', {}).get('RefDes', 1.0)
-            tm.scale_y = getattr(b, 'attribute_scale_y', {}).get('RefDes', 1.0)
-            tm.h_align = getattr(b, 'attribute_h_align', {}).get('RefDes', 'left')
-            tm.v_align = getattr(b, 'attribute_v_align', {}).get('RefDes', 'center')
-            tm._attribute_owner = b; tm._attribute_key = 'RefDes'
-            txt = TextItem(tm, self)
-            txt.setData(0, 'TEXT'); txt.setData(1, 'ATTR_REF_DES'); txt.setZValue(2)
+            txt = TextItem(TextModel(text=label, x=b.x, y=b.y + 1, font_family=b.refdes_font.family, font_size_grid=b.refdes_font.size_grid, color=b.refdes_font.color), self)
+            txt.setData(0, 'ATTR_REF_DES'); txt.setZValue(2)
+            txt.setFlag(QGraphicsItem.ItemIsSelectable, True); txt.setFlag(QGraphicsItem.ItemIsMovable, True)
             self.scene.addItem(txt)
         for k, v in b.attributes.items():
             if k == 'RefDes' or not b.visible_attributes.get(k, False):
                 continue
             label = f'{k}: {v}' if str(v).strip() else str(k)
-            pos = getattr(b, 'attribute_positions', {}).get(k, (b.x, b.y - b.height - row))
-            tm = TextModel(text=label, x=pos[0], y=pos[1], font_family=b.attribute_font.family, font_size_grid=b.attribute_font.size_grid, color=b.attribute_font.color)
-            tm.rotation = getattr(b, 'attribute_rotations', {}).get(k, 0.0)
-            tm.scale_x = getattr(b, 'attribute_scale_x', {}).get(k, 1.0)
-            tm.scale_y = getattr(b, 'attribute_scale_y', {}).get(k, 1.0)
-            tm.h_align = getattr(b, 'attribute_h_align', {}).get(k, 'left')
-            tm.v_align = getattr(b, 'attribute_v_align', {}).get(k, 'center')
-            tm._attribute_owner = b; tm._attribute_key = k
-            txt = TextItem(tm, self)
-            txt.setData(0, 'TEXT'); txt.setData(1, 'ATTR_BODY'); txt.setZValue(2)
+            txt = TextItem(TextModel(text=label, x=b.x, y=b.y - b.height - row, font_family=b.attribute_font.family, font_size_grid=b.attribute_font.size_grid, color=b.attribute_font.color), self)
+            txt.setData(0, 'ATTR_BODY'); txt.setZValue(2)
+            txt.setFlag(QGraphicsItem.ItemIsSelectable, True); txt.setFlag(QGraphicsItem.ItemIsMovable, True)
             self.scene.addItem(txt)
             row += 1
 
@@ -517,23 +495,6 @@ class TemplateEditorDialog(QDialog):
         for item in self.scene.items():
             if item.data(0) in ('BODY','PIN','TEXT','GRAPHIC') and self.selection_enabled.get(item.data(0), True): item.setSelected(True)
         self.refresh_properties()
-    def set_selected_text_alignment(self, h_align=None, v_align=None):
-        self.push_undo_state()
-        for it in self.scene.selectedItems():
-            if it.data(0) == 'TEXT' and hasattr(it, 'model'):
-                if h_align is not None:
-                    it.model.h_align = h_align
-                if v_align is not None:
-                    it.model.v_align = v_align
-                owner = getattr(it.model, '_attribute_owner', None)
-                key = getattr(it.model, '_attribute_key', None)
-                if owner is not None and key:
-                    if not hasattr(owner, 'attribute_h_align') or owner.attribute_h_align is None: owner.attribute_h_align = {}
-                    if not hasattr(owner, 'attribute_v_align') or owner.attribute_v_align is None: owner.attribute_v_align = {}
-                    owner.attribute_h_align[key] = getattr(it.model, 'h_align', 'left')
-                    owner.attribute_v_align[key] = getattr(it.model, 'v_align', 'center')
-        self.schedule_scene_refresh(visual_only=True)
-
     def copy_selected(self):
         self.set_tool(DrawTool.SELECT.value)
         self.clipboard_is_cut = False
@@ -585,7 +546,7 @@ class TemplateEditorDialog(QDialog):
         kind = item.data(0)
         selectable = self.selection_enabled.get(kind, True)
         item.setFlag(QGraphicsItem.ItemIsSelectable, selectable)
-        item.setFlag(QGraphicsItem.ItemIsMovable, selectable)
+        item.setFlag(QGraphicsItem.ItemIsMovable, selectable and kind not in ('ATTR_REF_DES', 'ATTR_BODY'))
         # Disabled object classes must not intercept mouse clicks. This makes
         # Custom selection behave like the Template Canvas also in the Wizard.
         try:
@@ -838,9 +799,12 @@ class MainWindow(QMainWindow):
             ('Save All Symbols JSON', self.save_all_symbols, 'Ctrl+Shift+S'),
             ('Import Symbol JSON', self.import_symbol, None),
             ('Import PINMUX CSV', self.import_pinmux_csv, None),
+            ('---', None, None),
             ('Exit', self.close, None),
         ]
         for label, fn, sc in entries:
+            if label == '---':
+                file_menu.addSeparator(); continue
             a = QAction(label, self)
             a.triggered.connect(fn)
             if sc:
@@ -851,33 +815,39 @@ class MainWindow(QMainWindow):
         for label, fn, sc in [
             ('Undo', self.undo, 'Ctrl+Z'),
             ('Redo', self.redo, 'Ctrl+Y'),
+            ('---', None, None),
             ('Select All Canvas Objects', self.select_all_canvas, 'Ctrl+A'),
             ('Copy', self.copy_selected, 'Ctrl+C'),
             ('Cut', self.cut_selected, 'Ctrl+X'),
             ('Paste', self.paste_selected, 'Ctrl+V'),
             ('Delete', self.delete_selected, 'Del'),
-            ('Validate Pins', self.validate_pins, None),
         ]:
+            if label == '---':
+                edit_menu.addSeparator(); continue
             a = QAction(label, self)
             a.triggered.connect(fn)
             if sc:
                 a.setShortcut(QKeySequence(sc))
             edit_menu.addAction(a)
-            if label in ('Redo', 'Paste', 'Delete'):
-                edit_menu.addSeparator()
 
         tools_menu = mb.addMenu('&Tools')
         a = QAction('Edit Symbol Templates', self)
         a.triggered.connect(self.edit_symbol_templates)
         tools_menu.addAction(a)
         tools_menu.addSeparator()
+        a = QAction('Validate Pins', self)
+        a.triggered.connect(self.validate_pins)
+        tools_menu.addAction(a)
 
         view_menu = mb.addMenu('&View')
         for label, fn, sc in [
             ('Zoom to Fit Symbol', self.zoom_to_fit_symbol, 'Ctrl+F'),
             ('Zoom to Fit Sheet', self.zoom_to_fit_sheet, 'Ctrl+Shift+F'),
+            ('---', None, None),
             ('Refresh Canvas', self.rebuild_scene, 'F5'),
         ]:
+            if label == '---':
+                view_menu.addSeparator(); continue
             a = QAction(label, self)
             a.triggered.connect(fn)
             if sc:
@@ -1211,34 +1181,18 @@ class MainWindow(QMainWindow):
         b = u.body
         ref = b.attributes.get('RefDes', '')
         if b.visible_attributes.get('RefDes', False):
-            pos = getattr(b, 'attribute_positions', {}).get('RefDes', (b.x, b.y + 1))
-            tm = TextModel(text=(ref if str(ref).strip() else 'RefDes'), x=pos[0], y=pos[1], font_family=b.refdes_font.family, font_size_grid=b.refdes_font.size_grid, color=b.refdes_font.color)
-            tm.rotation = getattr(b, 'attribute_rotations', {}).get('RefDes', 0.0)
-            tm.scale_x = getattr(b, 'attribute_scale_x', {}).get('RefDes', 1.0)
-            tm.scale_y = getattr(b, 'attribute_scale_y', {}).get('RefDes', 1.0)
-            tm.h_align = getattr(b, 'attribute_h_align', {}).get('RefDes', 'left')
-            tm.v_align = getattr(b, 'attribute_v_align', {}).get('RefDes', 'center')
-            tm._attribute_owner = b; tm._attribute_key = 'RefDes'
-            txt = TextItem(tm, self)
-            txt.setZValue(2)
-            txt.setData(0, 'TEXT'); txt.setData(1, 'ATTR_REF_DES')
+            txt = TextItem(TextModel(text=(ref if str(ref).strip() else 'RefDes'), x=b.x, y=b.y + 1, font_family=b.refdes_font.family, font_size_grid=b.refdes_font.size_grid, color=b.refdes_font.color), self)
+            txt.setFlag(QGraphicsItem.ItemIsMovable, False); txt.setFlag(QGraphicsItem.ItemIsSelectable, False); txt.setZValue(-1)
+            txt.setData(0, 'ATTR_REF_DES')
             self.scene.addItem(txt)
         row = 1
         for k, v in b.attributes.items():
             if k == 'RefDes' or not b.visible_attributes.get(k, False):
                 continue
             label = f'{k}: {v}' if str(v).strip() else str(k)
-            pos = getattr(b, 'attribute_positions', {}).get(k, (b.x, b.y - b.height - row))
-            tm = TextModel(text=label, x=pos[0], y=pos[1], font_family=b.attribute_font.family, font_size_grid=b.attribute_font.size_grid, color=b.attribute_font.color)
-            tm.rotation = getattr(b, 'attribute_rotations', {}).get(k, 0.0)
-            tm.scale_x = getattr(b, 'attribute_scale_x', {}).get(k, 1.0)
-            tm.scale_y = getattr(b, 'attribute_scale_y', {}).get(k, 1.0)
-            tm.h_align = getattr(b, 'attribute_h_align', {}).get(k, 'left')
-            tm.v_align = getattr(b, 'attribute_v_align', {}).get(k, 'center')
-            tm._attribute_owner = b; tm._attribute_key = k
-            txt = TextItem(tm, self)
-            txt.setZValue(2)
-            txt.setData(0, 'TEXT'); txt.setData(1, 'ATTR_BODY')
+            txt = TextItem(TextModel(text=label, x=b.x, y=b.y - b.height - row, font_family=b.attribute_font.family, font_size_grid=b.attribute_font.size_grid, color=b.attribute_font.color), self)
+            txt.setFlag(QGraphicsItem.ItemIsMovable, False); txt.setFlag(QGraphicsItem.ItemIsSelectable, False); txt.setZValue(-1)
+            txt.setData(0, 'ATTR_BODY')
             self.scene.addItem(txt)
             row += 1
 
@@ -1247,7 +1201,7 @@ class MainWindow(QMainWindow):
         kind = item.data(0)
         selectable = self.selection_enabled.get(kind, True)
         item.setFlag(QGraphicsItem.ItemIsSelectable, selectable)
-        item.setFlag(QGraphicsItem.ItemIsMovable, selectable)
+        item.setFlag(QGraphicsItem.ItemIsMovable, selectable and kind not in ('ATTR_REF_DES', 'ATTR_BODY'))
         # Disabled object classes must not intercept mouse clicks. This makes
         # Custom selection behave like the Template Canvas also in the Wizard.
         try:
@@ -1460,7 +1414,7 @@ class MainWindow(QMainWindow):
     def refresh_properties(self):
         if not self.clear_properties():
             return
-        selected = [i for i in self.scene.selectedItems() if i.data(0) not in ('ATTR_REF_DES', 'ATTR_BODY')]
+        selected = [i for i in self.scene.selectedItems()]
         if not selected:
             self.form.addRow(QLabel('No selection'))
             return
@@ -1484,7 +1438,7 @@ class MainWindow(QMainWindow):
         self.form.addRow(QLabel(f'Selected: {kind}'))
         if kind == 'BODY': self.body_props(item)
         elif kind == 'PIN': self.pin_props(item)
-        elif kind == 'TEXT': self.text_props(item)
+        elif kind in ('TEXT', 'ATTR_REF_DES', 'ATTR_BODY'): self.text_props(item)
         elif kind == 'GRAPHIC': self.graphic_props(item)
 
     def _line(self, value, fn):
@@ -1531,9 +1485,9 @@ class MainWindow(QMainWindow):
         self.form.addRow('Height [grid]', self._dbl(m.height, lambda v: self.set_body_dim(item, 'height', v), 1, 300))
         self.form.addRow('Line style', self._combo([x.value for x in LineStyle], m.line_style, lambda v: self.set_and_refresh(m, 'line_style', v)))
         self.form.addRow('Line width', self._dbl(m.line_width, lambda v: self.set_and_refresh(m, 'line_width', v), .01, 1, .01))
+        self.form.addRow(QLabel('<b>BODY-Attribute</b>'))
         self.font_props('RefDes font', m.refdes_font, refresh_attrs=True)
         self.font_props('Attribute font', m.attribute_font, refresh_attrs=True)
-        self.form.addRow(QLabel('<b>BODY-Attribute</b>'))
         for k in list(m.attributes.keys()):
             row = QWidget()
             l = QHBoxLayout(row)
@@ -1574,7 +1528,9 @@ class MainWindow(QMainWindow):
         self.form.addRow('Text', self._line(m.text, lambda v: self.set_text_attr(item, 'text', v)))
         self.form.addRow('Font', self._font_combo(m.font_family, lambda v: self.set_text_attr(item, 'font_family', v)))
         self.form.addRow('Size grid', self._dbl(m.font_size_grid, lambda v: self.set_text_attr(item, 'font_size_grid', v), .1, 5, .1))
-        self.transform_props(m)
+        self.form.addRow('Horizontal align', self._combo(['left','center','right'], getattr(m, 'h_align', 'left'), lambda v: self.set_text_attr(item, 'h_align', v)))
+        self.form.addRow('Vertical align', self._combo(['upper','center','lower'], getattr(m, 'v_align', 'upper'), lambda v: self.set_text_attr(item, 'v_align', v)))
+        self.form.addRow('Rotation [deg]', self._dbl(getattr(m, 'rotation', 0), lambda v: self.set_and_refresh(m, 'rotation', v), -360, 360, 15))
         b = QPushButton('Color RGB'); b.clicked.connect(lambda: self.color_model(m)); self.form.addRow('Color', b)
 
     def graphic_props(self, item):
@@ -1584,7 +1540,9 @@ class MainWindow(QMainWindow):
         self.form.addRow('Height [grid]', self._dbl(m.h, lambda v: self.set_and_refresh(m, 'h', v), -100, 300))
         self.form.addRow('Line style', self._combo([x.value for x in LineStyle], m.style.line_style, lambda v: self.set_style(m, 'line_style', v)))
         self.form.addRow('Line width', self._dbl(m.style.line_width, lambda v: self.set_style(m, 'line_width', v), .01, 1, .01))
-        self.transform_props(m)
+        if m.shape == 'line':
+            self.form.addRow('Curve radius', self._dbl(getattr(m, 'curve_radius', 0), lambda v: self.set_and_refresh(m, 'curve_radius', v), -100, 100, .1))
+        self.form.addRow('Rotation [deg]', self._dbl(getattr(m, 'rotation', 0), lambda v: self.set_and_refresh(m, 'rotation', v), -360, 360, 15))
         b = QPushButton('Stroke RGB'); b.clicked.connect(lambda: self.color_model(m.style, 'stroke')); self.form.addRow('Color', b)
 
     def font_props(self, title, f, refresh_attrs=False):
@@ -1597,8 +1555,6 @@ class MainWindow(QMainWindow):
 
     def transform_props(self, m):
         self.form.addRow('Rotation [deg]', self._dbl(getattr(m, 'rotation', 0), lambda v: self.set_and_refresh(m, 'rotation', v), -360, 360, 15))
-        self.form.addRow('Scale X', self._dbl(getattr(m, 'scale_x', 1), lambda v: self.set_and_refresh(m, 'scale_x', v), .1, 10, .1))
-        self.form.addRow('Scale Y', self._dbl(getattr(m, 'scale_y', 1), lambda v: self.set_and_refresh(m, 'scale_y', v), .1, 10, .1))
 
     # ------------------------------------------------------------------ Model updates
     def set_font_attr(self, f, a, v, refresh_attrs=False):
@@ -1619,8 +1575,11 @@ class MainWindow(QMainWindow):
 
     def set_and_refresh(self, m, a, v):
         self.push_undo_state()
+        if a == 'rotation':
+            v = (round(float(v) / 15.0) * 15.0) % 360
         setattr(m, a, v)
-        self.schedule_scene_refresh()
+        self.update_current_unit_canvas_positions()
+        self.schedule_scene_refresh(visual_only=True)
 
     def set_style(self, m, a, v):
         self.push_undo_state()
@@ -1639,7 +1598,9 @@ class MainWindow(QMainWindow):
         setattr(item.model, a, round(float(v) * 2) / 2)
         self.scale_current_unit_children_from_body_resize(st, item.model)
         self.enforce_symbol_size_limit()
-        self.schedule_scene_refresh()
+        self.update_current_unit_canvas_positions()
+        self.refresh_properties()
+        self.schedule_scene_refresh(visual_only=True)
 
     def set_attr_vis(self, m, k, v):
         self.push_undo_state()
@@ -1715,8 +1676,11 @@ class MainWindow(QMainWindow):
             self.schedule_scene_refresh()
 
     def live_refresh(self):
+        self.scene.update()
+        self.view.viewport().update()
         self.rebuild_tree()
         self.rebuild_pin_table()
+        self.refresh_properties()
 
     def update_current_unit_canvas_positions(self):
         """Update existing QGraphicsItems from their models without rebuilding the scene."""
@@ -1748,7 +1712,7 @@ class MainWindow(QMainWindow):
         """Regenerate body-owned attribute text only; keeps normal objects selected and avoids stale text remnants."""
         selected_ids = self._capture_selection_ids()
         for item in list(self.scene.items()):
-            if item.data(1) in ('ATTR_REF_DES', 'ATTR_BODY'):
+            if item.data(0) in ('ATTR_REF_DES', 'ATTR_BODY'):
                 self.scene.removeItem(item)
         self.add_attribute_text_items(self.current_unit)
         for item in self.scene.items():
@@ -1794,10 +1758,16 @@ class MainWindow(QMainWindow):
 
     def _scheduled_refresh(self):
         self.enforce_symbol_size_limit(silent=True)
-        # Full rebuild is needed after property/model changes. Selection is restored by model id.
-        self.rebuild_scene()
-        self.rebuild_tree()
-        self.rebuild_pin_table()
+        if self._refresh_visual_only:
+            self.update_current_unit_canvas_positions()
+            self.update_attribute_items_for_unit()
+            self.rebuild_tree()
+            self.rebuild_pin_table()
+            self.refresh_properties()
+        else:
+            self.rebuild_scene()
+            self.rebuild_tree()
+            self.rebuild_pin_table()
         self._refresh_visual_only = False
 
     # ------------------------------------------------------------------ Grouping / constraints

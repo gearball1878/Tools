@@ -18,6 +18,11 @@ class SheetFormat(str, Enum):
 class LineStyle(str, Enum):
     SOLID='solid'; DASH='dash'; DOT='dot'; DASH_DOT='dash_dot'
 
+class TextHAlign(str, Enum):
+    LEFT='left'; CENTER='center'; RIGHT='right'
+class TextVAlign(str, Enum):
+    UPPER='upper'; CENTER='center'; LOWER='lower'
+
 
 @dataclass
 class FontModel:
@@ -42,7 +47,7 @@ class StyleModel:
 class GraphicModel(TransformModel):
     shape: str='line'
     x: float=0.0; y: float=0.0; w: float=2.0; h: float=2.0
-    radius: float=0.0
+    curve_radius: float=0.0
     style: StyleModel=field(default_factory=StyleModel)
 
 @dataclass
@@ -60,8 +65,7 @@ class PinModel(TransformModel):
 class TextModel(TransformModel):
     text: str='Text'; x: float=0.0; y: float=0.0
     font_family: str='Arial'; font_size_grid: float=0.9; color: Tuple[int,int,int]=(0,0,0)
-    h_align: str='left'
-    v_align: str='center'
+    h_align: str=TextHAlign.LEFT.value; v_align: str=TextVAlign.UPPER.value
 
 @dataclass
 class SymbolBodyModel(TransformModel):
@@ -75,12 +79,6 @@ class SymbolBodyModel(TransformModel):
     attributes: Dict[str,str]=field(default_factory=lambda:{'Order Code':'','Package':'','RefDes':'U?','Value':'','Frequency':'','Tolerance':'','Technology':''})
     visible_attributes: Dict[str,bool]=field(default_factory=lambda:{'Order Code':False,'Package':True,'RefDes':True,'Value':True,'Frequency':False,'Tolerance':False,'Technology':False})
     refdes_align: str='left'; body_attr_align: str='left'
-    attribute_positions: Dict[str, Tuple[float,float]]=field(default_factory=dict)
-    attribute_rotations: Dict[str, float]=field(default_factory=dict)
-    attribute_scale_x: Dict[str, float]=field(default_factory=dict)
-    attribute_scale_y: Dict[str, float]=field(default_factory=dict)
-    attribute_h_align: Dict[str, str]=field(default_factory=dict)
-    attribute_v_align: Dict[str, str]=field(default_factory=dict)
 
 @dataclass
 class SymbolUnitModel:

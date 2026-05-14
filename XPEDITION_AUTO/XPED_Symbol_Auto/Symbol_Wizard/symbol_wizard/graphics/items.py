@@ -1,7 +1,7 @@
 from __future__ import annotations
 import math
 from PySide6.QtCore import QPointF, QRectF, Qt, QEvent
-from PySide6.QtGui import QColor, QFont, QPainter, QPen, QBrush, QTransform, QTextCursor, QCursor, QPainterPath, QTextOption
+from PySide6.QtGui import QColor, QFont, QPainter, QPen, QBrush, QTransform, QTextCursor, QCursor, QPainterPath
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem, QGraphicsTextItem
 from symbol_wizard.models.document import PinSide, LineStyle
 from symbol_wizard.rules.grid import snap
@@ -23,8 +23,8 @@ def pen_for(color, width_grid, style, grid_px):
 
 
 class TransformMixin:
-    handle_size_factor = .55
-    rotate_handle_factor = .60
+    handle_size_factor = .58
+    rotate_handle_factor = .58
 
     def apply_transform_from_model(self):
         def f(name, default):
@@ -45,13 +45,11 @@ class TransformMixin:
     def flip_horizontal(self):
         self.model.scale_x = -float(getattr(self.model, 'scale_x', 1.0) or 1.0)
         self.apply_transform_from_model()
-        _persist_attr_transform(self.model)
         self.update()
 
     def flip_vertical(self):
         self.model.scale_y = -float(getattr(self.model, 'scale_y', 1.0) or 1.0)
         self.apply_transform_from_model()
-        _persist_attr_transform(self.model)
         self.update()
 
     def common_flags(self):
@@ -81,9 +79,8 @@ class TransformMixin:
             cur = float(getattr(self.model, 'rotation', 0.0) or 0.0)
         except (TypeError, ValueError):
             cur = 0.0
-        self.model.rotation = (cur + float(deg)) % 360
+        self.model.rotation = (round((cur + float(deg)) / 15.0) * 15.0) % 360
         self.apply_transform_from_model()
-        _persist_attr_transform(self.model)
         self.update()
 
     def scale_selected(self, factor):
@@ -91,7 +88,6 @@ class TransformMixin:
             self.model.font_size_grid = max(.1, self.model.font_size_grid * factor)
             g = self.scene().grid_px
             self.setFont(QFont(self.model.font_family, max(6, int(g * self.model.font_size_grid * .45))))
-            _persist_attr_transform(self.model)
         elif hasattr(self.model, 'length'):
             self.model.length = max(.1, self.model.length * factor)
         self.update()
@@ -117,10 +113,6 @@ def _hit_handle(handles, pos):
     return None
 
 def _cursor_for_handle(name):
-    if name in ('line_start', 'line_end'):
-        return Qt.SizeAllCursor
-    if name == 'line_radius':
-        return Qt.CrossCursor
     if name in ('l', 'r'):
         return Qt.SizeHorCursor
     if name in ('t', 'b'):
@@ -138,27 +130,6 @@ def _rotation_handle(rect: QRectF, s: float):
 
 def _angle_from(center: QPointF, p: QPointF):
     return math.degrees(math.atan2(p.y() - center.y(), p.x() - center.x()))
-
-def _snap_angle(deg: float, step: float = 15.0) -> float:
-    try:
-        return round(float(deg) / step) * step
-    except Exception:
-        return deg
-
-def _persist_attr_transform(model):
-    owner = getattr(model, '_attribute_owner', None)
-    key = getattr(model, '_attribute_key', None)
-    if owner is None or not key:
-        return
-    for name, default in (('attribute_positions', {}), ('attribute_rotations', {}), ('attribute_scale_x', {}), ('attribute_scale_y', {}), ('attribute_h_align', {}), ('attribute_v_align', {})):
-        if not hasattr(owner, name) or getattr(owner, name) is None:
-            setattr(owner, name, dict(default))
-    owner.attribute_positions[key] = (float(getattr(model, 'x', 0.0)), float(getattr(model, 'y', 0.0)))
-    owner.attribute_rotations[key] = float(getattr(model, 'rotation', 0.0) or 0.0)
-    owner.attribute_scale_x[key] = float(getattr(model, 'scale_x', 1.0) or 1.0)
-    owner.attribute_scale_y[key] = float(getattr(model, 'scale_y', 1.0) or 1.0)
-    owner.attribute_h_align[key] = getattr(model, 'h_align', 'left')
-    owner.attribute_v_align[key] = getattr(model, 'v_align', 'center')
 
 
 class BodyItem(TransformMixin, QGraphicsRectItem):
@@ -246,9 +217,8 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
     def mouseMoveEvent(self, event):
         if getattr(self, '_rotating', False):
             delta = _angle_from(self._rotate_center_scene, event.scenePos()) - self._rotate_start_angle
-            self.model.rotation = _snap_angle((self._rotate_start_model + delta) % 360)
+            self.model.rotation = (round((self._rotate_start_model + delta) / 15.0) * 15.0) % 360
             self.apply_transform_from_model()
-            _persist_attr_transform(self.model)
             self.window.live_refresh()
             event.accept(); return
         if self._resizing and self._resize_start is not None:
@@ -389,13 +359,6 @@ class PinItem(TransformMixin, QGraphicsItem):
             painter.setBrush(QBrush(QColor(40, 40, 40)))
             painter.drawEllipse(_rotation_handle(self.boundingRect(), self.window.grid_px * self.rotate_handle_factor))
 
-    def hoverMoveEvent(self, event):
-        if self.isSelected() and _rotation_handle(self.boundingRect(), self.window.grid_px * self.rotate_handle_factor).contains(event.pos()):
-            self.setCursor(QCursor(Qt.CrossCursor))
-        else:
-            self.unsetCursor()
-        super().hoverMoveEvent(event)
-
     def mousePressEvent(self, event):
         if self.isSelected() and _rotation_handle(self.boundingRect(), self.window.grid_px * self.rotate_handle_factor).contains(event.pos()):
             self._rotating = True
@@ -408,9 +371,8 @@ class PinItem(TransformMixin, QGraphicsItem):
     def mouseMoveEvent(self, event):
         if getattr(self, '_rotating', False):
             delta = _angle_from(self._rotate_center_scene, event.scenePos()) - self._rotate_start_angle
-            self.model.rotation = _snap_angle((self._rotate_start_model + delta) % 360)
+            self.model.rotation = (round((self._rotate_start_model + delta) / 15.0) * 15.0) % 360
             self.apply_transform_from_model()
-            _persist_attr_transform(self.model)
             self.window.live_refresh()
             event.accept(); return
         super().mouseMoveEvent(event)
@@ -439,9 +401,6 @@ class TextItem(TransformMixin, QGraphicsTextItem):
         self.setPos(model.x * g, -model.y * g)
         self.setDefaultTextColor(rgb(model.color))
         self.setFont(QFont(model.font_family, max(6, int(g * model.font_size_grid * .45))))
-        opt = QTextOption(self.document().defaultTextOption())
-        opt.setAlignment({'left': Qt.AlignLeft, 'center': Qt.AlignHCenter, 'right': Qt.AlignRight}.get(getattr(model, 'h_align', 'left'), Qt.AlignLeft))
-        self.document().setDefaultTextOption(opt)
         self.common_flags()
         # Text remains movable/selectable in edit mode. Text editing starts only on double click.
         self.setTextInteractionFlags(Qt.NoTextInteraction)
@@ -459,13 +418,6 @@ class TextItem(TransformMixin, QGraphicsTextItem):
             painter.drawEllipse(_rotation_handle(self.boundingRect(), self.window.grid_px * self.rotate_handle_factor))
             painter.restore()
 
-    def hoverMoveEvent(self, event):
-        if self.isSelected() and _rotation_handle(self.boundingRect(), self.window.grid_px * self.rotate_handle_factor).contains(event.pos()):
-            self.setCursor(QCursor(Qt.CrossCursor))
-        else:
-            self.unsetCursor()
-        super().hoverMoveEvent(event)
-
     def mousePressEvent(self, event):
         if self.isSelected() and _rotation_handle(self.boundingRect(), self.window.grid_px * self.rotate_handle_factor).contains(event.pos()):
             self._rotating = True
@@ -478,9 +430,8 @@ class TextItem(TransformMixin, QGraphicsTextItem):
     def mouseMoveEvent(self, event):
         if getattr(self, '_rotating', False):
             delta = _angle_from(self._rotate_center_scene, event.scenePos()) - self._rotate_start_angle
-            self.model.rotation = _snap_angle((self._rotate_start_model + delta) % 360)
+            self.model.rotation = (round((self._rotate_start_model + delta) / 15.0) * 15.0) % 360
             self.apply_transform_from_model()
-            _persist_attr_transform(self.model)
             self.window.live_refresh()
             event.accept(); return
         super().mouseMoveEvent(event)
@@ -527,15 +478,6 @@ class TextItem(TransformMixin, QGraphicsTextItem):
         self.model.x = self.pos().x() / g
         self.model.y = -self.pos().y() / g
         self.model.text = self.toPlainText()
-        owner = getattr(self.model, '_attribute_owner', None)
-        key = getattr(self.model, '_attribute_key', None)
-        if owner is not None and key:
-            if not hasattr(owner, 'attribute_positions') or owner.attribute_positions is None:
-                owner.attribute_positions = {}
-            owner.attribute_positions[key] = (self.model.x, self.model.y)
-            _persist_attr_transform(self.model)
-            if hasattr(owner, 'attributes') and key in owner.attributes:
-                owner.attributes[key] = self.model.text.split(': ', 1)[1] if ': ' in self.model.text else owner.attributes.get(key, '')
 
 
 
@@ -564,6 +506,13 @@ class GraphicItem(TransformMixin, QGraphicsItem):
 
     def _rect(self):
         r = self._raw_rect().normalized()
+        if getattr(self.model, 'shape', '') == 'line':
+            g = self.window.grid_px
+            cr = float(getattr(self.model, 'curve_radius', 0.0) or 0.0) * g
+            if cr > 0:
+                r.setTop(min(r.top(), self.model.h * g / 2 - cr))
+            elif cr < 0:
+                r.setBottom(max(r.bottom(), self.model.h * g / 2 - cr))
         if r.width() < 1:
             r.adjust(-.5, 0, .5, 0)
         if r.height() < 1:
@@ -575,48 +524,28 @@ class GraphicItem(TransformMixin, QGraphicsItem):
         return self._rect().adjusted(-.35 * g, -.35 * g, .35 * g, .35 * g)
 
     def _handles(self):
-        if self.model.shape == 'line':
-            return self._line_handles()
-        return _corner_handles(self._rect(), self.window.grid_px * self.handle_size_factor)
-
-    def _line_handles(self):
         g = self.window.grid_px
-        s = max(8.0, g * self.handle_size_factor)
-        p1 = QPointF(0, 0)
-        p2 = QPointF(self.model.w * g, self.model.h * g)
-        mid = QPointF((p1.x() + p2.x()) / 2, (p1.y() + p2.y()) / 2)
-        # Radius handle: placed on the curve control point. Radius is deliberately not grid-snapped.
-        radius = float(getattr(self.model, 'radius', 0.0) or 0.0) * g
-        dx, dy = p2.x() - p1.x(), p2.y() - p1.y()
-        ln = math.hypot(dx, dy) or 1.0
-        ctrl = QPointF(mid.x() - dy / ln * radius, mid.y() + dx / ln * radius)
-        return {
-            'line_start': QRectF(p1.x() - s / 2, p1.y() - s / 2, s, s),
-            'line_end': QRectF(p2.x() - s / 2, p2.y() - s / 2, s, s),
-            'line_radius': QRectF(ctrl.x() - s / 2, ctrl.y() - s / 2, s, s),
-        }
-
-    def _draw_line_path(self, painter, g):
-        p1 = QPointF(0, 0)
-        p2 = QPointF(self.model.w * g, self.model.h * g)
-        radius = float(getattr(self.model, 'radius', 0.0) or 0.0) * g
-        if abs(radius) < 1e-6:
-            painter.drawLine(p1, p2)
-            return
-        mid = QPointF((p1.x() + p2.x()) / 2, (p1.y() + p2.y()) / 2)
-        dx, dy = p2.x() - p1.x(), p2.y() - p1.y()
-        ln = math.hypot(dx, dy) or 1.0
-        ctrl = QPointF(mid.x() - dy / ln * radius, mid.y() + dx / ln * radius)
-        path = QPainterPath(p1)
-        path.quadTo(ctrl, p2)
-        painter.drawPath(path)
+        s = g * self.handle_size_factor
+        if self.model.shape == 'line':
+            return {
+                'start': QRectF(-s/2, -s/2, s, s),
+                'end': QRectF(self.model.w*g - s/2, self.model.h*g - s/2, s, s),
+                'curve': QRectF(self.model.w*g/2 - s/2, self.model.h*g/2 - float(getattr(self.model, 'curve_radius', 0.0))*g - s/2, s, s),
+            }
+        return _corner_handles(self._rect(), s)
 
     def paint(self, painter, option, widget=None):
         g, m = self.window.grid_px, self.model
         painter.setPen(pen_for(m.style.stroke, m.style.line_width, m.style.line_style, g))
         painter.setBrush(QBrush(rgb(m.style.fill)) if m.style.fill else QBrush(Qt.NoBrush))
         if m.shape == 'line':
-            self._draw_line_path(painter, g)
+            r = float(getattr(m, 'curve_radius', 0.0) or 0.0)
+            if abs(r) > 1e-9:
+                path = QPainterPath(QPointF(0, 0))
+                path.quadTo(QPointF(m.w * g / 2, m.h * g / 2 - r * g), QPointF(m.w * g, m.h * g))
+                painter.drawPath(path)
+            else:
+                painter.drawLine(QPointF(0, 0), QPointF(m.w * g, m.h * g))
         elif m.shape == 'rect':
             painter.drawRect(QRectF(0, 0, m.w * g, m.h * g))
         elif m.shape == 'ellipse':
@@ -627,8 +556,11 @@ class GraphicItem(TransformMixin, QGraphicsItem):
             painter.drawRect(self._rect())
             painter.setBrush(QBrush(QColor(40, 40, 40)))
             painter.setPen(QPen(QColor(40, 40, 40), 1))
-            for r in self._handles().values():
-                painter.drawRect(r)
+            for name, r in self._handles().items():
+                if name == 'curve':
+                    painter.drawEllipse(r)
+                else:
+                    painter.drawRect(r)
             painter.drawEllipse(_rotation_handle(self._rect(), self.window.grid_px * self.rotate_handle_factor))
             painter.restore()
 
@@ -665,53 +597,41 @@ class GraphicItem(TransformMixin, QGraphicsItem):
     def mouseMoveEvent(self, event):
         if getattr(self, '_rotating', False):
             delta = _angle_from(self._rotate_center_scene, event.scenePos()) - self._rotate_start_angle
-            self.model.rotation = _snap_angle((self._rotate_start_model + delta) % 360)
+            self.model.rotation = (round((self._rotate_start_model + delta) / 15.0) * 15.0) % 360
             self.apply_transform_from_model()
-            _persist_attr_transform(self.model)
             self.window.live_refresh()
             event.accept(); return
         if self._resizing and self._resize_start is not None:
             g = self.window.grid_px
-            st = self._resize_start
-            if self.model.shape == 'line' and self._resizing in ('line_start', 'line_end', 'line_radius'):
-                if self._resizing == 'line_radius':
-                    lp = self.mapFromScene(event.scenePos())
-                    p1 = QPointF(0, 0); p2 = QPointF(st['w'] * g, st['h'] * g)
-                    mid = QPointF((p1.x()+p2.x())/2, (p1.y()+p2.y())/2)
-                    dx, dy = p2.x()-p1.x(), p2.y()-p1.y()
-                    ln = math.hypot(dx, dy) or 1.0
-                    nx, ny = -dy/ln, dx/ln
-                    self.model.radius = ((lp.x()-mid.x())*nx + (lp.y()-mid.y())*ny) / g
-                else:
-                    p = QPointF(snap(event.scenePos().x(), g), snap(event.scenePos().y(), g))
-                    sx, sy = st['x'] * g, -st['y'] * g
-                    ex, ey = sx + st['w'] * g, sy + st['h'] * g
-                    if self._resizing == 'line_start':
-                        self.setPos(p.x(), p.y())
-                        self.model.x = p.x() / g
-                        self.model.y = -p.y() / g
-                        self.model.w = (ex - p.x()) / g
-                        self.model.h = (ey - p.y()) / g
-                    else:
-                        self.model.w = (p.x() - sx) / g
-                        self.model.h = (p.y() - sy) / g
-                self.window.live_refresh(); self.update(); event.accept(); return
-
             p = QPointF(snap(event.scenePos().x(), g), snap(event.scenePos().y(), g))
+            st = self._resize_start
             left = st['x'] * g
             top = -st['y'] * g
             right = left + st['w'] * g
             bottom = top + st['h'] * g
 
-            # Edge handles are one-dimensional only; corners are true 2D resize.
-            if self._resizing in ('l', 'tl', 'bl'):
-                left = p.x()
-            if self._resizing in ('r', 'tr', 'br'):
-                right = p.x()
-            if self._resizing in ('t', 'tl', 'tr'):
-                top = p.y()
-            if self._resizing in ('b', 'bl', 'br'):
-                bottom = p.y()
+            # Line endpoints are edited directly; the middle handle changes only curve radius and is intentionally not grid-snapped.
+            if self.model.shape == 'line':
+                raw = event.scenePos()
+                if self._resizing == 'start':
+                    old_end_x = left + st['w'] * g; old_end_y = top + st['h'] * g
+                    left = p.x(); top = p.y(); right = old_end_x; bottom = old_end_y
+                elif self._resizing == 'end':
+                    right = p.x(); bottom = p.y()
+                elif self._resizing == 'curve':
+                    mid_y = top + (st['h'] * g) / 2
+                    self.model.curve_radius = (mid_y - raw.y()) / g
+                    self.window.live_refresh(); self.update(); event.accept(); return
+            else:
+                # Edge handles are one-dimensional only; corners are true 2D resize.
+                if self._resizing in ('l', 'tl', 'bl'):
+                    left = p.x()
+                if self._resizing in ('r', 'tr', 'br'):
+                    right = p.x()
+                if self._resizing in ('t', 'tl', 'tr'):
+                    top = p.y()
+                if self._resizing in ('b', 'bl', 'br'):
+                    bottom = p.y()
 
             if self.model.shape != 'line':
                 min_size = g * .25

@@ -1,4 +1,4 @@
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QRectF
 from PySide6.QtGui import QPainter
 from PySide6.QtWidgets import QGraphicsView, QMenu
 from symbol_wizard.models.document import DrawTool, GraphicModel, PinSide, TextModel
@@ -13,6 +13,21 @@ class SymbolView(QGraphicsView):
         self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
         self.setResizeAnchor(QGraphicsView.AnchorUnderMouse)
         self.setFocusPolicy(Qt.StrongFocus)
+        try:
+            self.rubberBandChanged.connect(self._rubber_band_changed)
+        except Exception:
+            pass
+
+    def _rubber_band_changed(self, viewport_rect, from_scene, to_scene):
+        # Select only objects fully contained by the rubber-band rectangle.
+        if viewport_rect.isNull():
+            rect = QRectF(from_scene, to_scene).normalized()
+            if rect.isValid() and rect.width() > 0 and rect.height() > 0:
+                for it in self.scene().items():
+                    kind = it.data(0)
+                    if kind in getattr(self.window, 'selection_enabled', {}) and self.window.selection_enabled.get(kind, True):
+                        it.setSelected(rect.contains(it.mapToScene(it.boundingRect()).boundingRect()))
+                self.window.refresh_properties()
 
     def wheelEvent(self, event):
         delta = event.angleDelta().y()
@@ -54,13 +69,6 @@ class SymbolView(QGraphicsView):
         menu.addAction('Rotate CW 15°', lambda: self.window.rotate_selected(15))
         menu.addAction('Flip Horizontal', self.window.flip_selected_horizontal)
         menu.addAction('Flip Vertical', self.window.flip_selected_vertical)
-        align_menu = menu.addMenu('Alignment')
-        h_menu = align_menu.addMenu('Horizontal')
-        for lab, val in [('Left', 'left'), ('Center', 'center'), ('Right', 'right')]:
-            h_menu.addAction(lab, lambda checked=False, v=val: self.window.set_selected_text_alignment(h_align=v))
-        v_menu = align_menu.addMenu('Vertical')
-        for lab, val in [('Upper', 'upper'), ('Center', 'center'), ('Lower', 'lower')]:
-            v_menu.addAction(lab, lambda checked=False, v=val: self.window.set_selected_text_alignment(v_align=v))
         menu.addSeparator()
         menu.addAction('Undo', self.window.undo)
         menu.addAction('Redo', self.window.redo)
