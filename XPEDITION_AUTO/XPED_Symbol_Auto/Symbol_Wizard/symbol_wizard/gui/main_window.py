@@ -87,8 +87,6 @@ class MainWindow(QMainWindow):
 
         single_page = QWidget()
         single_layout = QVBoxLayout(single_page)
-        single_layout.addWidget(QLabel('Single Symbols'))
-        single_layout.addWidget(self.single_tabs)
         single_layout.addWidget(QLabel('Pins of selected single symbol'))
         single_layout.addWidget(self.single_pin_table, 2)
         single_layout.addWidget(QLabel('Object Tree'))
@@ -1387,35 +1385,10 @@ class MainWindow(QMainWindow):
 
     def import_symbol(self):
         p, _ = QFileDialog.getOpenFileName(self, 'Import Symbol JSON', '', 'JSON (*.json)')
-        if not p:
-            return
-        imported_symbol = load_symbol(p)
-
-        # If a symbol with the same name already exists, ask whether it should be
-        # replaced. This keeps imports predictable and avoids silently creating
-        # confusing duplicates. If the user declines replacement, the import is
-        # still possible with the existing _{enum} suffix behavior.
-        duplicate_index = next((i for i, sym in enumerate(self.library.symbols) if sym.name == imported_symbol.name), None)
-        if duplicate_index is not None:
-            answer = QMessageBox.question(
-                self,
-                'Import Symbol JSON',
-                f'Ein Symbol mit dem Namen "{imported_symbol.name}" existiert bereits.\n\n'
-                'Soll dieses vorhandene Symbol durch den Import ersetzt werden?',
-                QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
-                QMessageBox.Yes,
-            )
-            if answer == QMessageBox.Cancel:
-                return
-            if answer == QMessageBox.Yes:
-                self.library.symbols[duplicate_index] = imported_symbol
-                self.library.current_symbol_index = duplicate_index
-                self.current_unit_index = 0
-                self.rebuild_all()
-                return
-            imported_symbol.name = self.library.unique_import_name(imported_symbol.name)
-
-        self.library.symbols.append(imported_symbol)
+        if not p: return
+        s = load_symbol(p)
+        s.name = self.library.unique_import_name(s.name)
+        self.library.symbols.append(s)
         self.library.current_symbol_index = len(self.library.symbols) - 1
         self.current_unit_index = 0
         self.rebuild_all()

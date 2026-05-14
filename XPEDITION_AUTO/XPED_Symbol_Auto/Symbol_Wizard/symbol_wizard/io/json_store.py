@@ -25,17 +25,24 @@ def _pin(d):
     return PinModel(**d)
 def _text(d): return TextModel(**_coerce_transform(d))
 def _body(d):
-    d=_coerce_transform(d)
+    raw = dict(d or {})
+    d=_coerce_transform(raw)
     d['attribute_font']=_font(d.get('attribute_font', {}), .75)
     d['refdes_font']=_font(d.get('refdes_font', {}), .9)
-    return SymbolBodyModel(**d)
+    body = SymbolBodyModel(**d)
+    # Migration for very old/empty JSON bodies: when no explicit x/y was stored,
+    # keep the default symbol-origin-at-body-center placement.
+    if 'x' not in raw and 'y' not in raw:
+        body.x = -body.width / 2
+        body.y = body.height / 2
+    return body
 def _unit(d):
     return SymbolUnitModel(name=d.get('name','Unit'), body=_body(d.get('body',{})), pins=[_pin(x) for x in d.get('pins',[])], texts=[_text(x) for x in d.get('texts',[])], graphics=[_graphic(x) for x in d.get('graphics',[])])
 def _symbol(d):
     kind=d.get('kind')
     if not kind:
         kind=SymbolKind.SPLIT.value if d.get('is_split', False) else SymbolKind.SINGLE.value
-    return SymbolModel(name=d.get('name','Symbol'), kind=kind, is_split=(kind==SymbolKind.SPLIT.value), grid_inch=d.get('grid_inch',0.1), sheet_format=d.get('sheet_format', SheetFormat.A3.value), origin=d.get('origin','bottom_left'), units=[_unit(x) for x in d.get('units',[]) ] or [SymbolUnitModel()])
+    return SymbolModel(name=d.get('name','Symbol'), kind=kind, is_split=(kind==SymbolKind.SPLIT.value), grid_inch=d.get('grid_inch',0.1), sheet_format=d.get('sheet_format', SheetFormat.A3.value), origin=d.get('origin', OriginMode.CENTER.value), units=[_unit(x) for x in d.get('units',[]) ] or [SymbolUnitModel()])
 
 def save_library(path, library: LibraryModel):
     Path(path).write_text(json.dumps(to_dict(library), indent=2), encoding='utf-8')

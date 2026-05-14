@@ -298,8 +298,17 @@ class PinItem(TransformMixin, QGraphicsItem):
         self.model.x = self.pos().x() / g
         self.model.y = -self.pos().y() / g
 
+    def rotate_by(self, deg):
+        # EDA pins are constrained to horizontal orientation only. Rotation toggles
+        # between 0° and 180°; arbitrary angles are intentionally blocked.
+        cur = 180.0 if float(getattr(self.model, 'rotation', 0.0) or 0.0) >= 90.0 else 0.0
+        self.model.rotation = 0.0 if cur == 180.0 else 180.0
+        self.setRotation(self.model.rotation)
+        self.update()
+
     def scale_selected(self, factor):
-        self.model.length = max(.1, self.model.length * factor)
+        # Pin length is always quantized to full grid units.
+        self.model.length = max(1.0, round(self.model.length * factor))
         self.update()
 
 

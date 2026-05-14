@@ -62,7 +62,10 @@ class TextModel(TransformModel):
 
 @dataclass
 class SymbolBodyModel(TransformModel):
-    x: float=0.0; y: float=0.0; width: float=16.0; height: float=24.0
+    # Default body placement: body center is the symbol origin (0, 0).
+    # With the internal coordinate convention y points upward and the body rectangle
+    # extends downward from (x, y), therefore x=-width/2 and y=height/2.
+    x: float=-8.0; y: float=12.0; width: float=16.0; height: float=24.0
     color: Tuple[int,int,int]=(0,0,0); line_width: float=0.03; line_style: str=LineStyle.SOLID.value
     attribute_font: FontModel=field(default_factory=lambda: FontModel(size_grid=0.75))
     refdes_font: FontModel=field(default_factory=lambda: FontModel(size_grid=0.9))
@@ -85,7 +88,7 @@ class SymbolModel:
     is_split: bool=False  # legacy compatibility; kind is authoritative
     grid_inch: float=0.100
     sheet_format: str=SheetFormat.A3.value
-    origin: str=OriginMode.BOTTOM_LEFT.value
+    origin: str=OriginMode.CENTER.value
     units: List[SymbolUnitModel]=field(default_factory=lambda:[SymbolUnitModel()])
 
 @dataclass

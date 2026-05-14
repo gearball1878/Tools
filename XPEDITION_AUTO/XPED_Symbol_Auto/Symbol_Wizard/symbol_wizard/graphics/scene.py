@@ -18,7 +18,7 @@ def sheet_rect_for(fmt: str) -> QRectF:
     w_in, h_in = SHEET_INCHES.get(fmt, SHEET_INCHES['A3'])
     w = w_in * PX_PER_INCH
     h = h_in * PX_PER_INCH
-    # Origo is the exact center of the selected sheet format.
+    # The sheet preview is centered on scene origin. By default every new symbol body is also centered here.
     return QRectF(-w / 2, -h / 2, w, h)
 
 
@@ -54,7 +54,7 @@ class SymbolScene(QGraphicsScene):
         while y < rect.bottom():
             painter.drawLine(QPointF(rect.left(), y), QPointF(rect.right(), y))
             y += g
-        # Origin axes: now centered in the selected sheet format.
+        # Origin axes: symbol origin. New bodies are centered on this point by default.
         painter.setPen(QPen(QColor(150, 150, 150), 0))
         painter.drawLine(QPointF(rect.left(), 0), QPointF(rect.right(), 0))
         painter.drawLine(QPointF(0, rect.top()), QPointF(0, rect.bottom()))
@@ -73,6 +73,6 @@ class SymbolScene(QGraphicsScene):
         painter.setPen(QPen(QColor(120, 120, 120), 0))
         painter.drawEllipse(QPointF(0, 0), 5, 5)
         painter.setFont(QFont('Arial', 10))
-        painter.drawText(full.adjusted(8, 8, -8, -8), Qt.AlignTop | Qt.AlignLeft, f'{fmt} preview - origin at sheet center')
+        painter.drawText(full.adjusted(8, 8, -8, -8), Qt.AlignTop | Qt.AlignLeft, f'{fmt} preview - symbol origin / default body center')
         painter.drawText(usable.adjusted(8, 8, -8, -8), Qt.AlignTop | Qt.AlignLeft, 'max symbol area: 40% W / 80% H')
         painter.restore()

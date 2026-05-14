@@ -88,3 +88,8 @@ PA0|BIDI|ADC_IN0|A1
 ```
 
 Supported separators are comma, semicolon, pipe, and tab. If `Pin Function` is empty, the editor displays `Pin Name`; otherwise it displays `Pin Function`.
+
+
+## Origin default
+
+New symbols place the symbol origin at the center of the symbol body by default. Pins and body attributes remain grouped with the body during moves/resizes. Pins are constrained to 0°/180° rotation and their length snaps to full grid units.
