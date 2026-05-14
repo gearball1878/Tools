@@ -79,6 +79,14 @@ class SymbolView(QGraphicsView):
         super().keyPressEvent(event)
 
     def mousePressEvent(self, event):
+        # Right mouse button always returns to Select/Edit mode while the cursor is
+        # over the canvas. This is intentionally non-destructive: the current
+        # selection stays selected and only the active draw tool changes.
+        if event.button() == Qt.RightButton:
+            self.window.set_tool(DrawTool.SELECT.value)
+            event.accept()
+            return
+
         tool = self.window.draw_tool
         if event.button() == Qt.LeftButton and tool != DrawTool.SELECT.value:
             p = self.mapToScene(event.position().toPoint())
