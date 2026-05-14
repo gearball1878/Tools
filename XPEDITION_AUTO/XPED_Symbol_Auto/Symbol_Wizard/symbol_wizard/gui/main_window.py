@@ -1250,7 +1250,7 @@ class MainWindow(QMainWindow):
         self.resize(1600, 980)
         self._build_ui()
         self.rebuild_all()
-        QTimer.singleShot(0, self.zoom_to_fit_symbol)
+        # No automatic zoom/fit here: split imports must keep the user scale stable.
 
     @property
     def symbol(self) -> SymbolModel:
@@ -2247,63 +2247,87 @@ Use **File > Import PINMUX CSV** to import pin information from a CSV file. Afte
         tree.resizeColumnToContents(1)
 
     def _populate_current_object_tree(self, tree: QTreeWidget):
+        """Populate the object tree for the focused canvas only.
+
+        Split symbols can contain many units and hundreds of pins. Rebuilding the
+        complete tree on every edit made the UI freeze after imports. The canvas
+        edits exactly one active unit, so the tree now shows only that active unit.
+        The split overview still lists the units for navigation.
+        """
+        tree.setUpdatesEnabled(False)
         tree.clear()
-        root = QTreeWidgetItem([self.symbol.name, 'Split Symbol' if self.symbol.kind == SymbolKind.SPLIT.value else 'Single Symbol'])
-        tree.addTopLevelItem(root)
-        for ui, u in enumerate(self.symbol.units):
-            unit = QTreeWidgetItem([u.name, 'Unit / Symbol Part'])
-            unit.setData(0, Qt.UserRole, ('unit', ui, None))
-            root.addChild(unit)
-            body = QTreeWidgetItem(['Body', f'{u.body.width:g} x {u.body.height:g}'])
-            body.setData(0, Qt.UserRole, ('body', ui, None))
-            unit.addChild(body)
-            attrs = QTreeWidgetItem(['Attributes', 'Body'])
-            unit.addChild(attrs)
-            for k, v in u.body.attributes.items():
-                att = QTreeWidgetItem([k, f'{v} / visible={u.body.visible_attributes.get(k, False)}'])
-                attrs.addChild(att)
-            pins = QTreeWidgetItem(['Pins', str(len(u.pins))])
-            unit.addChild(pins)
-            for pi, p in enumerate(u.pins):
-                pin = QTreeWidgetItem([f'Pin {p.number}', f'{p.name} | {p.function} | {p.pin_type} | {p.side}'])
-                pin.setData(0, Qt.UserRole, ('pin', ui, pi))
-                pins.addChild(pin)
-            texts = QTreeWidgetItem(['Text', str(len(u.texts))])
-            unit.addChild(texts)
-            for ti, t in enumerate(u.texts):
-                text = QTreeWidgetItem([t.text[:30], f'{t.font_family} {t.font_size_grid:g}'])
-                text.setData(0, Qt.UserRole, ('text', ui, ti))
-                texts.addChild(text)
-            graphics = QTreeWidgetItem(['Graphics', str(len(u.graphics))])
-            unit.addChild(graphics)
-            for gi, g in enumerate(u.graphics):
-                gr = QTreeWidgetItem([g.shape, f'{g.w:g} x {g.h:g}'])
-                gr.setData(0, Qt.UserRole, ('graphic', ui, gi))
-                graphics.addChild(gr)
-        tree.expandAll()
-        tree.resizeColumnToContents(0)
-        tree.resizeColumnToContents(1)
+        try:
+            root = QTreeWidgetItem([self.symbol.name, 'Split Symbol' if self.symbol.kind == SymbolKind.SPLIT.value else 'Single Symbol'])
+            tree.addTopLevelItem(root)
+            unit_indices = [self.current_unit_index] if self.symbol.kind == SymbolKind.SPLIT.value else list(range(len(self.symbol.units)))
+            for ui in unit_indices:
+                if ui < 0 or ui >= len(self.symbol.units):
+                    continue
+                u = self.symbol.units[ui]
+                unit = QTreeWidgetItem([u.name, 'Focused Unit / Symbol Part'])
+                unit.setData(0, Qt.UserRole, ('unit', ui, None))
+                root.addChild(unit)
+                body = QTreeWidgetItem(['Body', f'{u.body.width:g} x {u.body.height:g}'])
+                body.setData(0, Qt.UserRole, ('body', ui, None))
+                unit.addChild(body)
+                attrs = QTreeWidgetItem(['Attributes', 'Body'])
+                unit.addChild(attrs)
+                for k, v in u.body.attributes.items():
+                    att = QTreeWidgetItem([k, f'{v} / visible={u.body.visible_attributes.get(k, False)}'])
+                    attrs.addChild(att)
+                pins = QTreeWidgetItem(['Pins', str(len(u.pins))])
+                unit.addChild(pins)
+                for pi, p in enumerate(u.pins):
+                    pin = QTreeWidgetItem([f'Pin {p.number}', f'{p.name} | {p.function} | {p.pin_type} | {p.side}'])
+                    pin.setData(0, Qt.UserRole, ('pin', ui, pi))
+                    pins.addChild(pin)
+                texts = QTreeWidgetItem(['Text', str(len(u.texts))])
+                unit.addChild(texts)
+                for ti, t in enumerate(u.texts):
+                    text = QTreeWidgetItem([t.text[:30], f'{t.font_family} {t.font_size_grid:g}'])
+                    text.setData(0, Qt.UserRole, ('text', ui, ti))
+                    texts.addChild(text)
+                graphics = QTreeWidgetItem(['Graphics', str(len(u.graphics))])
+                unit.addChild(graphics)
+                for gi, g in enumerate(u.graphics):
+                    gr = QTreeWidgetItem([g.shape, f'{g.w:g} x {g.h:g}'])
+                    gr.setData(0, Qt.UserRole, ('graphic', ui, gi))
+                    graphics.addChild(gr)
+            root.setExpanded(True)
+        finally:
+            tree.setUpdatesEnabled(True)
 
     def _populate_split_symbol_tree(self):
+        """Fast split overview: list split parts for navigation, not every pin.
+
+        Expanding every pin of every split unit after a large import is expensive and
+        was one cause of the edit-mode freeze. Pin details are shown in the pin table
+        for the focused unit.
+        """
         tree = self.split_symbol_tree
+        tree.setUpdatesEnabled(False)
         tree.clear()
-        for si, symbol in enumerate(self.library.symbols):
-            if symbol.kind != SymbolKind.SPLIT.value:
-                continue
-            sym_item = QTreeWidgetItem([symbol.name, 'Split Symbol'])
-            sym_item.setData(0, Qt.UserRole, ('symbol', si, None))
-            tree.addTopLevelItem(sym_item)
-            for ui, u in enumerate(symbol.units):
-                unit_item = QTreeWidgetItem([u.name, f'{len(u.pins)} pins'])
-                unit_item.setData(0, Qt.UserRole, ('split_unit', si, ui))
-                sym_item.addChild(unit_item)
-                for pi, pin in enumerate(u.pins):
-                    pin_item = QTreeWidgetItem([f'Pin {pin.number}', f'{pin.name} | {pin.function} | {pin.pin_type} | {pin.side}'])
-                    pin_item.setData(0, Qt.UserRole, ('split_pin', si, ui, pi))
-                    unit_item.addChild(pin_item)
-        tree.expandAll()
-        tree.resizeColumnToContents(0)
-        tree.resizeColumnToContents(1)
+        try:
+            for si, symbol in enumerate(self.library.symbols):
+                if symbol.kind != SymbolKind.SPLIT.value:
+                    continue
+                if si != self.library.current_symbol_index:
+                    # Keep non-active split symbols out of the live tree to avoid
+                    # background rebuilds while editing the focused symbol.
+                    continue
+                sym_item = QTreeWidgetItem([symbol.name, 'Split Symbol'])
+                sym_item.setData(0, Qt.UserRole, ('symbol', si, None))
+                tree.addTopLevelItem(sym_item)
+                for ui, u in enumerate(symbol.units):
+                    label = f'{len(u.pins)} pins'
+                    if ui == self.current_unit_index:
+                        label += '  [focused]'
+                    unit_item = QTreeWidgetItem([u.name, label])
+                    unit_item.setData(0, Qt.UserRole, ('split_unit', si, ui))
+                    sym_item.addChild(unit_item)
+                sym_item.setExpanded(True)
+        finally:
+            tree.setUpdatesEnabled(True)
 
     def rebuild_pin_table(self):
         # Single Symbols: show pins of the currently selected single symbol only.
@@ -2955,7 +2979,6 @@ Use **File > Import PINMUX CSV** to import pin information from a CSV file. Afte
         self.refresh_timer.start(35 if visual_only else 80)
 
     def _scheduled_refresh(self):
-        self.enforce_symbol_size_limit(silent=True)
         if self._refresh_visual_only:
             self.update_current_unit_canvas_positions()
             self.update_attribute_items_for_unit()
@@ -3012,37 +3035,15 @@ Use **File > Import PINMUX CSV** to import pin information from a CSV file. Afte
         return min(xs), min(ys), max(xs), max(ys)
 
     def enforce_symbol_size_limit(self, silent=False):
-        fmt = getattr(self.symbol, 'sheet_format', SheetFormat.A3.value)
-        w_in, h_in = SHEET_INCHES.get(fmt, SHEET_INCHES['A3'])
-        max_w_grid = (w_in * .40) / self.symbol.grid_inch
-        max_h_grid = (h_in * .80) / self.symbol.grid_inch
-        x0, y0, x1, y1 = self.symbol_bounds_grid()
-        cur_w, cur_h = abs(x1 - x0), abs(y1 - y0)
-        if cur_w <= max_w_grid and cur_h <= max_h_grid:
-            return True
-        scale = min(max_w_grid / max(cur_w, .01), max_h_grid / max(cur_h, .01))
-        if scale <= 0 or scale >= 1:
-            return True
-        for u in self.symbol.units:
-            u.body.width = max(1, u.body.width * scale)
-            u.body.height = max(1, u.body.height * scale)
-            for p in u.pins:
-                p.y = u.body.y + (p.y - u.body.y) * scale
-                p.length = max(.5, p.length * scale)
-            for t in u.texts:
-                t.x = u.body.x + (t.x - u.body.x) * scale
-                t.y = u.body.y + (t.y - u.body.y) * scale
-            for t in getattr(u.body, 'attribute_texts', {}).values():
-                t.x = u.body.x + (t.x - u.body.x) * scale
-                t.y = u.body.y + (t.y - u.body.y) * scale
-            for g in u.graphics:
-                g.x = u.body.x + (g.x - u.body.x) * scale
-                g.y = u.body.y + (g.y - u.body.y) * scale
-                g.w *= scale; g.h *= scale
-            self.dock_pins_to_body(u)
-        if not silent:
-            self.statusBar().showMessage(f'Symbol scaled to fit {fmt} 40% width / 80% height limit.', 8000)
-        return False
+        """Do not auto-rescale imported or edited symbols.
+
+        Older builds silently scaled all units after import or during deferred refreshes
+        to fit the sheet preview. For large split symbols this caused a delayed resize
+        a few seconds after loading and also forced all split parts through expensive
+        geometry updates. Size changes are now explicit only: users can zoom/fit the
+        view manually without modifying symbol geometry.
+        """
+        return True
 
     # ------------------------------------------------------------------ Actions
     def set_tool(self, t):
@@ -3529,8 +3530,15 @@ Use **File > Import PINMUX CSV** to import pin information from a CSV file. Afte
 
     def change_unit(self, i):
         if i < 0: return
-        self.current_unit_index = i
-        self.rebuild_canvas_tabs(); self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table(); self.update_name_editors()
+        if i == self.current_unit_index:
+            return
+        self.current_unit_index = max(0, min(i, len(self.symbol.units) - 1))
+        # Switch focus only. Do not touch other split units.
+        self.rebuild_canvas_tabs()
+        self.rebuild_scene()
+        self.rebuild_tree()
+        self.rebuild_pin_table()
+        self.update_name_editors()
 
     def new_single_symbol(self):
         spec = self.ask_new_symbol_template(SymbolKind.SINGLE.value)
@@ -3734,19 +3742,20 @@ Use **File > Import PINMUX CSV** to import pin information from a CSV file. Afte
             return
         self.push_undo_state()
         self.symbol.origin = mode
-        for unit in self.symbol.units:
-            unit.body.x -= ax
-            unit.body.y -= ay
-            for p in unit.pins:
-                p.x -= ax; p.y -= ay
-            for t in unit.texts:
-                t.x -= ax; t.y -= ay
-            # Body/TBody attributes are rendered from body.attribute_texts and must
-            # follow Origo Reset exactly like pins, plain text and graphics.
-            for t in getattr(unit.body, 'attribute_texts', {}).values():
-                t.x -= ax; t.y -= ay
-            for g in unit.graphics:
-                g.x -= ax; g.y -= ay
+        unit = self.current_unit
+        unit.body.x -= ax
+        unit.body.y -= ay
+        for p in unit.pins:
+            p.x -= ax; p.y -= ay
+        for t in unit.texts:
+            t.x -= ax; t.y -= ay
+        # Body/TBody attributes are rendered from body.attribute_texts and must
+        # follow Origo Reset exactly like pins, plain text and graphics, but only
+        # for the currently focused split part.
+        for t in getattr(unit.body, 'attribute_texts', {}).values():
+            t.x -= ax; t.y -= ay
+        for g in unit.graphics:
+            g.x -= ax; g.y -= ay
         if hasattr(self, 'origin_combo'):
             self.origin_combo.blockSignals(True)
             self.origin_combo.setCurrentText(mode)

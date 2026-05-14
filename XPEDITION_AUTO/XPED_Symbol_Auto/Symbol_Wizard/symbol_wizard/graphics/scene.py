@@ -34,6 +34,9 @@ class SymbolScene(QGraphicsScene):
         super().__init__()
         self.window = window
         self.setSceneRect(-6000, -6000, 12000, 12000)
+        # Large split symbols are edited as one focused unit. NoIndex avoids costly
+        # BSP rebuilds when many items are moved/updated after import.
+        self.setItemIndexMethod(QGraphicsScene.NoIndex)
 
     @property
     def grid_px(self):
