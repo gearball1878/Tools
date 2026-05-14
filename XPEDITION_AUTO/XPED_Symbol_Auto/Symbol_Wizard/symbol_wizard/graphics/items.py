@@ -2,7 +2,7 @@ from __future__ import annotations
 from PySide6.QtCore import QPointF, QRectF, Qt, QEvent
 from PySide6.QtGui import QColor, QFont, QPainter, QPen, QBrush, QTransform, QTextCursor
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem, QGraphicsTextItem
-from symbol_wizard.models.document import PinSide, LineStyle
+from symbol_wizard.models.document import PinSide, LineStyle, HorizontalAlign, VerticalAlign
 from symbol_wizard.rules.grid import snap
 
 
@@ -324,7 +324,6 @@ class TextItem(TransformMixin, QGraphicsTextItem):
         self.window = window
         super().__init__(model.text)
         g = window.grid_px
-        self.setPos(model.x * g, -model.y * g)
         self.setDefaultTextColor(rgb(model.color))
         self.setFont(QFont(model.font_family, max(6, int(g * model.font_size_grid * .45))))
         self.common_flags()
@@ -332,6 +331,37 @@ class TextItem(TransformMixin, QGraphicsTextItem):
         self.setTextInteractionFlags(Qt.NoTextInteraction)
         self.setData(0, 'TEXT')
         self.apply_transform_from_model()
+        self.apply_alignment_position()
+
+    def _alignment_offset_px(self):
+        rect = self.boundingRect()
+        w, h = rect.width(), rect.height()
+        h_align = getattr(self.model, 'horizontal_align', HorizontalAlign.LEFT.value)
+        v_align = getattr(self.model, 'vertical_align', VerticalAlign.UPPER.value)
+        dx = 0.0
+        dy = 0.0
+        if h_align == HorizontalAlign.CENTER.value:
+            dx = -w / 2.0
+        elif h_align == HorizontalAlign.RIGHT.value:
+            dx = -w
+        if v_align == VerticalAlign.CENTER.value:
+            dy = -h / 2.0
+        elif v_align == VerticalAlign.LOWER.value:
+            dy = -h
+        return dx, dy
+
+    def apply_alignment_position(self):
+        g = self.window.grid_px
+        dx, dy = self._alignment_offset_px()
+        self.setPos(self.model.x * g + dx, -self.model.y * g + dy)
+
+    def refresh_text_style(self):
+        g = self.window.grid_px
+        self.setPlainText(self.model.text)
+        self.setDefaultTextColor(rgb(self.model.color))
+        self.setFont(QFont(self.model.font_family, max(6, int(g * self.model.font_size_grid * .45))))
+        self.apply_alignment_position()
+        self.update()
 
     def mouseDoubleClickEvent(self, event):
         self.setTextInteractionFlags(Qt.TextEditorInteraction)
@@ -346,6 +376,7 @@ class TextItem(TransformMixin, QGraphicsTextItem):
             self.model.text = self.toPlainText()
             self.setTextInteractionFlags(Qt.NoTextInteraction)
             self.clearFocus()
+            self.apply_alignment_position()
             self.scene().window.live_refresh()
             event.accept()
             return
@@ -363,13 +394,15 @@ class TextItem(TransformMixin, QGraphicsTextItem):
         self.model.text = self.toPlainText()
         self.setTextInteractionFlags(Qt.NoTextInteraction)
         self.common_flags()
+        self.apply_alignment_position()
         self.scene().window.live_refresh()
         super().focusOutEvent(e)
 
     def update_model_pos(self):
         g = self.window.grid_px
-        self.model.x = self.pos().x() / g
-        self.model.y = -self.pos().y() / g
+        dx, dy = self._alignment_offset_px()
+        self.model.x = (self.pos().x() - dx) / g
+        self.model.y = -(self.pos().y() - dy) / g
         self.model.text = self.toPlainText()
 
 

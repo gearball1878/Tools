@@ -473,7 +473,7 @@ class MainWindow(QMainWindow):
         b = u.body
         ref = b.attributes.get('RefDes', '')
         if b.visible_attributes.get('RefDes', False) and ref:
-            txt = TextItem(TextModel(text=ref, x=b.x, y=b.y + 1, font_family=b.refdes_font.family, font_size_grid=b.refdes_font.size_grid, color=b.refdes_font.color), self)
+            txt = TextItem(TextModel(text=ref, x=b.x, y=b.y + 1, font_family=b.refdes_font.family, font_size_grid=b.refdes_font.size_grid, color=b.refdes_font.color, horizontal_align=b.refdes_align, vertical_align=b.refdes_vertical_align), self)
             txt.setFlag(QGraphicsItem.ItemIsMovable, False)
             txt.setData(0, 'ATTR_REF_DES')
             self.scene.addItem(txt)
@@ -481,7 +481,7 @@ class MainWindow(QMainWindow):
         for k, v in b.attributes.items():
             if k == 'RefDes' or not b.visible_attributes.get(k, False) or not v:
                 continue
-            txt = TextItem(TextModel(text=f'{k}: {v}', x=b.x, y=b.y - b.height - row, font_family=b.attribute_font.family, font_size_grid=b.attribute_font.size_grid, color=b.attribute_font.color), self)
+            txt = TextItem(TextModel(text=f'{k}: {v}', x=b.x, y=b.y - b.height - row, font_family=b.attribute_font.family, font_size_grid=b.attribute_font.size_grid, color=b.attribute_font.color, horizontal_align=b.body_attr_align, vertical_align=b.body_attr_vertical_align), self)
             txt.setFlag(QGraphicsItem.ItemIsMovable, False)
             txt.setData(0, 'ATTR_BODY')
             self.scene.addItem(txt)
@@ -684,7 +684,11 @@ class MainWindow(QMainWindow):
         self.form.addRow('Line style', self._combo([x.value for x in LineStyle], m.line_style, lambda v: self.set_and_refresh(m, 'line_style', v)))
         self.form.addRow('Line width', self._dbl(m.line_width, lambda v: self.set_and_refresh(m, 'line_width', v), .01, 1, .01))
         self.font_props('RefDes font', m.refdes_font, refresh_attrs=True)
+        self.form.addRow('RefDes H align', self._combo([x.value for x in HorizontalAlign], m.refdes_align, lambda v: self.set_body_text_align(m, 'refdes_align', v)))
+        self.form.addRow('RefDes V align', self._combo([x.value for x in VerticalAlign], m.refdes_vertical_align, lambda v: self.set_body_text_align(m, 'refdes_vertical_align', v)))
         self.font_props('Attribute font', m.attribute_font, refresh_attrs=True)
+        self.form.addRow('Attr H align', self._combo([x.value for x in HorizontalAlign], m.body_attr_align, lambda v: self.set_body_text_align(m, 'body_attr_align', v)))
+        self.form.addRow('Attr V align', self._combo([x.value for x in VerticalAlign], m.body_attr_vertical_align, lambda v: self.set_body_text_align(m, 'body_attr_vertical_align', v)))
         for k in list(m.attributes.keys()):
             row = QWidget()
             l = QHBoxLayout(row)
@@ -723,6 +727,8 @@ class MainWindow(QMainWindow):
         self.form.addRow('Text', self._line(m.text, lambda v: self.set_text_attr(item, 'text', v)))
         self.form.addRow('Font', self._line(m.font_family, lambda v: self.set_text_attr(item, 'font_family', v)))
         self.form.addRow('Size grid', self._dbl(m.font_size_grid, lambda v: self.set_text_attr(item, 'font_size_grid', v), .1, 5, .1))
+        self.form.addRow('Horizontal align', self._combo([x.value for x in HorizontalAlign], getattr(m, 'horizontal_align', HorizontalAlign.LEFT.value), lambda v: self.set_text_attr(item, 'horizontal_align', v)))
+        self.form.addRow('Vertical align', self._combo([x.value for x in VerticalAlign], getattr(m, 'vertical_align', VerticalAlign.UPPER.value), lambda v: self.set_text_attr(item, 'vertical_align', v)))
         self.transform_props(m)
         b = QPushButton('Color RGB'); b.clicked.connect(lambda: self.color_model(m)); self.form.addRow('Color', b)
 
@@ -785,6 +791,11 @@ class MainWindow(QMainWindow):
         self.enforce_symbol_size_limit()
         self.schedule_scene_refresh()
 
+    def set_body_text_align(self, m, attr, value):
+        setattr(m, attr, value)
+        self.update_attribute_items_for_unit()
+        self.rebuild_tree()
+
     def set_attr_vis(self, m, k, v):
         m.visible_attributes[k] = v
         self.update_attribute_items_for_unit()
@@ -815,9 +826,11 @@ class MainWindow(QMainWindow):
 
     def set_text_attr(self, item, a, v):
         setattr(item.model, a, v)
-        if a == 'text':
+        if hasattr(item, 'refresh_text_style'):
+            item.refresh_text_style()
+        elif a == 'text':
             item.setPlainText(v)
-        self.schedule_scene_refresh()
+        self.schedule_scene_refresh(visual_only=True)
 
     def color_model(self, m, attr='color'):
         c = QColorDialog.getColor(QColor(*getattr(m, attr)), self)
@@ -849,7 +862,10 @@ class MainWindow(QMainWindow):
                 item.setTransform(item.transform().__class__())
                 item.setPos(model.x * g, -model.y * g)
             elif kind == 'TEXT':
-                item.setPos(model.x * g, -model.y * g)
+                if hasattr(item, 'refresh_text_style'):
+                    item.refresh_text_style()
+                else:
+                    item.setPos(model.x * g, -model.y * g)
             elif kind == 'GRAPHIC':
                 item.setPos(model.x * g, -model.y * g)
             item.update()
