@@ -97,6 +97,83 @@ Optimierung 12.05.2026 vormittags (Symbol_Wizard_39):
 --> Bitte versehe alle Dropdowns it funktionalen Trennern, wenn sinnvoll (File Edit, Tools, View, RMT Menüs)
 --> Ich möchte auch die  sichtbaren Attribute und den Text im Canvas greifen und transformieren können (drehen, spiegeln, Allignment (volle Permutation aus Vertikal: upper, center, lower Horizontal: left, center right))
 
+Optimierung 12.05.2026 vormittags (Symbol_Wizard_40):
+--> wenn Body markiert ist, dann baruche im Attribut und Skalierungsfenseter ein Update bzw. eine Synchronisierung zum Canvas.
+	--> Ich skaliere den CANVAS, dann wird Width und Height entprechend angepasst, zudem funktionieren die Comboboxen dafür nicht (springen immer wieder auf den Ausgangswert zurück)
+	--> Bitte packe alle Font Einstellunegn zum Attribute Teil
+	--> Texte sollen nie sollen immer nur in Schriftgröße skalierbar sein, nie in X oder y Richtung einzeln
+	
+--> Wenn ich Texte im CANVAS greife, egal ob einzeln oder mehrere, so möchte ich diese Transformieren können.  
+	--> Für Attribute gibt es die Einschränkung, dass diese im CANVAS nicht kopiert, ausgeschnitten oder gelöscht werden können. Eine Transformation hinsichtlich Textgröße, Ausrichtung und Font als auch Allignment sollte möglich sein. Für normalen Text gehen auch die anderen Fun ktionen.
+	
+--> Objekte können im CANVAS nur markiert werden, wenn der Auswahlrahmen ein Objekt vollständig umschließt.
+	
+--> Validate Pins ist ein Tool, also in Tools verschieben! 
+
+--> sklaiert wird im CANVAS nur über Width und Height, Scale kann in der Selected Ansicht komplett weg für Grafikobjekte, Text wird nur über normierte Schrift-Größe skaliert
+
+--> Wenn ich einer Linie einmal Kurve gegeben habe, funktioniert das skalieren mit dem mittleren Punkt nicht meh. Das muss immer gehen! Die verschibe Pfeile müssen generell immer funktionieren. Wenn ich was ändere sol der CANVAS sofort aktualisiert werden. 
+	Ich habe beim verschieben, transformieren, etc. das Problem, dass der die Grafik nicht sofort aktualisiert wird und das Bild somit während dem editieren buggy wird/wirkt. 
+	
+Optimierung 12.05.2026 vormittags (Symbol_Wizard_41/42):
+--> Objektreste, wenn ich das Objektabwähle. Das muss sofort akzualisiert/gerendert werden.
+    Zudem funktioniert die Auswahl der Objekt, die ich nicht vollständig mit dem Auswahlrahmen erfass immer noch. Das muss weg!
+
+--> Das Alignment update von Text im CANVAs funktioniert nicht! Das muss gehen!
+--> Ich kann Attribute nicht mehr auswählen zum transformieren. Das habe ich doch in meine Anforderungen von vorhin mit reingeschrieben.
+
+--> Die Komboboxen für Width und Height in Selected Darstellung geht immer noch nicht
+
+--> Alle Komboboxen nochmal hinsichtlich funktionalitt und updatefhigkeit überprüfen.
+--> Die Widgets in Seletcetd:Text funktionieren zum Teil nicht
+
+--> Bitte alle Widgets im Bereich Selected nochmal hinsichtlich synchronität zum CANVAS und den Objektdaten prüfen
+
+Optimierung 12.05.2026 vormittags (Symbol_Wizard_43):
+--> Lower bedeutet: Text ist unten an einer Grid Linie dran, upper bedeutet Text ist oben an einer Gridlinie dran.
+--> right bedeutet, die Texte und Attribute sind alle rechtsbündig, sprich sie sind auf der Rechten Seite am Grid dran, left bedeutet das gleiche für links und center heiß auf den grid Linien.
+
+--> Bitte optimiere auch den ganzen Template  Canvas auf der Basis vom Symbol Wizard und den aktuellen Änderungen. Es soll natürlich auch Multiedit funktionieren:
+--> Zudem möchte ich überall im Multiedit für Pins noch hinzufügen: Pin Length, Pin Style und Width
+--> Für Grafikobjekte im Multiedit ist die Linienstärke interessant
+
+
+Optimierung 12.05.2026 vormittags (Symbol_Wizard_44):
+1. Bzgl. Aurichtung von Text:
+	--> Vieles passt schon für die Attribute und Plain Text, aber bei lower muss der Text im Grid unten bündig sein, und nicht oben.
+	--> Der Text wächst für rechtsbündig nach links, was richtig ist, allerdings soll der Text dann am Grid rechts bündig sein, sprich keine Lücke zwischen dem letzten Buchstaben und der nächsten rechten Grid Linie.
+	--> Das muss dann exakt so für Plain Text übernommen werden.
+
+--> Das alles gilt sowohl für den Symbol Wizard, als auch für den Template Editor.
+
+2. Bzgl. Font vom Text:
+	--> Wenn ich den Body auswähle, damm gibt es dort allgemeine Optionen für die Fonts der Attribute, welche an dem Body hängen. Diese Optionen funktionieren nicht. 
+		Bitte funktionstüchtig machen und mit der Einzelauswahl, Multiauswahl von den Attributen im CANVAS synchronisieren.
+		
+3. Bzgl. Multiselect von Text:
+	--> Arrange, Distribute und Color funktionieren nicht. Bitte reparieren und für Color auch mit der Einzelauswahl, bzw. für Attribute auch mit der Bosyauswahl synchronisieren.
+
+4. Bzgl Farbe allgemein:
+	--> Bitte die aktuell ausgeählte Farbe noch rechts vom Color Button in einem kleinen Feld anzeigen.
+	
+5. Bzgl. Objekte, welche eine Auswahl anzeigen:
+	--> ich denke die großen Punkte, welche beimauswählen eines Objektes angezigt werden können zur Gänze weg.
+	
+6. Bzgl Skalierung von textuellen Objekten:
+	--> Ich möchte bei Attributen im Allgemeinen eine Wahl haben, ob der Text umgebrochen werden soll, oder nicht, egal wie lang das textfeld wird ( default is immer ohne Umbruch)
+	--> Bei Plaintext wird nur umgebrochen wenn ich Umschalt+Enter drücke. Das gilt sowohl direkt im Textfeld im CANVAS, als auch im Textfeld in der Select Option für Text.
+
+Optimierung 13.05.2026 (Symbol_Wizard_45_to_54):
+--> updated Text Origin
+--> upgraded Tool performance
+--> optimized initial .sym Import
+
+
+
+
+	
+
+	
 
 
 
