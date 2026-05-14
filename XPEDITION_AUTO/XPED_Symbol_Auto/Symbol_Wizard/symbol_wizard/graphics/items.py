@@ -50,6 +50,7 @@ class TransformMixin:
             return QPointF(snap(value.x(), g), snap(value.y(), g))
         if change == QGraphicsItem.ItemPositionHasChanged and self.scene():
             self.update_model_pos()
+            # Do not rebuild the scene while dragging; this keeps canvas editing smooth.
             self.scene().window.live_refresh()
         return super().itemChange(change, value)
 
@@ -100,6 +101,7 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
         self.model = model
         self.window = window
         self._resizing = None
+        self._resize_anchor_scene = None
         self._last_model_pos = (model.x, model.y)
         g = window.grid_px
         super().__init__(0, 0, model.width * g, model.height * g)
@@ -118,7 +120,6 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
         dx, dy = self.model.x - old_x, self.model.y - old_y
         if abs(dx) > 1e-9 or abs(dy) > 1e-9:
             self.window.move_current_unit_group(dx, dy, source_body=self.model)
-            self.window.schedule_scene_refresh(visual_only=True)
         self._last_model_pos = (self.model.x, self.model.y)
 
     def _handles(self):
@@ -139,45 +140,77 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
             h = _hit_handle(self._handles(), event.pos())
             if h:
                 self._resizing = h
+                scene_rect = self.mapRectToScene(self.rect())
+                opposite = {
+                    'tl': scene_rect.bottomRight(), 'tr': scene_rect.bottomLeft(),
+                    'bl': scene_rect.topRight(), 'br': scene_rect.topLeft(),
+                    'l': QPointF(scene_rect.right(), scene_rect.center().y()),
+                    'r': QPointF(scene_rect.left(), scene_rect.center().y()),
+                    't': QPointF(scene_rect.center().x(), scene_rect.bottom()),
+                    'b': QPointF(scene_rect.center().x(), scene_rect.top()),
+                }
+                self._resize_anchor_scene = opposite[h]
                 event.accept()
                 return
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
-        if self._resizing:
+        if self._resizing and self._resize_anchor_scene is not None:
             g = self.window.grid_px
-            r = QRectF(self.rect())
-            p = event.pos()
-            if 'r' in self._resizing:
-                r.setRight(snap(p.x(), g))
-            if 'b' in self._resizing:
-                r.setBottom(snap(p.y(), g))
-            if 'l' in self._resizing:
-                new_left = snap(p.x(), g)
-                dx_scene = new_left
-                r.setLeft(new_left)
-                self.moveBy(dx_scene, 0)
-                r.translate(-dx_scene, 0)
-            if 't' in self._resizing:
-                new_top = snap(p.y(), g)
-                dy_scene = new_top
-                r.setTop(new_top)
-                self.moveBy(0, dy_scene)
-                r.translate(0, -dy_scene)
-            r = r.normalized()
-            w, h = max(g, r.width()), max(g, r.height())
-            self.model.width, self.model.height = w / g, h / g
-            self.setRect(0, 0, w, h)
-            self.update_model_pos()
+            p = event.scenePos()
+            p = QPointF(snap(p.x(), g), snap(p.y(), g))
+            a = self._resize_anchor_scene
+            old_x, old_y = self.model.x, self.model.y
+
+            if self._resizing in ('l', 'r'):
+                top = self.sceneBoundingRect().top()
+                bottom = self.sceneBoundingRect().bottom()
+                left, right = sorted([a.x(), p.x()])
+            elif self._resizing in ('t', 'b'):
+                left = self.sceneBoundingRect().left()
+                right = self.sceneBoundingRect().right()
+                top, bottom = sorted([a.y(), p.y()])
+            else:
+                left, right = sorted([a.x(), p.x()])
+                top, bottom = sorted([a.y(), p.y()])
+
+            min_size = g
+            if right - left < min_size:
+                if p.x() < a.x():
+                    left = right - min_size
+                else:
+                    right = left + min_size
+            if bottom - top < min_size:
+                if p.y() < a.y():
+                    top = bottom - min_size
+                else:
+                    bottom = top + min_size
+
+            self.prepareGeometryChange()
+            self.setPos(left, top)
+            self.setRect(0, 0, right - left, bottom - top)
+            self.model.x = left / g
+            self.model.y = -top / g
+            self.model.width = (right - left) / g
+            self.model.height = (bottom - top) / g
+            dx, dy = self.model.x - old_x, self.model.y - old_y
+            if abs(dx) > 1e-9 or abs(dy) > 1e-9:
+                self.window.move_current_unit_group(dx, dy, source_body=self.model)
+            self._last_model_pos = (self.model.x, self.model.y)
             self.window.dock_pins_to_body(self.window.current_unit)
-            self.window.schedule_scene_refresh(visual_only=True)
+            self.window.live_refresh()
             self.update()
+            event.accept()
             return
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
         self._resizing = None
-        self.window.schedule_scene_refresh()
+        self._resize_anchor_scene = None
+        self.window.enforce_symbol_size_limit(silent=True)
+        self.window.rebuild_tree()
+        self.window.rebuild_pin_table()
+        self.scene().update()
         super().mouseReleaseEvent(event)
 
     def scale_selected(self, factor):
@@ -251,12 +284,22 @@ class TextItem(TransformMixin, QGraphicsTextItem):
         self.setDefaultTextColor(rgb(model.color))
         self.setFont(QFont(model.font_family, max(6, int(g * model.font_size_grid * .45))))
         self.common_flags()
-        self.setTextInteractionFlags(Qt.TextEditorInteraction)
+        # Text remains movable/selectable in edit mode. Text editing starts only on double click.
+        self.setTextInteractionFlags(Qt.NoTextInteraction)
         self.setData(0, 'TEXT')
         self.apply_transform_from_model()
 
+    def mouseDoubleClickEvent(self, event):
+        self.setTextInteractionFlags(Qt.TextEditorInteraction)
+        self.setFocus(Qt.MouseFocusReason)
+        cursor = self.textCursor()
+        cursor.select(cursor.WordUnderCursor)
+        self.setTextCursor(cursor)
+        event.accept()
+
     def focusOutEvent(self, e):
         self.model.text = self.toPlainText()
+        self.setTextInteractionFlags(Qt.NoTextInteraction)
         super().focusOutEvent(e)
         self.scene().window.live_refresh()
 
@@ -267,25 +310,35 @@ class TextItem(TransformMixin, QGraphicsTextItem):
         self.model.text = self.toPlainText()
 
 
+
 class GraphicItem(TransformMixin, QGraphicsItem):
     def __init__(self, model, window):
         super().__init__()
         self.model = model
         self.window = window
         self._resizing = None
+        self._resize_anchor_scene = None
         g = window.grid_px
         self.setPos(model.x * g, -model.y * g)
         self.common_flags()
         self.setData(0, 'GRAPHIC')
         self.apply_transform_from_model()
 
-    def _rect(self):
+    def _raw_rect(self):
         g = self.window.grid_px
-        return QRectF(0, 0, self.model.w * g, self.model.h * g).normalized()
+        return QRectF(0, 0, self.model.w * g, self.model.h * g)
+
+    def _rect(self):
+        r = self._raw_rect().normalized()
+        if r.width() < 1:
+            r.adjust(-.5, 0, .5, 0)
+        if r.height() < 1:
+            r.adjust(0, -.5, 0, .5)
+        return r
 
     def boundingRect(self):
         g = self.window.grid_px
-        return self._rect().adjusted(-.3 * g, -.3 * g, .3 * g, .3 * g)
+        return self._rect().adjusted(-.35 * g, -.35 * g, .35 * g, .35 * g)
 
     def _handles(self):
         return _corner_handles(self._rect(), self.window.grid_px * self.handle_size_factor)
@@ -315,39 +368,62 @@ class GraphicItem(TransformMixin, QGraphicsItem):
             h = _hit_handle(self._handles(), event.pos())
             if h:
                 self._resizing = h
+                scene_rect = self.mapRectToScene(self._rect())
+                opposite = {
+                    'tl': scene_rect.bottomRight(), 'tr': scene_rect.bottomLeft(),
+                    'bl': scene_rect.topRight(), 'br': scene_rect.topLeft(),
+                    'l': QPointF(scene_rect.right(), scene_rect.center().y()),
+                    'r': QPointF(scene_rect.left(), scene_rect.center().y()),
+                    't': QPointF(scene_rect.center().x(), scene_rect.bottom()),
+                    'b': QPointF(scene_rect.center().x(), scene_rect.top()),
+                }
+                self._resize_anchor_scene = opposite[h]
                 event.accept()
                 return
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
-        if self._resizing:
+        if self._resizing and self._resize_anchor_scene is not None:
             g = self.window.grid_px
-            p = event.pos()
-            if 'r' in self._resizing:
-                self.model.w = snap(p.x(), g) / g
-            if 'b' in self._resizing:
-                self.model.h = snap(p.y(), g) / g
-            if 'l' in self._resizing:
-                new_left = snap(p.x(), g)
-                self.moveBy(new_left, 0)
-                self.model.x = self.pos().x() / g
-                self.model.w -= new_left / g
-            if 't' in self._resizing:
-                new_top = snap(p.y(), g)
-                self.moveBy(0, new_top)
-                self.model.y = -self.pos().y() / g
-                self.model.h -= new_top / g
-            if abs(self.model.w) < .1: self.model.w = .1
-            if abs(self.model.h) < .1: self.model.h = .1
+            p = event.scenePos()
+            p = QPointF(snap(p.x(), g), snap(p.y(), g))
+            a = self._resize_anchor_scene
+            cur = self.sceneBoundingRect()
+            if self._resizing in ('l', 'r'):
+                top, bottom = cur.top(), cur.bottom()
+                left, right = sorted([a.x(), p.x()])
+            elif self._resizing in ('t', 'b'):
+                left, right = cur.left(), cur.right()
+                top, bottom = sorted([a.y(), p.y()])
+            else:
+                left, right = sorted([a.x(), p.x()])
+                top, bottom = sorted([a.y(), p.y()])
+
+            # Lines may be perfectly horizontal or vertical; other shapes keep a small visible size.
+            min_size = 0 if self.model.shape == 'line' else g * .25
+            if right - left < min_size:
+                right = left + min_size
+            if bottom - top < min_size:
+                bottom = top + min_size
+
             self.prepareGeometryChange()
-            self.window.schedule_scene_refresh(visual_only=True)
+            self.setPos(left, top)
+            self.model.x = left / g
+            self.model.y = -top / g
+            self.model.w = (right - left) / g
+            self.model.h = (bottom - top) / g
+            self.window.live_refresh()
             self.update()
+            event.accept()
             return
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
         self._resizing = None
-        self.window.schedule_scene_refresh()
+        self._resize_anchor_scene = None
+        self.window.enforce_symbol_size_limit(silent=True)
+        self.window.rebuild_tree()
+        self.scene().update()
         super().mouseReleaseEvent(event)
 
     def update_model_pos(self):
@@ -360,3 +436,4 @@ class GraphicItem(TransformMixin, QGraphicsItem):
         self.model.h *= factor
         self.prepareGeometryChange()
         self.update()
+

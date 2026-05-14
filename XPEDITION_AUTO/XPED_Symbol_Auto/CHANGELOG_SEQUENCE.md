@@ -20,3 +20,7 @@ Imported snapshot from `Symbol_Wizard_5.zip`.
 
 Imported snapshot from `Symbol_Wizard_6.zip`.
 
+## v7
+
+Imported snapshot from `Symbol_Wizard_7.zip`.
+

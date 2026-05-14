@@ -13,6 +13,22 @@ SHEET_INCHES = {
     'A5': (8.27, 5.83),
 }
 
+
+def sheet_rect_for(fmt: str) -> QRectF:
+    w_in, h_in = SHEET_INCHES.get(fmt, SHEET_INCHES['A3'])
+    w = w_in * PX_PER_INCH
+    h = h_in * PX_PER_INCH
+    # Origo is the exact center of the selected sheet format.
+    return QRectF(-w / 2, -h / 2, w, h)
+
+
+def usable_rect_for(fmt: str) -> QRectF:
+    full = sheet_rect_for(fmt)
+    usable_w = full.width() * 0.40
+    usable_h = full.height() * 0.80
+    return QRectF(-usable_w / 2, -usable_h / 2, usable_w, usable_h)
+
+
 class SymbolScene(QGraphicsScene):
     def __init__(self, window):
         super().__init__()
@@ -38,7 +54,8 @@ class SymbolScene(QGraphicsScene):
         while y < rect.bottom():
             painter.drawLine(QPointF(rect.left(), y), QPointF(rect.right(), y))
             y += g
-        painter.setPen(QPen(QColor(170, 170, 170), 0))
+        # Origin axes: now centered in the selected sheet format.
+        painter.setPen(QPen(QColor(150, 150, 150), 0))
         painter.drawLine(QPointF(rect.left(), 0), QPointF(rect.right(), 0))
         painter.drawLine(QPointF(0, rect.top()), QPointF(0, rect.bottom()))
         painter.restore()
@@ -46,20 +63,16 @@ class SymbolScene(QGraphicsScene):
     def drawForeground(self, painter: QPainter, rect):
         super().drawForeground(painter, rect)
         fmt = getattr(self.window.symbol, 'sheet_format', 'A3')
-        w_in, h_in = SHEET_INCHES.get(fmt, SHEET_INCHES['A3'])
-        full = QRectF(0, -h_in * PX_PER_INCH, w_in * PX_PER_INCH, h_in * PX_PER_INCH)
-        usable = QRectF(
-            full.left() + full.width() * 0.30,
-            full.top() + full.height() * 0.10,
-            full.width() * 0.40,
-            full.height() * 0.80,
-        )
+        full = sheet_rect_for(fmt)
+        usable = usable_rect_for(fmt)
         painter.save()
         painter.setPen(QPen(QColor(170, 170, 210), 0, Qt.DashLine))
         painter.drawRect(full)
         painter.setPen(QPen(QColor(210, 120, 120), 0, Qt.DashDotLine))
         painter.drawRect(usable)
+        painter.setPen(QPen(QColor(120, 120, 120), 0))
+        painter.drawEllipse(QPointF(0, 0), 5, 5)
         painter.setFont(QFont('Arial', 10))
-        painter.drawText(full.adjusted(8, 8, -8, -8), Qt.AlignTop | Qt.AlignLeft, f'{fmt} preview')
+        painter.drawText(full.adjusted(8, 8, -8, -8), Qt.AlignTop | Qt.AlignLeft, f'{fmt} preview - origin at sheet center')
         painter.drawText(usable.adjusted(8, 8, -8, -8), Qt.AlignTop | Qt.AlignLeft, 'max symbol area: 40% W / 80% H')
         painter.restore()

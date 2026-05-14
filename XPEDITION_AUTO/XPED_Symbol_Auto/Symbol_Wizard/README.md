@@ -42,9 +42,14 @@ python main.py
 
 - Drag object body/center to move.
 - Drag corner/edge handles to resize rectangular bodies and graphic objects.
-- Use `Ctrl + mouse wheel` to scale selected objects.
+- Drag object body/center to move.
+- Drag corner handles to resize in two directions; drag edge handles to resize in one direction.
+- Double-click a text field to edit its text; single-click/drag keeps it movable.
+- Use `Ctrl + mouse wheel` to zoom around the cursor.
+- Use plain mouse wheel to pan up/down.
+- Use `Shift + mouse wheel` to pan left/right.
 - Use `R` / `Q` for rotate clockwise/counterclockwise.
-- Use `+` / `-` to scale selected objects.
+- Use `+` / `-` or the ribbon buttons to scale selected objects.
 
 ## Notes
 
@@ -54,3 +59,12 @@ This is still an MVP. The next useful step is replacing the simple corner handle
 
 - Canvas-Selektion bleibt jetzt nach Live-Refresh, Properties-Änderungen und Copy/Paste erhalten.
 - Das Linienwerkzeug fügt neue Linien initial gerade/horizontal ein (`h = 0`, Länge 2 Rastereinheiten). Danach kann die Linie wie andere Zeichenobjekte verschoben, skaliert oder gedreht werden.
+
+
+## Latest update
+
+- Sheet origin is now centered in the selected A-format.
+- Canvas zoom is cursor-centered with `Ctrl + mouse wheel`.
+- Mouse wheel pans vertically; `Shift + mouse wheel` pans horizontally.
+- Text objects are movable by default and enter text editing only on double-click.
+- Resize handling no longer rebuilds the whole scene during drag, which makes scaling smoother and avoids stale drawing remnants.

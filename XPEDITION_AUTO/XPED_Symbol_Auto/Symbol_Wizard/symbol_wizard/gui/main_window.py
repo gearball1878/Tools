@@ -7,7 +7,7 @@ from PySide6.QtWidgets import *
 from symbol_wizard.models.document import *
 from symbol_wizard.rules.grid import PX_PER_INCH, duplicate_pin_numbers, next_pin_number
 from symbol_wizard.rules.placement import create_auto_pin
-from symbol_wizard.graphics.scene import SymbolScene, SHEET_INCHES
+from symbol_wizard.graphics.scene import SymbolScene, SHEET_INCHES, sheet_rect_for
 from symbol_wizard.graphics.view import SymbolView
 from symbol_wizard.graphics.items import BodyItem, PinItem, TextItem, GraphicItem
 from symbol_wizard.io.json_store import save_library, load_library, save_symbol, load_symbol
@@ -745,8 +745,8 @@ class MainWindow(QMainWindow):
         self.view.fitInView(rect.adjusted(-80, -80, 80, 80), Qt.KeepAspectRatio)
 
     def zoom_to_fit_sheet(self):
-        w, h = SHEET_INCHES.get(getattr(self.symbol, 'sheet_format', 'A3'), SHEET_INCHES['A3'])
-        self.view.fitInView(QRectF(0, -h * PX_PER_INCH, w * PX_PER_INCH, h * PX_PER_INCH).adjusted(-100, -100, 100, 100), Qt.KeepAspectRatio)
+        rect = sheet_rect_for(getattr(self.symbol, 'sheet_format', 'A3'))
+        self.view.fitInView(rect.adjusted(-100, -100, 100, 100), Qt.KeepAspectRatio)
 
     # ------------------------------------------------------------------ Navigation / tables
     def pin_table_changed(self, r, c):
