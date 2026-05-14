@@ -95,17 +95,33 @@ Supported separators are comma, semicolon, pipe, and tab. If `Pin Function` is e
 New symbols place the symbol origin at the center of the symbol body by default. Pins and body attributes remain grouped with the body during moves/resizes. Pins are constrained to 0°/180° rotation and their length snaps to full grid units.
 
 
-## Mentor Import/Export
+## Mentor/Xpedition import and export notes
 
-- Split symbols are imported/exported as ZIP archives.
-- Each file in the ZIP becomes one split unit.
-- Single Mentor symbols use standalone `.sym`/`.1` files.
-- Mentor origin is preserved at the left pin anchor `(0,0)`.
-- Pin colors are generated semantically from `PINTYPE`.
+### Split versus single files
 
-### File Menu
+- Mentor split symbols are imported and exported as ZIP archives. Each file inside the ZIP is one split part/unit.
+- Mentor single symbols are imported and exported as one `.sym` or `.1` file.
 
-- File -> Import -> Mentor Single Symbol
-- File -> Import -> Mentor Split ZIP
-- File -> Export -> Mentor Single Symbol
-- File -> Export -> Mentor Split ZIP
+### Native Mentor origin
+
+For Mentor/Xpedition symbols the Wizard keeps the native Mentor coordinate origin. The canvas origin `(0,0)` is the Mentor placement origin and is not moved to the body center. Imported Mentor symbols therefore keep their original offsets, for example a body may start at `b 30 30 ...` while pin electrical anchors stay at `P ... 0 ...`.
+
+The A-format guide is hidden for native Mentor symbols so the visible crosshair shows only the true Mentor origin.
+
+### Pin colors
+
+Mentor `.sym/.1` files normally do not store RGB object colors. The Wizard colors pins in the UI semantically from `PINTYPE`:
+
+- `IN` = blue
+- `OUT` = red
+- `BIDI`/`BI` = violet
+- `POWER` = orange
+- `GROUND` = green
+- `ANALOG` = cyan
+- `PASSIVE` = black
+
+These colors are Wizard UI colors only. Native Mentor export remains colorless/standard because Mentor normally applies colors from its own display palette/theme.
+
+### Pin name and pin function
+
+Pin name and pin function are independent fields. If both are visible, both are rendered in the Wizard label. This is intentional.

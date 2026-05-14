@@ -11,6 +11,20 @@ def rgb(c):
     return QColor(*c)
 
 
+def mentor_pin_color(pin_type):
+    return {
+        'IN': (0, 80, 220), 'OUT': (220, 0, 0),
+        'BIDI': (160, 0, 180), 'BI': (160, 0, 180),
+        'POWER': (230, 120, 0), 'GROUND': (0, 150, 0),
+        'ANALOG': (0, 150, 170), 'PASSIVE': (0, 0, 0),
+    }.get(str(pin_type or '').upper(), (0, 0, 0))
+
+def is_default_black(color):
+    try:
+        return tuple(color) == (0, 0, 0)
+    except Exception:
+        return True
+
 def pen_for(color, width_grid, style, grid_px):
     p = QPen(rgb(color), max(1, width_grid * grid_px))
     p.setStyle({
@@ -353,14 +367,29 @@ class PinItem(TransformMixin, QGraphicsItem):
     def paint(self, painter, option, widget=None):
         g, m = self.window.grid_px, self.model
         L = m.length * g
-        painter.setPen(pen_for(m.color, m.line_width, m.line_style, g))
+        line_color = m.color
+        # Native Mentor/Xpedition symbols usually do not store RGB colors.
+        # In the Wizard UI they are colored semantically from PINTYPE while
+        # the native .sym export remains colorless/standard Mentor.
+        try:
+            if getattr(self.window.symbol, 'template_name', '') == 'mentor_native_origin' and is_default_black(line_color):
+                line_color = mentor_pin_color(getattr(m, 'pin_type', ''))
+        except Exception:
+            pass
+        painter.setPen(pen_for(line_color, m.line_width, m.line_style, g))
         painter.setBrush(QBrush(Qt.NoBrush))
         x1, x2 = (-L, 0) if m.side == PinSide.LEFT.value else (0, L)
         painter.drawLine(QPointF(x1, 0), QPointF(x2, 0))
         if m.inverted:
             r = .18 * g
             painter.drawEllipse(QPointF((-r if m.side == PinSide.LEFT.value else r), 0), r, r)
-        painter.setPen(pen_for(m.number_font.color, m.line_width, m.line_style, g))
+        num_color = getattr(m.number_font, 'color', (0, 0, 0))
+        try:
+            if getattr(self.window.symbol, 'template_name', '') == 'mentor_native_origin' and is_default_black(num_color):
+                num_color = line_color
+        except Exception:
+            pass
+        painter.setPen(pen_for(num_color, m.line_width, m.line_style, g))
         painter.setFont(QFont(m.number_font.family, max(6, int(g * m.number_font.size_grid * .45))))
         if m.visible_number:
             painter.drawText(QRectF(min(x1, x2), -.85 * g, abs(x2 - x1), .5 * g), Qt.AlignCenter, m.number)
@@ -374,7 +403,13 @@ class PinItem(TransformMixin, QGraphicsItem):
             parts.append(m.function)
         label = ' / '.join([x for x in parts if x])
         if label:
-            painter.setPen(pen_for(m.label_font.color, m.line_width, m.line_style, g))
+            label_color = getattr(m.label_font, 'color', (0, 0, 0))
+            try:
+                if getattr(self.window.symbol, 'template_name', '') == 'mentor_native_origin' and is_default_black(label_color):
+                    label_color = line_color
+            except Exception:
+                pass
+            painter.setPen(pen_for(label_color, m.line_width, m.line_style, g))
             painter.setFont(QFont(m.label_font.family, max(8, int(g * m.label_font.size_grid * .45))))
             if m.side == PinSide.LEFT.value:
                 painter.drawText(QRectF(.25 * g, -.35 * g, 6 * g, .7 * g), Qt.AlignVCenter | Qt.AlignLeft, label)

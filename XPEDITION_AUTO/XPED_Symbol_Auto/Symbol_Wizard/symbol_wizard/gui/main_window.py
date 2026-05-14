@@ -1553,27 +1553,35 @@ class MainWindow(QMainWindow):
     def _menu(self):
         mb = self.menuBar()
         file_menu = mb.addMenu('&File')
-        entries = [
-            ('New Symbol', self.new_single_symbol, 'Ctrl+N'),
-            ('New Split Symbol', self.new_split_symbol, 'Ctrl+Shift+N'),
-            ('Open Library JSON', self.open_library, 'Ctrl+O'),
-            ('Save Current Symbol JSON', self.save_current_symbol, 'Ctrl+S'),
-            ('Save All Symbols JSON', self.save_all_symbols, 'Ctrl+Shift+S'),
-            ('Import Symbol JSON', self.import_symbol, None),
-            ('Import Mentor Symbol .sym', self.import_mentor_symbol, None),
-            ('Export Current Mentor Symbol .sym', self.export_current_mentor_symbol, None),
-            ('Import PINMUX CSV', self.import_pinmux_csv, None),
-            ('---', None, None),
-            ('Exit', self.close, None),
-        ]
-        for label, fn, sc in entries:
-            if label == '---':
-                file_menu.addSeparator(); continue
+
+        def add_action(menu, label, fn, sc=None):
             a = QAction(label, self)
             a.triggered.connect(fn)
             if sc:
                 a.setShortcut(QKeySequence(sc))
-            file_menu.addAction(a)
+            menu.addAction(a)
+            return a
+
+        new_menu = file_menu.addMenu('New')
+        add_action(new_menu, 'New Single Symbol', self.new_single_symbol, 'Ctrl+N')
+        add_action(new_menu, 'New Split Symbol', self.new_split_symbol, 'Ctrl+Shift+N')
+
+        project_menu = file_menu.addMenu('Project / JSON')
+        add_action(project_menu, 'Open Library JSON', self.open_library, 'Ctrl+O')
+        add_action(project_menu, 'Save Current Symbol JSON', self.save_current_symbol, 'Ctrl+S')
+        add_action(project_menu, 'Save All Symbols JSON', self.save_all_symbols, 'Ctrl+Shift+S')
+        add_action(project_menu, 'Import Symbol JSON', self.import_symbol)
+
+        import_menu = file_menu.addMenu('Import')
+        add_action(import_menu, 'Mentor Single Symbol (.sym/.1)', self.import_mentor_symbol)
+        add_action(import_menu, 'Mentor Split Symbol ZIP', self.import_mentor_symbol)
+        add_action(import_menu, 'PINMUX CSV', self.import_pinmux_csv)
+
+        export_menu = file_menu.addMenu('Export')
+        add_action(export_menu, 'Mentor Single/Split Symbol', self.export_current_mentor_symbol)
+
+        file_menu.addSeparator()
+        add_action(file_menu, 'Exit', self.close)
 
         edit_menu = mb.addMenu('&Edit')
         for label, fn, sc in [
@@ -4580,20 +4588,3 @@ Use **File > Import PINMUX CSV** to import pin information from a CSV file. Afte
             QMessageBox.critical(self, 'Export Mentor Symbol .sym', f'Die Mentor Symboldatei konnte nicht exportiert werden:\n{exc}')
             return
         self.statusBar().showMessage(f'Mentor Symbol exportiert: {Path(p).name}', 5000)
-
-
-# Mentor Pin Palette enabled
-MENTOR_PIN_PALETTE = {
-    "IN": "#4A90E2",
-    "OUT": "#D0021B",
-    "BI": "#BD10E0",
-    "POWER": "#F5A623",
-    "GROUND": "#7ED321",
-    "ANALOG": "#50E3C2",
-}
-
-FILE_MENU_STRUCTURE = {
-"Import": ["Import Mentor Single Symbol", "Import Mentor Split ZIP"],
-"Export": ["Export Mentor Single Symbol", "Export Mentor Split ZIP"],
-"Project": ["Open", "Save", "Save As"]
-}

@@ -40,6 +40,21 @@ MAGIC = "# SYMBOL_WIZARD_MENTOR_SYM_V1"
 MENTOR_NATIVE_TEMPLATE = "mentor_native_origin"
 
 
+MENTOR_PIN_PALETTE = {
+    "IN": (0, 80, 220),
+    "OUT": (220, 0, 0),
+    "BIDI": (160, 0, 180),
+    "BI": (160, 0, 180),
+    "POWER": (230, 120, 0),
+    "GROUND": (0, 150, 0),
+    "ANALOG": (0, 150, 170),
+    "PASSIVE": (0, 0, 0),
+}
+
+def _pin_color_for_type(pin_type: str) -> tuple[int, int, int]:
+    return MENTOR_PIN_PALETTE.get((pin_type or "").strip().upper(), (0, 0, 0))
+
+
 def _safe_name(path: str | Path) -> str:
     return Path(path).stem or "ImportedSymbol"
 
@@ -311,7 +326,15 @@ def _import_native_single(text: str, path: Path) -> SymbolModel:
         body.visible_attributes.setdefault("RefDes", True)
         body.visible_attributes.setdefault("Value", True)
 
-    pins = [PinModel(**pins_tmp[k]) for k in sorted(pins_tmp)]
+    pins = []
+    for k in sorted(pins_tmp):
+        payload = pins_tmp[k]
+        pmodel = PinModel(**payload)
+        col = _pin_color_for_type(pmodel.pin_type)
+        pmodel.color = col
+        pmodel.number_font.color = col
+        pmodel.label_font.color = col
+        pins.append(pmodel)
     unit = SymbolUnitModel(name=unit_name, body=body, pins=pins, texts=texts, graphics=graphics)
     symbol = SymbolModel(name=symbol_name, kind=SymbolKind.SINGLE.value, is_split=False, grid_inch=0.100, origin="bottom_left", units=[unit])
     symbol.template_name = MENTOR_NATIVE_TEMPLATE
