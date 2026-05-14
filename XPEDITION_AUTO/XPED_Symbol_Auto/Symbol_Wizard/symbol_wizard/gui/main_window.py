@@ -369,8 +369,12 @@ class TemplateEditorDialog(QDialog):
     def set_selection_mode(self, mode):
         custom = (mode == 'Custom')
         if hasattr(self, 'selection_custom_checks'):
-            for cb in self.selection_custom_checks.values():
+            for kind, cb in self.selection_custom_checks.items():
                 cb.setVisible(custom)
+                # QToolBar.addWidget wraps widgets in QWidgetAction; changing
+                # only the checkbox visibility is not enough on some Qt styles.
+                if hasattr(self, 'selection_custom_actions') and kind in self.selection_custom_actions:
+                    self.selection_custom_actions[kind].setVisible(custom)
         if mode == 'Custom':
             # In Custom mode, the checkboxes are authoritative.  Do not leave
             # the scene in the previous preset state; re-apply the currently
@@ -397,8 +401,10 @@ class TemplateEditorDialog(QDialog):
             self.selection_mode_combo.setCurrentText('Custom')
             self.selection_mode_combo.blockSignals(False)
             if hasattr(self, 'selection_custom_checks'):
-                for cb in self.selection_custom_checks.values():
+                for kind, cb in self.selection_custom_checks.items():
                     cb.setVisible(True)
+                    if hasattr(self, 'selection_custom_actions') and kind in self.selection_custom_actions:
+                        self.selection_custom_actions[kind].setVisible(True)
         self._apply_selection_filter_to_scene()
         self.refresh_properties()
 
@@ -826,11 +832,16 @@ class MainWindow(QMainWindow):
         self.selection_mode_combo.activated.connect(lambda *_: self.set_selection_mode(self.selection_mode_combo.currentText()))
         draw_tb.addWidget(self.selection_mode_combo)
         self.selection_custom_checks = {}
+        self.selection_custom_actions = {}
         for kind in ('BODY', 'PIN', 'TEXT', 'GRAPHIC'):
-            cb = QCheckBox(kind); cb.setChecked(True); cb.setVisible(False)
+            cb = QCheckBox(kind)
+            cb.setChecked(True)
+            cb.setVisible(False)
             cb.toggled.connect(lambda checked, k=kind: self.set_selection_enabled(k, checked))
             self.selection_custom_checks[kind] = cb
-            draw_tb.addWidget(cb)
+            action = draw_tb.addWidget(cb)
+            action.setVisible(False)
+            self.selection_custom_actions[kind] = action
         self.set_selection_mode(self.selection_mode_combo.currentText())
 
         # --- Symbol setup -----------------------------------------------
@@ -1153,8 +1164,12 @@ class MainWindow(QMainWindow):
     def set_selection_mode(self, mode):
         custom = (mode == 'Custom')
         if hasattr(self, 'selection_custom_checks'):
-            for cb in self.selection_custom_checks.values():
+            for kind, cb in self.selection_custom_checks.items():
                 cb.setVisible(custom)
+                # QToolBar.addWidget wraps widgets in QWidgetAction; changing
+                # only the checkbox visibility is not enough on some Qt styles.
+                if hasattr(self, 'selection_custom_actions') and kind in self.selection_custom_actions:
+                    self.selection_custom_actions[kind].setVisible(custom)
         if mode == 'Custom':
             # In Custom mode, the checkboxes are authoritative.  Do not leave
             # the scene in the previous preset state; re-apply the currently
@@ -1181,8 +1196,10 @@ class MainWindow(QMainWindow):
             self.selection_mode_combo.setCurrentText('Custom')
             self.selection_mode_combo.blockSignals(False)
             if hasattr(self, 'selection_custom_checks'):
-                for cb in self.selection_custom_checks.values():
+                for kind, cb in self.selection_custom_checks.items():
                     cb.setVisible(True)
+                    if hasattr(self, 'selection_custom_actions') and kind in self.selection_custom_actions:
+                        self.selection_custom_actions[kind].setVisible(True)
         self._apply_selection_filter_to_scene()
         self.refresh_properties()
 
