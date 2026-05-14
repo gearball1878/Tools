@@ -9,7 +9,9 @@ class SymbolView(QGraphicsView):
         super().__init__(scene)
         self.window = window
         self.setRenderHint(QPainter.Antialiasing)
+        self.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
         self.setDragMode(QGraphicsView.RubberBandDrag)
+        self.setRubberBandSelectionMode(Qt.ContainsItemBoundingRect)
         self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)
         self.setResizeAnchor(QGraphicsView.AnchorUnderMouse)
         self.setFocusPolicy(Qt.StrongFocus)
@@ -25,8 +27,14 @@ class SymbolView(QGraphicsView):
             if rect.isValid() and rect.width() > 0 and rect.height() > 0:
                 for it in self.scene().items():
                     kind = it.data(0)
-                    if kind in getattr(self.window, 'selection_enabled', {}) and self.window.selection_enabled.get(kind, True):
+                    filter_kind = 'TEXT' if kind in ('ATTR_REF_DES', 'ATTR_BODY') else kind
+                    if filter_kind in getattr(self.window, 'selection_enabled', {}) and self.window.selection_enabled.get(filter_kind, True):
                         it.setSelected(rect.contains(it.mapToScene(it.boundingRect()).boundingRect()))
+                    else:
+                        it.setSelected(False)
+                self.scene().invalidate(self.scene().sceneRect())
+                self.scene().update(self.scene().sceneRect())
+                self.viewport().update()
                 self.window.refresh_properties()
 
     def wheelEvent(self, event):

@@ -78,6 +78,9 @@ class SymbolBodyModel(TransformModel):
     refdes_font: FontModel=field(default_factory=lambda: FontModel(size_grid=0.9))
     attributes: Dict[str,str]=field(default_factory=lambda:{'Order Code':'','Package':'','RefDes':'U?','Value':'','Frequency':'','Tolerance':'','Technology':''})
     visible_attributes: Dict[str,bool]=field(default_factory=lambda:{'Order Code':False,'Package':True,'RefDes':True,'Value':True,'Frequency':False,'Tolerance':False,'Technology':False})
+    # Persistent placement/formatting model for displayed attribute text in the canvas.
+    # The text itself is generated from attributes and is content-locked in the UI.
+    attribute_texts: Dict[str, TextModel]=field(default_factory=dict)
     refdes_align: str='left'; body_attr_align: str='left'
 
 @dataclass

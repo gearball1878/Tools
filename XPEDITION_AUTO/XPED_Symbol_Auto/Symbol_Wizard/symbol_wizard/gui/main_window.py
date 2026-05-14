@@ -158,7 +158,7 @@ class TemplateEditorDialog(QDialog):
         side = QWidget(); self.form = QFormLayout(side); splitter.addWidget(side); splitter.setSizes([850, 300])
         layout.addWidget(splitter, 1)
         buttons = QDialogButtonBox(QDialogButtonBox.Close); buttons.rejected.connect(self.reject); layout.addWidget(buttons)
-        self.scene.selectionChanged.connect(self.refresh_properties)
+        self.scene.selectionChanged.connect(self.on_scene_selection_changed)
 
     def set_tool(self, t):
         self.draw_tool = t
@@ -258,6 +258,15 @@ class TemplateEditorDialog(QDialog):
             item = TextItem(t, self); self.apply_item_selectability(item); self.scene.addItem(item); self._restore_item_selection(item, selected_ids)
         self.scene.blockSignals(False); self.scene.update(); self.refresh_properties()
 
+    def on_scene_selection_changed(self):
+        try:
+            self.scene.invalidate(self.scene.sceneRect())
+            self.scene.update(self.scene.sceneRect())
+            self.view.viewport().update()
+        except Exception:
+            pass
+        self.refresh_properties()
+
     def refresh_properties(self):
         if not hasattr(self, 'form') or self.form is None:
             return
@@ -332,7 +341,7 @@ class TemplateEditorDialog(QDialog):
     def _line(self, value, fn):
         w=QLineEdit(str(value)); w.returnPressed.connect(lambda widget=w: fn(widget.text())); return w
     def _dbl(self, value, fn, lo=-999, hi=999, step=.1):
-        w=QDoubleSpinBox(); w.setRange(lo, hi); w.setDecimals(3); w.setSingleStep(step); w.setValue(float(value)); w.valueChanged.connect(fn); return w
+        w=QDoubleSpinBox(); w.setRange(lo, hi); w.setDecimals(3); w.setSingleStep(step); w.setKeyboardTracking(False); w.setValue(float(value)); w.valueChanged.connect(fn); return w
     def _combo(self, items, val, fn):
         w=QComboBox(); w.addItems(items); w.setCurrentText(str(val)); w.currentTextChanged.connect(fn); return w
     def _multi_pin_visibility_checkbox(self, pin_items, attr):
@@ -390,18 +399,18 @@ class TemplateEditorDialog(QDialog):
 
     def apply_item_selectability(self, item):
         kind = item.data(0)
-        selectable = self.selection_enabled.get(kind, True)
+        filter_kind = 'TEXT' if kind in ('ATTR_REF_DES', 'ATTR_BODY') else kind
+        selectable = self.selection_enabled.get(filter_kind, True)
         item.setFlag(QGraphicsItem.ItemIsSelectable, selectable)
-        item.setFlag(QGraphicsItem.ItemIsMovable, selectable and kind not in ('ATTR_REF_DES', 'ATTR_BODY'))
-        # Disabled object classes must not intercept mouse clicks. This makes
-        # Custom selection behave like the Template Canvas also in the Wizard.
+        # Attribute text is content-locked but can still be moved/rotated/font-aligned when TEXT is selectable.
+        item.setFlag(QGraphicsItem.ItemIsMovable, selectable)
         try:
             item.setAcceptedMouseButtons(Qt.AllButtons if selectable else Qt.NoButton)
         except Exception:
             pass
         if not selectable:
             item.setSelected(False)
-        z = {'BODY': 0, 'GRAPHIC': 1, 'TEXT': 2, 'PIN': 3}.get(kind, -1)
+        z = {'BODY': 0, 'GRAPHIC': 1, 'TEXT': 2, 'ATTR_REF_DES': 2, 'ATTR_BODY': 2, 'PIN': 3}.get(kind, -1)
         item.setZValue(z)
 
     def _apply_selection_filter_to_scene(self):
@@ -412,9 +421,10 @@ class TemplateEditorDialog(QDialog):
         selections after switching filters or after a rubber-band selection.
         """
         for item in self.scene.items():
-            if item.data(0) in self.selection_enabled:
+            if item.data(0) in self.selection_enabled or item.data(0) in ('ATTR_REF_DES', 'ATTR_BODY'):
                 self.apply_item_selectability(item)
-                if not self.selection_enabled.get(item.data(0), True):
+                filter_kind = 'TEXT' if item.data(0) in ('ATTR_REF_DES', 'ATTR_BODY') else item.data(0)
+                if not self.selection_enabled.get(filter_kind, True):
                     item.setSelected(False)
 
     def set_selection_mode(self, mode):
@@ -544,18 +554,18 @@ class TemplateEditorDialog(QDialog):
 
     def apply_item_selectability(self, item):
         kind = item.data(0)
-        selectable = self.selection_enabled.get(kind, True)
+        filter_kind = 'TEXT' if kind in ('ATTR_REF_DES', 'ATTR_BODY') else kind
+        selectable = self.selection_enabled.get(filter_kind, True)
         item.setFlag(QGraphicsItem.ItemIsSelectable, selectable)
-        item.setFlag(QGraphicsItem.ItemIsMovable, selectable and kind not in ('ATTR_REF_DES', 'ATTR_BODY'))
-        # Disabled object classes must not intercept mouse clicks. This makes
-        # Custom selection behave like the Template Canvas also in the Wizard.
+        # Attribute text is content-locked but can still be moved/rotated/font-aligned when TEXT is selectable.
+        item.setFlag(QGraphicsItem.ItemIsMovable, selectable)
         try:
             item.setAcceptedMouseButtons(Qt.AllButtons if selectable else Qt.NoButton)
         except Exception:
             pass
         if not selectable:
             item.setSelected(False)
-        z = {'BODY': 0, 'GRAPHIC': 1, 'TEXT': 2, 'PIN': 3}.get(kind, -1)
+        z = {'BODY': 0, 'GRAPHIC': 1, 'TEXT': 2, 'ATTR_REF_DES': 2, 'ATTR_BODY': 2, 'PIN': 3}.get(kind, -1)
         item.setZValue(z)
 
     def rebuild_tree(self): pass
@@ -715,7 +725,7 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self.props_scroll)
         splitter.setSizes([360, 900, 380])
         self.setCentralWidget(splitter)
-        self.scene.selectionChanged.connect(self.refresh_properties)
+        self.scene.selectionChanged.connect(self.on_scene_selection_changed)
 
     def _create_pin_overview_table(self):
         table = QTableWidget(0, 6)
@@ -1179,38 +1189,63 @@ class MainWindow(QMainWindow):
 
     def add_attribute_text_items(self, u: SymbolUnitModel):
         b = u.body
+        if not hasattr(b, 'attribute_texts') or b.attribute_texts is None:
+            b.attribute_texts = {}
+
+        def attr_model(key: str, default_text: str, default_x: float, default_y: float, font, default_h='left', default_v='upper'):
+            tm = b.attribute_texts.get(key)
+            if tm is None:
+                tm = TextModel(text=default_text, x=default_x, y=default_y,
+                               font_family=font.family, font_size_grid=font.size_grid, color=font.color)
+                tm.h_align = default_h
+                tm.v_align = default_v
+                b.attribute_texts[key] = tm
+            # Attribute content is generated; geometry/font/alignment are persistent and user-editable.
+            tm.text = default_text
+            if not getattr(tm, 'font_family', ''):
+                tm.font_family = font.family
+            if not getattr(tm, 'font_size_grid', 0):
+                tm.font_size_grid = font.size_grid
+            if not getattr(tm, 'color', None):
+                tm.color = font.color
+            tm._is_attribute_text = True
+            tm._attribute_key = key
+            return tm
+
         ref = b.attributes.get('RefDes', '')
         if b.visible_attributes.get('RefDes', False):
-            txt = TextItem(TextModel(text=(ref if str(ref).strip() else 'RefDes'), x=b.x, y=b.y + 1, font_family=b.refdes_font.family, font_size_grid=b.refdes_font.size_grid, color=b.refdes_font.color), self)
-            txt.setFlag(QGraphicsItem.ItemIsMovable, False); txt.setFlag(QGraphicsItem.ItemIsSelectable, False); txt.setZValue(-1)
+            tm = attr_model('RefDes', (ref if str(ref).strip() else 'RefDes'), b.x, b.y + 1, b.refdes_font, getattr(b, 'refdes_align', 'left'), 'lower')
+            txt = TextItem(tm, self)
             txt.setData(0, 'ATTR_REF_DES')
+            self.apply_item_selectability(txt)
             self.scene.addItem(txt)
         row = 1
         for k, v in b.attributes.items():
             if k == 'RefDes' or not b.visible_attributes.get(k, False):
                 continue
             label = f'{k}: {v}' if str(v).strip() else str(k)
-            txt = TextItem(TextModel(text=label, x=b.x, y=b.y - b.height - row, font_family=b.attribute_font.family, font_size_grid=b.attribute_font.size_grid, color=b.attribute_font.color), self)
-            txt.setFlag(QGraphicsItem.ItemIsMovable, False); txt.setFlag(QGraphicsItem.ItemIsSelectable, False); txt.setZValue(-1)
+            tm = attr_model(str(k), label, b.x, b.y - b.height - row, b.attribute_font, getattr(b, 'body_attr_align', 'left'), 'upper')
+            txt = TextItem(tm, self)
             txt.setData(0, 'ATTR_BODY')
+            self.apply_item_selectability(txt)
             self.scene.addItem(txt)
             row += 1
 
 
     def apply_item_selectability(self, item):
         kind = item.data(0)
-        selectable = self.selection_enabled.get(kind, True)
+        filter_kind = 'TEXT' if kind in ('ATTR_REF_DES', 'ATTR_BODY') else kind
+        selectable = self.selection_enabled.get(filter_kind, True)
         item.setFlag(QGraphicsItem.ItemIsSelectable, selectable)
-        item.setFlag(QGraphicsItem.ItemIsMovable, selectable and kind not in ('ATTR_REF_DES', 'ATTR_BODY'))
-        # Disabled object classes must not intercept mouse clicks. This makes
-        # Custom selection behave like the Template Canvas also in the Wizard.
+        # Attribute text is content-locked but can still be moved/rotated/font-aligned when TEXT is selectable.
+        item.setFlag(QGraphicsItem.ItemIsMovable, selectable)
         try:
             item.setAcceptedMouseButtons(Qt.AllButtons if selectable else Qt.NoButton)
         except Exception:
             pass
         if not selectable:
             item.setSelected(False)
-        z = {'BODY': 0, 'GRAPHIC': 1, 'TEXT': 2, 'PIN': 3}.get(kind, -1)
+        z = {'BODY': 0, 'GRAPHIC': 1, 'TEXT': 2, 'ATTR_REF_DES': 2, 'ATTR_BODY': 2, 'PIN': 3}.get(kind, -1)
         item.setZValue(z)
 
     def _apply_selection_filter_to_scene(self):
@@ -1221,9 +1256,10 @@ class MainWindow(QMainWindow):
         selections after switching filters or after a rubber-band selection.
         """
         for item in self.scene.items():
-            if item.data(0) in self.selection_enabled:
+            if item.data(0) in self.selection_enabled or item.data(0) in ('ATTR_REF_DES', 'ATTR_BODY'):
                 self.apply_item_selectability(item)
-                if not self.selection_enabled.get(item.data(0), True):
+                filter_kind = 'TEXT' if item.data(0) in ('ATTR_REF_DES', 'ATTR_BODY') else item.data(0)
+                if not self.selection_enabled.get(filter_kind, True):
                     item.setSelected(False)
 
     def set_selection_mode(self, mode):
@@ -1404,6 +1440,26 @@ class MainWindow(QMainWindow):
             self._fill_pin_table(self.split_pin_table, rows)
 
     # ------------------------------------------------------------------ Properties
+
+    def on_scene_selection_changed(self):
+        # Repaint immediately when selection handles appear/disappear; this prevents stale handle artefacts.
+        try:
+            self.scene.invalidate(self.scene.sceneRect())
+            self.scene.update(self.scene.sceneRect())
+            self.view.viewport().update()
+        except Exception:
+            pass
+        self.refresh_properties()
+
+    def _property_editor_has_focus(self):
+        fw = QApplication.focusWidget()
+        if fw is None:
+            return False
+        try:
+            return self.props is not None and (fw is self.props or self.props.isAncestorOf(fw))
+        except Exception:
+            return False
+
     def clear_properties(self):
         if not hasattr(self, 'form') or self.form is None:
             return False
@@ -1421,6 +1477,7 @@ class MainWindow(QMainWindow):
         if len(selected) > 1:
             self.form.addRow(QLabel(f'{len(selected)} objects selected'))
             pins = [i for i in selected if i.data(0) == 'PIN']
+            text_like = [i for i in selected if i.data(0) in ('TEXT', 'ATTR_REF_DES', 'ATTR_BODY')]
             if len(pins) == len(selected):
                 self.form.addRow(QLabel(f'<b>Multi-Edit: {len(pins)} PINs</b>'))
                 fn = QLineEdit('')
@@ -1430,8 +1487,11 @@ class MainWindow(QMainWindow):
                 for label, attr in [('Show Number', 'visible_number'), ('Show Name', 'visible_name'), ('Show Function', 'visible_function')]:
                     cb = self._multi_pin_visibility_checkbox(pins, attr)
                     self.form.addRow(label, cb)
+            elif len(text_like) == len(selected):
+                self.form.addRow(QLabel(f'<b>Multi-Edit: {len(text_like)} text objects</b>'))
+                self.multi_text_props(text_like)
             else:
-                self.form.addRow(QLabel('Multi-edit is only available when only PINs are selected.'))
+                self.form.addRow(QLabel('Multi-edit is only available for PIN-only or TEXT/ATTRIBUTE-only selections.'))
             return
         item = selected[0]
         kind = item.data(0)
@@ -1452,6 +1512,7 @@ class MainWindow(QMainWindow):
         w.setRange(lo, hi)
         w.setSingleStep(step)
         w.setDecimals(3)
+        w.setKeyboardTracking(False)
         w.setValue(float(value))
         w.valueChanged.connect(fn)
         return w
@@ -1481,8 +1542,8 @@ class MainWindow(QMainWindow):
         m = item.model
         head = QLabel('<b>BODY</b>')
         self.form.addRow(head)
-        self.form.addRow('Width [grid]', self._dbl(m.width, lambda v: self.set_body_dim(item, 'width', v), 1, 300))
-        self.form.addRow('Height [grid]', self._dbl(m.height, lambda v: self.set_body_dim(item, 'height', v), 1, 300))
+        self.form.addRow('Width [grid]', self._dbl(m.width, lambda v: self.set_body_dim(item, 'width', v), 1, 300, 0.5))
+        self.form.addRow('Height [grid]', self._dbl(m.height, lambda v: self.set_body_dim(item, 'height', v), 1, 300, 0.5))
         self.form.addRow('Line style', self._combo([x.value for x in LineStyle], m.line_style, lambda v: self.set_and_refresh(m, 'line_style', v)))
         self.form.addRow('Line width', self._dbl(m.line_width, lambda v: self.set_and_refresh(m, 'line_width', v), .01, 1, .01))
         self.form.addRow(QLabel('<b>BODY-Attribute</b>'))
@@ -1525,13 +1586,33 @@ class MainWindow(QMainWindow):
 
     def text_props(self, item):
         m = item.model
-        self.form.addRow('Text', self._line(m.text, lambda v: self.set_text_attr(item, 'text', v)))
+        is_attr = item.data(0) in ('ATTR_REF_DES', 'ATTR_BODY') or bool(getattr(m, '_is_attribute_text', False))
+        line = self._line(m.text, lambda v: self.set_text_attr(item, 'text', v))
+        if is_attr:
+            line.setReadOnly(True)
+            line.setToolTip('Attribute text content is driven by the owning object attribute value.')
+        self.form.addRow('Text', line)
         self.form.addRow('Font', self._font_combo(m.font_family, lambda v: self.set_text_attr(item, 'font_family', v)))
         self.form.addRow('Size grid', self._dbl(m.font_size_grid, lambda v: self.set_text_attr(item, 'font_size_grid', v), .1, 5, .1))
         self.form.addRow('Horizontal align', self._combo(['left','center','right'], getattr(m, 'h_align', 'left'), lambda v: self.set_text_attr(item, 'h_align', v)))
         self.form.addRow('Vertical align', self._combo(['upper','center','lower'], getattr(m, 'v_align', 'upper'), lambda v: self.set_text_attr(item, 'v_align', v)))
-        self.form.addRow('Rotation [deg]', self._dbl(getattr(m, 'rotation', 0), lambda v: self.set_and_refresh(m, 'rotation', v), -360, 360, 15))
-        b = QPushButton('Color RGB'); b.clicked.connect(lambda: self.color_model(m)); self.form.addRow('Color', b)
+        self.form.addRow('Rotation [deg]', self._dbl(getattr(m, 'rotation', 0), lambda v: self.set_text_attr(item, 'rotation', v), -360, 360, 15))
+        b = QPushButton('Color RGB'); b.clicked.connect(lambda: self.color_text_item(item)); self.form.addRow('Color', b)
+
+    def _common_model_value(self, items, attr, default=''):
+        vals = [getattr(getattr(i, 'model', None), attr, default) for i in items if getattr(i, 'model', None) is not None]
+        if not vals:
+            return default
+        first = vals[0]
+        return first if all(v == first for v in vals) else default
+
+    def multi_text_props(self, items):
+        self.form.addRow('Font', self._font_combo(self._common_model_value(items, 'font_family', ''), lambda v, its=items: self.set_selected_text_attr(its, 'font_family', v)))
+        self.form.addRow('Size grid', self._dbl(float(self._common_model_value(items, 'font_size_grid', 1.0) or 1.0), lambda v, its=items: self.set_selected_text_attr(its, 'font_size_grid', v), .1, 5, .1))
+        self.form.addRow('Horizontal align', self._combo(['', 'left','center','right'], self._common_model_value(items, 'h_align', ''), lambda v, its=items: v and self.set_selected_text_attr(its, 'h_align', v)))
+        self.form.addRow('Vertical align', self._combo(['', 'upper','center','lower'], self._common_model_value(items, 'v_align', ''), lambda v, its=items: v and self.set_selected_text_attr(its, 'v_align', v)))
+        self.form.addRow('Rotation [deg]', self._dbl(float(self._common_model_value(items, 'rotation', 0) or 0), lambda v, its=items: self.set_selected_text_attr(its, 'rotation', v), -360, 360, 15))
+        b = QPushButton('Color RGB'); b.clicked.connect(lambda its=items: self.color_selected_text(its)); self.form.addRow('Color', b)
 
     def graphic_props(self, item):
         m = item.model
@@ -1595,11 +1676,10 @@ class MainWindow(QMainWindow):
             'texts': [(t, float(t.x), float(t.y)) for t in self.current_unit.texts],
             'graphics': [(gr, float(gr.x), float(gr.y), float(gr.w), float(gr.h)) for gr in self.current_unit.graphics],
         }
-        setattr(item.model, a, round(float(v) * 2) / 2)
+        setattr(item.model, a, float(v))
         self.scale_current_unit_children_from_body_resize(st, item.model)
         self.enforce_symbol_size_limit()
         self.update_current_unit_canvas_positions()
-        self.refresh_properties()
         self.schedule_scene_refresh(visual_only=True)
 
     def set_attr_vis(self, m, k, v):
@@ -1662,11 +1742,56 @@ class MainWindow(QMainWindow):
         self.schedule_scene_refresh()
 
     def set_text_attr(self, item, a, v):
+        if a == 'text' and (item.data(0) in ('ATTR_REF_DES', 'ATTR_BODY') or bool(getattr(item.model, '_is_attribute_text', False))):
+            return
         self.push_undo_state()
+        if a == 'rotation':
+            v = (round(float(v) / 15.0) * 15.0) % 360
         setattr(item.model, a, v)
-        if a == 'text':
+        if hasattr(item, 'apply_text_from_model'):
+            item.apply_text_from_model()
+        elif a == 'text':
             item.setPlainText(v)
-        self.schedule_scene_refresh()
+        self.schedule_scene_refresh(visual_only=True)
+
+    def set_selected_text_attr(self, items, attr, value):
+        models = [getattr(i, 'model', None) for i in items if i.data(0) in ('TEXT', 'ATTR_REF_DES', 'ATTR_BODY')]
+        if not models or len(models) != len(items):
+            return
+        if attr == 'text':
+            return
+        self.push_undo_state()
+        if attr == 'rotation':
+            value = (round(float(value) / 15.0) * 15.0) % 360
+        selected_ids = {id(m) for m in models}
+        for item in items:
+            setattr(item.model, attr, value)
+            if hasattr(item, 'apply_text_from_model'):
+                item.apply_text_from_model()
+        self._selection_restore_ids = selected_ids
+        self.schedule_scene_refresh(visual_only=True)
+
+    def color_text_item(self, item):
+        self.push_undo_state()
+        c = QColorDialog.getColor(QColor(*item.model.color), self)
+        if c.isValid():
+            item.model.color = (c.red(), c.green(), c.blue())
+            if hasattr(item, 'apply_text_from_model'):
+                item.apply_text_from_model()
+            self.schedule_scene_refresh(visual_only=True)
+
+    def color_selected_text(self, items):
+        c = QColorDialog.getColor(QColor(0, 0, 0), self)
+        if not c.isValid():
+            return
+        self.push_undo_state()
+        value = (c.red(), c.green(), c.blue())
+        for item in items:
+            if item.data(0) in ('TEXT', 'ATTR_REF_DES', 'ATTR_BODY'):
+                item.model.color = value
+                if hasattr(item, 'apply_text_from_model'):
+                    item.apply_text_from_model()
+        self.schedule_scene_refresh(visual_only=True)
 
     def color_model(self, m, attr='color'):
         self.push_undo_state()
@@ -1676,11 +1801,13 @@ class MainWindow(QMainWindow):
             self.schedule_scene_refresh()
 
     def live_refresh(self):
-        self.scene.update()
+        self.scene.invalidate(self.scene.sceneRect())
+        self.scene.update(self.scene.sceneRect())
         self.view.viewport().update()
         self.rebuild_tree()
         self.rebuild_pin_table()
-        self.refresh_properties()
+        if not self._property_editor_has_focus():
+            self.refresh_properties()
 
     def update_current_unit_canvas_positions(self):
         """Update existing QGraphicsItems from their models without rebuilding the scene."""
@@ -1701,12 +1828,17 @@ class MainWindow(QMainWindow):
                 item.setRotation(0.0)
                 item.setTransform(item.transform().__class__())
                 item.setPos(model.x * g, -model.y * g)
-            elif kind == 'TEXT':
-                item.setPos(model.x * g, -model.y * g)
+            elif kind in ('TEXT', 'ATTR_REF_DES', 'ATTR_BODY'):
+                if hasattr(item, 'apply_text_from_model'):
+                    item.apply_text_from_model()
+                else:
+                    item.setPos(model.x * g, -model.y * g)
             elif kind == 'GRAPHIC':
                 item.setPos(model.x * g, -model.y * g)
             item.update()
-        self.scene.update()
+        self.scene.invalidate(self.scene.sceneRect())
+        self.scene.update(self.scene.sceneRect())
+        self.view.viewport().update()
 
     def update_attribute_items_for_unit(self):
         """Regenerate body-owned attribute text only; keeps normal objects selected and avoids stale text remnants."""
@@ -1719,7 +1851,9 @@ class MainWindow(QMainWindow):
             model = getattr(item, 'model', None)
             if model is not None and id(model) in selected_ids:
                 item.setSelected(True)
-        self.scene.update()
+        self.scene.invalidate(self.scene.sceneRect())
+        self.scene.update(self.scene.sceneRect())
+        self.view.viewport().update()
 
     def scale_current_unit_children_from_body_resize(self, start_state: dict, body: SymbolBodyModel):
         """Keep pins/text/graphics grouped with body while resizing.
@@ -1763,7 +1897,8 @@ class MainWindow(QMainWindow):
             self.update_attribute_items_for_unit()
             self.rebuild_tree()
             self.rebuild_pin_table()
-            self.refresh_properties()
+            if not self._property_editor_has_focus():
+                self.refresh_properties()
         else:
             self.rebuild_scene()
             self.rebuild_tree()
@@ -2367,7 +2502,9 @@ class MainWindow(QMainWindow):
     def select_all_canvas(self):
         self.set_tool(DrawTool.SELECT.value)
         for item in self.scene.items():
-            if item.data(0) in ('BODY', 'PIN', 'TEXT', 'GRAPHIC') and self.selection_enabled.get(item.data(0), True):
+            kind = item.data(0)
+            filter_kind = 'TEXT' if kind in ('ATTR_REF_DES', 'ATTR_BODY') else kind
+            if filter_kind in ('BODY', 'PIN', 'TEXT', 'GRAPHIC') and self.selection_enabled.get(filter_kind, True):
                 item.setSelected(True)
         self.refresh_properties()
 

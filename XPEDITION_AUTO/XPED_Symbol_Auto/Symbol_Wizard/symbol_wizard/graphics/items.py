@@ -397,16 +397,57 @@ class TextItem(TransformMixin, QGraphicsTextItem):
         self.model = model
         self.window = window
         super().__init__(model.text)
-        g = window.grid_px
-        self.setPos(model.x * g, -model.y * g)
-        self.setDefaultTextColor(rgb(model.color))
-        self.setFont(QFont(model.font_family, max(6, int(g * model.font_size_grid * .45))))
         self.common_flags()
         # Text remains movable/selectable in edit mode. Text editing starts only on double click.
         self.setTextInteractionFlags(Qt.NoTextInteraction)
         self.setData(0, 'TEXT')
-        self.apply_transform_from_model()
         self._rotating = False
+        self.apply_text_from_model()
+
+    def _aligned_scene_pos(self):
+        g = self.window.grid_px
+        br = self.boundingRect()
+        x = self.model.x * g
+        y = -self.model.y * g
+        h = getattr(self.model, 'h_align', 'left')
+        v = getattr(self.model, 'v_align', 'upper')
+        if h == 'center':
+            x -= br.width() / 2
+        elif h == 'right':
+            x -= br.width()
+        if v == 'center':
+            y -= br.height() / 2
+        elif v == 'lower':
+            y -= br.height()
+        return QPointF(x, y)
+
+    def apply_text_from_model(self):
+        g = self.window.grid_px
+        self.setPlainText(str(getattr(self.model, 'text', '')))
+        self.setDefaultTextColor(rgb(self.model.color))
+        self.setFont(QFont(self.model.font_family, max(6, int(g * self.model.font_size_grid * .45))))
+        self.setPos(self._aligned_scene_pos())
+        self.apply_transform_from_model()
+        self.update()
+
+    def _model_pos_from_item_pos(self):
+        g = self.window.grid_px
+        br = self.boundingRect()
+        p = self.pos()
+        x = p.x()
+        y = p.y()
+        h = getattr(self.model, 'h_align', 'left')
+        v = getattr(self.model, 'v_align', 'upper')
+        if h == 'center':
+            x += br.width() / 2
+        elif h == 'right':
+            x += br.width()
+        if v == 'center':
+            y += br.height() / 2
+        elif v == 'lower':
+            y += br.height()
+        self.model.x = x / g
+        self.model.y = -y / g
 
     def paint(self, painter, option, widget=None):
         super().paint(painter, option, widget)
@@ -441,6 +482,9 @@ class TextItem(TransformMixin, QGraphicsTextItem):
         super().mouseReleaseEvent(event)
 
     def mouseDoubleClickEvent(self, event):
+        if self.data(0) in ('ATTR_REF_DES', 'ATTR_BODY') or bool(getattr(self.model, '_is_attribute_text', False)):
+            event.accept()
+            return
         self.setTextInteractionFlags(Qt.TextEditorInteraction)
         self.setFocus(Qt.MouseFocusReason)
         cursor = self.textCursor()
@@ -450,7 +494,8 @@ class TextItem(TransformMixin, QGraphicsTextItem):
 
     def keyPressEvent(self, event):
         if self.textInteractionFlags() != Qt.NoTextInteraction and event.key() in (Qt.Key_Return, Qt.Key_Enter):
-            self.model.text = self.toPlainText()
+            if not (self.data(0) in ('ATTR_REF_DES', 'ATTR_BODY') or bool(getattr(self.model, '_is_attribute_text', False))):
+                self.model.text = self.toPlainText()
             self.setTextInteractionFlags(Qt.NoTextInteraction)
             self.clearFocus()
             self.scene().window.live_refresh()
@@ -467,17 +512,17 @@ class TextItem(TransformMixin, QGraphicsTextItem):
         # When the user clicks out of a canvas text item, commit the text and
         # immediately return the item to normal canvas-object mode so it can be
         # selected, moved, copied and transformed again.
-        self.model.text = self.toPlainText()
+        if not (self.data(0) in ('ATTR_REF_DES', 'ATTR_BODY') or bool(getattr(self.model, '_is_attribute_text', False))):
+            self.model.text = self.toPlainText()
         self.setTextInteractionFlags(Qt.NoTextInteraction)
         self.common_flags()
         self.scene().window.live_refresh()
         super().focusOutEvent(e)
 
     def update_model_pos(self):
-        g = self.window.grid_px
-        self.model.x = self.pos().x() / g
-        self.model.y = -self.pos().y() / g
-        self.model.text = self.toPlainText()
+        self._model_pos_from_item_pos()
+        if not (self.data(0) in ('ATTR_REF_DES', 'ATTR_BODY') or bool(getattr(self.model, '_is_attribute_text', False))):
+            self.model.text = self.toPlainText()
 
 
 

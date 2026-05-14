@@ -29,6 +29,8 @@ def _body(d):
     d=_coerce_transform(raw)
     d['attribute_font']=_font(d.get('attribute_font', {}), .75)
     d['refdes_font']=_font(d.get('refdes_font', {}), .9)
+    if isinstance(d.get('attribute_texts'), dict):
+        d['attribute_texts'] = {str(k): _text(v) for k, v in d.get('attribute_texts', {}).items() if isinstance(v, dict)}
     body = SymbolBodyModel(**d)
     # Migration for very old/empty JSON bodies: when no explicit x/y was stored,
     # keep the default symbol-origin-at-body-center placement.
