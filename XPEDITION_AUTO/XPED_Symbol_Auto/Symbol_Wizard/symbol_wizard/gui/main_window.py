@@ -176,6 +176,9 @@ class MainWindow(QMainWindow):
         table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         table.horizontalHeader().setStretchLastSection(False)
         table.verticalHeader().setVisible(False)
+        table.setItemDelegateForColumn(3, ComboBoxDelegate([x.value for x in PinType], table))
+        table.setItemDelegateForColumn(4, ComboBoxDelegate([x.value for x in PinSide], table))
+        table.setItemDelegateForColumn(5, ComboBoxDelegate(['no', 'yes'], table))
         return table
 
     def _autosize_table(self, table: QTableWidget):
@@ -185,57 +188,33 @@ class MainWindow(QMainWindow):
             table.setColumnWidth(col, max(table.columnWidth(col) + 18, 90))
 
     def _fill_pin_table(self, table: QTableWidget, rows):
-        """Fill the pin table with editable columns and stable dropdown widgets.
+        """Fill the pin table using QTableWidgetItems + delegates only.
 
-        The first three columns are normal text cells. Pin Type, Side and
-        Inverted are QComboBox cell widgets only; no underlying text item is
-        installed in those cells, preventing Qt text/widget overpainting.
+        No setCellWidget() is used; this prevents stale ComboBox/text
+        overpainting while still giving dropdown editors for Pin Type, Side
+        and Inverted. Persistent editors keep the dropdowns visible.
         """
         table.blockSignals(True)
         self.suspend = True
-        # Remove old widgets explicitly before clearing, otherwise Qt can keep
-        # stale editors around on some Windows/PySide combinations.
         for rr in range(table.rowCount()):
             for cc in range(table.columnCount()):
-                w = table.cellWidget(rr, cc)
-                if w is not None:
-                    table.removeCellWidget(rr, cc)
-                    w.deleteLater()
+                table.closePersistentEditor(table.item(rr, cc)) if table.item(rr, cc) else None
         table.clearContents()
         table.setRowCount(len(rows))
-        pin_types = [x.value for x in PinType]
-        sides = [x.value for x in PinSide]
         for r, (si, ui, pi, pin) in enumerate(rows):
-            values = [pin.number, pin.name, pin.function]
+            values = [pin.number, pin.name, pin.function, pin.pin_type, pin.side, 'yes' if pin.inverted else 'no']
             for c, v in enumerate(values):
                 it = QTableWidgetItem(str(v))
                 it.setData(Qt.UserRole, (si, ui, pi, c))
                 it.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
                 table.setItem(r, c, it)
-
-            meta = (si, ui, pi)
-            cb_type = QComboBox(table)
-            cb_type.addItems(pin_types)
-            cb_type.setCurrentText(pin.pin_type if pin.pin_type in pin_types else PinType.BIDI.value)
-            cb_type.setProperty('pin_meta', meta)
-            cb_type.currentTextChanged.connect(lambda v, m=meta: self.pin_table_combo_changed(m, 3, v))
-            table.setCellWidget(r, 3, cb_type)
-
-            cb_side = QComboBox(table)
-            cb_side.addItems(sides)
-            cb_side.setCurrentText(pin.side if pin.side in sides else PinSide.LEFT.value)
-            cb_side.setProperty('pin_meta', meta)
-            cb_side.currentTextChanged.connect(lambda v, m=meta: self.pin_table_combo_changed(m, 4, v))
-            table.setCellWidget(r, 4, cb_side)
-
-            cb_inv = QComboBox(table)
-            cb_inv.addItems(['no', 'yes'])
-            cb_inv.setCurrentText('yes' if pin.inverted else 'no')
-            cb_inv.setProperty('pin_meta', meta)
-            cb_inv.currentTextChanged.connect(lambda v, m=meta: self.pin_table_combo_changed(m, 5, v))
-            table.setCellWidget(r, 5, cb_inv)
         self.suspend = False
         table.blockSignals(False)
+        for r in range(table.rowCount()):
+            for c in (3, 4, 5):
+                item = table.item(r, c)
+                if item is not None:
+                    table.openPersistentEditor(item)
         self._autosize_table(table)
 
     def _menu(self):
@@ -889,36 +868,7 @@ class MainWindow(QMainWindow):
             pins = [i for i in selected if i.data(0) == 'PIN']
             if pins:
                 self.form.addRow(QLabel(f'{len(pins)} selected pin(s)'))
-                side = QComboBox(); side.addItems(['<keep>'] + [x.value for x in PinSide])
-                self.form.addRow('Pin Side', side)
-                ptype = QComboBox(); ptype.addItems(['<keep>'] + [x.value for x in PinType])
-                self.form.addRow('Pin Type', ptype)
-                inv = QComboBox(); inv.addItems(['<keep>', 'yes', 'no'])
-                self.form.addRow('Inverted', inv)
-                func = QLineEdit('')
-                self.form.addRow('Pin Function', func)
-                length = self._dbl(2.0, lambda v: None, 1, 100, 1)
-                self.form.addRow('Length [grid]', length)
-                rot = QComboBox(); rot.addItems(['<keep>', '0', '90', '180', '270'])
-                self.form.addRow('Rotation [deg]', rot)
-                show_number = QComboBox(); show_number.addItems(['<keep>', 'show', 'hide'])
-                self.form.addRow('Show Pin Number', show_number)
-                show_name = QComboBox(); show_name.addItems(['<keep>', 'show', 'hide'])
-                self.form.addRow('Show Pin Name', show_name)
-                show_func = QComboBox(); show_func.addItems(['<keep>', 'show', 'hide'])
-                self.form.addRow('Show Pin Function', show_func)
-                b = QPushButton('Apply to selected pins')
-                b.clicked.connect(lambda: self.apply_pin_bulk_to_selected(
-                    side.currentText(), ptype.currentText(), inv.currentText(),
-                    func.text(), length.value(), rot.currentText(),
-                    show_number.currentText(), show_name.currentText(), show_func.currentText()))
-                self.form.addRow('', b)
-                b = QPushButton('Apply first selected pin geometry/function to ALL pins')
-                b.clicked.connect(self.apply_first_selected_pin_to_all)
-                self.form.addRow('', b)
-                b = QPushButton('Distribute selected pins vertically')
-                b.clicked.connect(self.distribute_selected_pins_vertical)
-                self.form.addRow('', b)
+                self.multi_pin_props(pins)
             return
         item = selected[0]
         kind = item.data(0)
@@ -1073,6 +1023,128 @@ class MainWindow(QMainWindow):
         combo.currentTextChanged.connect(fn)
         return combo
 
+    def _multi_model_value(self, models, attr, formatter=lambda x: x):
+        vals = [formatter(getattr(m, attr)) for m in models]
+        if not vals:
+            return '<multiple values>'
+        return vals[0] if all(v == vals[0] for v in vals) else '<multiple values>'
+
+    def _multi_font_value(self, fonts, attr):
+        vals = [getattr(f, attr) for f in fonts]
+        if not vals:
+            return '<multiple values>'
+        return vals[0] if all(v == vals[0] for v in vals) else '<multiple values>'
+
+    def _multi_combo(self, options, value, callback):
+        combo = QComboBox()
+        if value == '<multiple values>':
+            combo.addItem('<multiple values>')
+        combo.addItems([str(o) for o in options])
+        combo.setCurrentText(str(value))
+        combo.currentTextChanged.connect(lambda v: callback(v) if v != '<multiple values>' else None)
+        return combo
+
+    def _multi_spin(self, value, callback, lo=0.0, hi=100.0, step=0.1):
+        spin = QDoubleSpinBox()
+        spin.setRange(lo, hi)
+        spin.setSingleStep(step)
+        spin.setDecimals(3)
+        if value == '<multiple values>':
+            spin.setSpecialValueText('<multiple values>')
+            spin.setValue(lo)
+            spin.valueChanged.connect(lambda v: callback(v) if abs(v - lo) > 1e-12 else None)
+        else:
+            spin.setValue(float(value))
+            spin.valueChanged.connect(callback)
+        return spin
+
+    def multi_pin_props(self, pin_items):
+        models = [i.model for i in pin_items]
+        self.form.addRow('Pin Function', self._line(self._multi_model_value(models, 'function'), lambda v: self.apply_pin_multi_attr(pin_items, 'function', v)))
+        self.form.addRow('Pin Type', self._multi_combo([x.value for x in PinType], self._multi_model_value(models, 'pin_type'), lambda v: self.apply_pin_multi_attr(pin_items, 'pin_type', v)))
+        self.form.addRow('Side', self._multi_combo([x.value for x in PinSide], self._multi_model_value(models, 'side'), lambda v: self.apply_pin_multi_attr(pin_items, 'side', v)))
+        inv_val = self._multi_model_value(models, 'inverted', lambda v: 'yes' if v else 'no')
+        self.form.addRow('Inverted', self._multi_combo(['no', 'yes'], inv_val, lambda v: self.apply_pin_multi_attr(pin_items, 'inverted', v == 'yes')))
+        self.form.addRow('Length [grid]', self._multi_spin(self._multi_model_value(models, 'length'), lambda v: self.apply_pin_multi_attr(pin_items, 'length', max(1.0, round(float(v)))), 1, 100, 1))
+        rot_val = self._multi_model_value(models, 'rotation', lambda v: str(int(round(float(v)/90)*90)%360))
+        self.form.addRow('Rotation [deg]', self._multi_combo(['0','90','180','270'], rot_val, lambda v: self.apply_pin_multi_attr(pin_items, 'rotation', float(v))))
+        self.form.addRow('Line width [grid]', self._multi_spin(self._multi_model_value(models, 'line_width'), lambda v: self.apply_pin_multi_attr(pin_items, 'line_width', float(v)), .01, 1, .01))
+        self.form.addRow('Line style', self._multi_combo([x.value for x in LineStyle], self._multi_model_value(models, 'line_style'), lambda v: self.apply_pin_multi_attr(pin_items, 'line_style', v)))
+        for label, attr in [('Show Pin Number','visible_number'),('Show Pin Name','visible_name'),('Show Pin Function','visible_function')]:
+            val = self._multi_model_value(models, attr, lambda v: 'show' if v else 'hide')
+            self.form.addRow(label, self._multi_combo(['show','hide'], val, lambda v, a=attr: self.apply_pin_multi_attr(pin_items, a, v == 'show')))
+        self.form.addRow(QLabel('Pin number font'))
+        number_fonts = [m.number_font for m in models]
+        self.form.addRow('Family', self._multi_combo(list(QFontDatabase.families()), self._multi_font_value(number_fonts, 'family'), lambda v: self.apply_pin_multi_font_attr(pin_items, 'number_font', 'family', v)))
+        self.form.addRow('Size [grid]', self._multi_spin(self._multi_font_value(number_fonts, 'size_grid'), lambda v: self.apply_pin_multi_font_attr(pin_items, 'number_font', 'size_grid', float(v)), .1, 5, .1))
+        self.form.addRow(QLabel('Pin label font'))
+        label_fonts = [m.label_font for m in models]
+        self.form.addRow('Family', self._multi_combo(list(QFontDatabase.families()), self._multi_font_value(label_fonts, 'family'), lambda v: self.apply_pin_multi_font_attr(pin_items, 'label_font', 'family', v)))
+        self.form.addRow('Size [grid]', self._multi_spin(self._multi_font_value(label_fonts, 'size_grid'), lambda v: self.apply_pin_multi_font_attr(pin_items, 'label_font', 'size_grid', float(v)), .1, 5, .1))
+        b = QPushButton('Set Pin Line Color RGB')
+        b.clicked.connect(lambda: self.apply_pin_multi_color(pin_items, 'color'))
+        self.form.addRow('Line color', b)
+        b = QPushButton('Set Number Font Color RGB')
+        b.clicked.connect(lambda: self.apply_pin_multi_color(pin_items, 'number_font.color'))
+        self.form.addRow('Number font color', b)
+        b = QPushButton('Set Label Font Color RGB')
+        b.clicked.connect(lambda: self.apply_pin_multi_color(pin_items, 'label_font.color'))
+        self.form.addRow('Label font color', b)
+        b = QPushButton('Apply first selected pin geometry/function to ALL pins')
+        b.clicked.connect(self.apply_first_selected_pin_to_all)
+        self.form.addRow('', b)
+        b = QPushButton('Distribute selected pins vertically')
+        b.clicked.connect(self.distribute_selected_pins_vertical)
+        self.form.addRow('', b)
+
+    def apply_pin_multi_attr(self, pin_items, attr, value):
+        for it in pin_items:
+            p = it.model
+            if attr == 'rotation':
+                value = (round(float(value) / 90.0) * 90) % 360
+            setattr(p, attr, value)
+            if attr == 'side':
+                for u in self.symbol.units:
+                    if p in u.pins:
+                        self.dock_pins_to_body(u)
+                        break
+        if pin_items:
+            setattr(self, f'default_pin_{attr}', value)
+        self.validate_pins(silent=True)
+        self.schedule_scene_refresh()
+
+    def apply_pin_multi_font_attr(self, pin_items, font_attr, attr, value):
+        for it in pin_items:
+            f = getattr(it.model, font_attr)
+            if attr == 'size_grid':
+                f.size_grid = float(value)
+                f.size_pt = self.grid_font_pt(float(value))
+            else:
+                setattr(f, attr, value)
+        self.schedule_scene_refresh()
+
+    def apply_pin_multi_color(self, pin_items, target):
+        base = (0, 0, 0)
+        if pin_items:
+            if target == 'color':
+                base = pin_items[0].model.color
+            elif target == 'number_font.color':
+                base = pin_items[0].model.number_font.color
+            elif target == 'label_font.color':
+                base = pin_items[0].model.label_font.color
+        c = QColorDialog.getColor(QColor(*base), self)
+        if not c.isValid():
+            return
+        rgb = (c.red(), c.green(), c.blue())
+        for it in pin_items:
+            if target == 'color':
+                it.model.color = rgb
+            elif target == 'number_font.color':
+                it.model.number_font.color = rgb
+            elif target == 'label_font.color':
+                it.model.label_font.color = rgb
+        self.schedule_scene_refresh()
+
     # ------------------------------------------------------------------ Canvas selection / body edit / bulk pins
     def set_body_edit_mode(self, enabled: bool):
         self.body_edit = bool(enabled)
@@ -1104,6 +1176,8 @@ class MainWindow(QMainWindow):
                 continue
             selectable = kind in allowed
             it.setFlag(QGraphicsItem.ItemIsSelectable, selectable)
+            if kind in ('BODY', 'PIN', 'GRAPHIC', 'TEXT', 'ORIGIN'):
+                it.setFlag(QGraphicsItem.ItemIsMovable, selectable)
             if not selectable and it.isSelected():
                 it.setSelected(False)
         self.scene.update()
@@ -1759,8 +1833,6 @@ class MainWindow(QMainWindow):
     def pin_table_changed(self, r, c):
         table = self.sender()
         if self.suspend or not isinstance(table, QTableWidget):
-            return
-        if c >= 3:
             return
         it = table.item(r, c)
         if not it:

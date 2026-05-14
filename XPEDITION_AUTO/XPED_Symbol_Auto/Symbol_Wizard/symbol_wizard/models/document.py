@@ -60,13 +60,13 @@ class PinModel(TransformModel):
     inverted: bool=False; color: Tuple[int,int,int]=(0,0,0)
     visible_number: bool=True; visible_name: bool=True; visible_function: bool=True
     line_width: float=0.03; line_style: str=LineStyle.SOLID.value
-    number_font: FontModel=field(default_factory=lambda: FontModel(size_pt=3.24, size_grid=0.45))
-    label_font: FontModel=field(default_factory=lambda: FontModel(size_pt=6.48, size_grid=0.9))
+    number_font: FontModel=field(default_factory=lambda: FontModel(size_pt=3.60, size_grid=0.50))
+    label_font: FontModel=field(default_factory=lambda: FontModel(size_pt=3.60, size_grid=0.50))
 
 @dataclass
 class TextModel(TransformModel):
     text: str='Text'; x: float=0.0; y: float=0.0
-    font_family: str='Arial'; font_size_pt: float=6.48; font_size_grid: float=0.9; color: Tuple[int,int,int]=(0,0,0)
+    font_family: str='Arial'; font_size_pt: float=3.60; font_size_grid: float=0.50; color: Tuple[int,int,int]=(0,0,0)
 
 @dataclass
 class SymbolBodyModel(TransformModel):
