@@ -60,6 +60,8 @@ class PinModel(TransformModel):
     line_width: float=0.03; line_style: str=LineStyle.SOLID.value
     number_font: FontModel=field(default_factory=lambda: FontModel(size_grid=0.45))
     label_font: FontModel=field(default_factory=lambda: FontModel(size_grid=0.55))
+    attributes: Dict[str,str]=field(default_factory=dict)
+    visible_attributes: Dict[str,bool]=field(default_factory=dict)
 
 @dataclass
 class TextModel(TransformModel):

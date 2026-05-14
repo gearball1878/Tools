@@ -121,17 +121,6 @@ class SymbolScene(QGraphicsScene):
         super().drawForeground(painter, rect)
         fmt = getattr(self.window.symbol, 'sheet_format', 'A3')
         origin = getattr(self.window.symbol, 'origin', 'center')
-        if getattr(self.window.symbol, 'template_name', '') == 'mentor_native_origin':
-            painter.save()
-            painter.setPen(QPen(QColor(180, 60, 60), 0, Qt.DashLine))
-            painter.drawLine(QPointF(rect.left(), 0), QPointF(rect.right(), 0))
-            painter.drawLine(QPointF(0, rect.top()), QPointF(0, rect.bottom()))
-            painter.setPen(QPen(QColor(150, 0, 0), 0))
-            painter.setFont(QFont('Arial', 10))
-            painter.drawText(QRectF(8, -28, 260, 24), Qt.AlignLeft | Qt.AlignVCenter, 'Mentor origin (0,0)')
-            painter.drawEllipse(QPointF(0, 0), 5, 5)
-            painter.restore()
-            return
         full = sheet_rect_for_origin(fmt, origin)
         usable = usable_rect_for_origin(fmt, origin)
         dx, dy = getattr(self.window, '_format_guide_offset', (0.0, 0.0))
@@ -147,4 +136,7 @@ class SymbolScene(QGraphicsScene):
         painter.setFont(QFont('Arial', 10))
         painter.drawText(full.adjusted(8, 8, -8, -8), Qt.AlignTop | Qt.AlignLeft, f'{fmt} preview - origin guide: {origin}')
         painter.drawText(usable.adjusted(8, 8, -8, -8), Qt.AlignTop | Qt.AlignLeft, 'recommended symbol area: 40% W / 80% H (guide only)')
+        if getattr(self.window.symbol, 'template_name', '') == 'mentor_native_origin':
+            painter.setPen(QPen(QColor(150, 0, 0), 0))
+            painter.drawText(QRectF(8, -28, 260, 24), Qt.AlignLeft | Qt.AlignVCenter, 'Mentor origin (0,0)')
         painter.restore()

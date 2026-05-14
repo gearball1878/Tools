@@ -173,6 +173,27 @@ class TemplateEditorDialog(QDialog):
         return next_pin_number(existing)
 
 
+    def _load_autosave_library(self) -> LibraryModel:
+        try:
+            if getattr(self, '_autosave_path', None) and self._autosave_path.exists():
+                lib = load_library(self._autosave_path)
+                if lib.symbols:
+                    return lib
+        except Exception:
+            pass
+        return LibraryModel()
+
+    def _save_autosave_library(self) -> None:
+        try:
+            if getattr(self, '_autosave_path', None):
+                save_library(self._autosave_path, self.library)
+        except Exception:
+            pass
+
+    def closeEvent(self, event):
+        self._save_autosave_library()
+        event.accept()
+
     def schedule_property_refresh(self):
         """Template canvas model change throttle for live property-panel sync."""
         if getattr(self, '_property_refresh_pending', False):
@@ -308,17 +329,16 @@ class TemplateEditorDialog(QDialog):
             return copy.deepcopy(self.unit)
 
     def _template_has_unsaved_changes(self) -> bool:
-        """Detect changes even when a canvas operation did not mark dirty."""
-        if bool(getattr(self, 'dirty', False)):
-            return True
+        """Detect real template content changes by comparing with the saved snapshot."""
         try:
             return getattr(self, '_clean_template_snapshot', None) is not None and self._template_state() != self._clean_template_snapshot
         except Exception:
-            return bool(getattr(self, 'dirty', False))
+            return False
 
     def _ask_save_if_dirty(self) -> bool:
         """Return True when the pending action may continue."""
-        if not (getattr(self, 'dirty', False) or self._template_has_unsaved_changes()):
+        if not self._template_has_unsaved_changes():
+            self.dirty = False
             return True
         ans = QMessageBox.question(
             self,
@@ -1301,7 +1321,8 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         install_no_wheel_value_filter(self)
-        self.library = LibraryModel()
+        self._autosave_path = Path.home() / '.symbol_wizard_autosave.json'
+        self.library = self._load_autosave_library()
         self.current_unit_index = 0
         self.draw_tool = DrawTool.SELECT.value
         self.clipboard: list[tuple[str, object]] = []
@@ -1332,6 +1353,27 @@ class MainWindow(QMainWindow):
         if self.library.symbols:
             QTimer.singleShot(0, self.zoom_to_fit_symbol)
 
+
+    def _load_autosave_library(self) -> LibraryModel:
+        try:
+            if getattr(self, '_autosave_path', None) and self._autosave_path.exists():
+                lib = load_library(self._autosave_path)
+                if lib.symbols:
+                    return lib
+        except Exception:
+            pass
+        return LibraryModel()
+
+    def _save_autosave_library(self) -> None:
+        try:
+            if getattr(self, '_autosave_path', None):
+                save_library(self._autosave_path, self.library)
+        except Exception:
+            pass
+
+    def closeEvent(self, event):
+        self._save_autosave_library()
+        event.accept()
 
     def schedule_property_refresh(self):
         """Throttle property-panel updates caused by live canvas edits."""
@@ -1834,7 +1876,7 @@ Use **Format** to select the sheet format. Use **Zoom Fit** to fit the current s
 
 ## 5. Origin Handling
 
-The **Origin** selector defines how the symbol origin is interpreted. Use **Origin Reset** to reset the origin based on the selected anchor. When the body origin changes, attached objects such as pins, plain text, graphics, and body attributes are moved consistently with the body.
+Imported symbols are initially aligned by the selected BODY anchor. Pins and stray texts are not used for initial origin placement. The **Origin** selector defines how the symbol origin is interpreted. Use **Origin Reset** to reset the origin based on the selected anchor. When the body origin changes, attached objects such as pins, plain text, graphics, and body attributes are moved consistently with the body.
 
 This is especially important for templates because template body attributes must stay attached in the same way as pins, text, and graphic objects.
 
@@ -1930,7 +1972,11 @@ Use the transform buttons to rotate selected objects by 15 degrees clockwise or 
 
 Pins, graphics, body, text, and attributes should retain their changed transformation values instead of briefly changing and reverting.
 
-## 15. Template Editor
+## 15. Mentor Pin Attributes
+
+Mentor export writes the visible pin label as the native `L` record and exports Pin Function as a separate `A ... PINFUNCTION=...` attribute when it differs from the pin name. Additional custom/invisible pin attributes stored on the pin model are exported as native `A` records as well. Mentor symbols themselves normally do not contain RGB pin colors; the Wizard colors pins semantically from PINTYPE for editing only.
+
+## 16. Template Editor
 
 Use **Tools > Edit Symbol Templates** to open the template editor. The template editor provides a canvas-based editor for reusable symbol templates. It supports the same core editing concepts as the main Symbol Wizard:
 
@@ -1945,7 +1991,7 @@ Use **Tools > Edit Symbol Templates** to open the template editor. The template 
 - Undo and redo
 - Copy, cut, paste, and select all
 
-If a template has unsaved changes, a save prompt is shown when closing the template editor or switching to another template.
+If the current template has real unsaved changes, a save prompt is shown when closing the template editor or switching to another template. Merely selecting another template does not trigger a prompt when the current template data is unchanged.
 
 ## 16. Keyboard Shortcuts
 
@@ -3733,8 +3779,7 @@ Use **File > Import PINMUX CSV** to import pin information from a CSV file. Afte
         self.update_name_editors()
 
     def change_symbol_from_canvas_tab(self, tab_index: int):
-        if tab_index != self.library.current_symbol_index and not self.confirm_discard_if_dirty():
-            self.canvas_tabs.blockSignals(True); self.canvas_tabs.setCurrentIndex(self.library.current_symbol_index); self.canvas_tabs.blockSignals(False); return
+        # Switching between already-created symbols never discards edits.
         if tab_index < 0 or tab_index >= len(self.library.symbols):
             return
         if tab_index == self.library.current_symbol_index:
@@ -4090,7 +4135,7 @@ Use **File > Import PINMUX CSV** to import pin information from a CSV file. Afte
             QMessageBox.warning(self, 'Delete Split Part', 'The last split part cannot be deleted.')
             return
         name = self.symbol.units[tab_index].name
-        if QMessageBox.question(self, 'Delete Split Part', f'Delete split part "{name}"?') != QMessageBox.Yes:
+        if QMessageBox.question(self, 'Delete Split Part', f'Delete split part \"{name}\"?\n\nAll changes in this split part will be lost.', QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
             return
         self.push_undo_state()
         del self.symbol.units[tab_index]
@@ -4115,7 +4160,7 @@ Use **File > Import PINMUX CSV** to import pin information from a CSV file. Afte
         if len(self.library.symbols) <= 1:
             QMessageBox.warning(self, 'Delete Symbol', 'The last symbol cannot be deleted.')
             return
-        if QMessageBox.question(self, 'Delete Symbol', f'Symbol "{name}" really delete?') != QMessageBox.Yes:
+        if QMessageBox.question(self, 'Delete Symbol', f'Delete symbol \"{name}\"?\n\nAll changes in this symbol will be lost.', QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
             return
         self.push_undo_state()
         del self.library.symbols[si]
@@ -4562,9 +4607,8 @@ Use **File > Import PINMUX CSV** to import pin information from a CSV file. Afte
         except Exception as exc:
             QMessageBox.critical(self, 'Import Mentor Symbol .sym', f'Die Mentor Symboldatei konnte nicht importiert werden:\n{exc}')
             return
-        # Mentor-native symbols keep the real Mentor origin at (0,0); no auto-centering.
-        if getattr(s, 'template_name', '') != 'mentor_native_origin':
-            self.normalize_symbol_origins_for_import(s)
+        # Imported symbols are initially aligned by the BODY anchor, never by pins or other elements.
+        self.normalize_symbol_origins_for_import(s)
         s.name = self.library.unique_import_name(s.name)
         self.library.symbols.append(s)
         self.library.current_symbol_index = len(self.library.symbols) - 1

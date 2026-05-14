@@ -22,6 +22,8 @@ def _pin(d):
     d=_coerce_transform(d)
     d['number_font']=_font(d.get('number_font', {}), .45)
     d['label_font']=_font(d.get('label_font', {}), .55)
+    d.setdefault('attributes', {})
+    d.setdefault('visible_attributes', {})
     return PinModel(**d)
 def _text(d): return TextModel(**_coerce_transform(d))
 def _body(d):

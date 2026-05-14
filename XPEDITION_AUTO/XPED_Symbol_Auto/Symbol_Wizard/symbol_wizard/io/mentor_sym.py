@@ -314,6 +314,12 @@ def _import_native_single(text: str, path: Path) -> SymbolModel:
                     pins_tmp[pid]["number"] = attr[2:]
                 elif attr.upper().startswith("PINTYPE="):
                     pins_tmp[pid]["pin_type"] = _pin_type_to_wizard(attr.split("=", 1)[1])
+                elif '=' in attr:
+                    an, av = attr.split('=', 1)
+                    pins_tmp[pid].setdefault('attributes', {})[an] = av
+                    pins_tmp[pid].setdefault('visible_attributes', {})[an] = parts[6] != '0'
+                    if an.upper() in ('FUNCTION', 'PIN_FUNCTION', 'PINFUNCTION'):
+                        pins_tmp[pid]['function'] = av
         except Exception:
             continue
 
@@ -451,6 +457,16 @@ def _export_native_unit(symbol: SymbolModel, unit: SymbolUnitModel, index: int, 
         lines.append(f"L {lx} {y} 10 0 {lalign} 0 1 0 {pin.name}")
         lines.append(f"A {ax_num} {y} 8 0 {anum_align} 3 #={pin.number}")
         lines.append(f"A {ax_type} {y} 10 0 {atype_align} 0 PINTYPE={_pin_type_to_mentor(pin.pin_type)}")
+        # Export pin function separately from pin name. Mentor treats these as
+        # independent pin attributes; visibility 0 keeps the symbol native-clean.
+        if str(getattr(pin, 'function', '') or '').strip() and str(pin.function) != str(pin.name):
+            lines.append(f"A {ax_type} {y} 10 0 {atype_align} 0 PINFUNCTION={pin.function}")
+        # Preserve additional invisible/custom pin attributes when present.
+        for an, av in sorted((getattr(pin, 'attributes', {}) or {}).items()):
+            if str(an).upper() in ('#', 'PINTYPE', 'PINFUNCTION', 'FUNCTION', 'PIN_FUNCTION'):
+                continue
+            vis = 3 if (getattr(pin, 'visible_attributes', {}) or {}).get(an, False) else 0
+            lines.append(f"A {ax_type} {y} 10 0 {atype_align} {vis} {an}={av}")
 
     lines.append("E")
     return "\n".join(lines) + "\n"
