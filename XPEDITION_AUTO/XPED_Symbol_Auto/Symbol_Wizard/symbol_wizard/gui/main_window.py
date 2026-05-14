@@ -132,15 +132,45 @@ class SplitPinManagerDialog(QDialog):
         layout.addWidget(title)
 
         filter_row = QHBoxLayout()
-        filter_row.addWidget(QLabel('Filter'))
+        filter_row.addWidget(QLabel('Global filter'))
         self.filter_edit = QLineEdit()
-        self.filter_edit.setPlaceholderText('Filter by unit, number, name, function or type')
+        self.filter_edit.setPlaceholderText('Search across unit, number, name, function and type')
         self.filter_edit.textChanged.connect(self.apply_filter)
         filter_row.addWidget(self.filter_edit, 1)
         self.only_marked = QCheckBox('Marked only')
         self.only_marked.stateChanged.connect(self.apply_filter)
         filter_row.addWidget(self.only_marked)
+        self.invert_filter = QCheckBox('Invert filter')
+        self.invert_filter.setToolTip('Show rows that do not match the active text filters.')
+        self.invert_filter.stateChanged.connect(self.apply_filter)
+        filter_row.addWidget(self.invert_filter)
         layout.addLayout(filter_row)
+
+        column_filter_box = QGroupBox('Column filters')
+        column_filter_layout = QGridLayout(column_filter_box)
+        column_filter_layout.setContentsMargins(8, 6, 8, 6)
+        column_filter_layout.setHorizontalSpacing(8)
+        column_filter_layout.setVerticalSpacing(4)
+        self.column_filters = {}
+
+        def add_column_filter(col, label, row, column):
+            lbl = QLabel(label)
+            edit = QLineEdit()
+            edit.setPlaceholderText(label)
+            edit.textChanged.connect(self.apply_filter)
+            self.column_filters[col] = edit
+            column_filter_layout.addWidget(lbl, row, column * 2)
+            column_filter_layout.addWidget(edit, row, column * 2 + 1)
+
+        add_column_filter(self.COL_UNIT, 'Unit', 0, 0)
+        add_column_filter(self.COL_NUMBER, 'Pin #', 0, 1)
+        add_column_filter(self.COL_NAME, 'Pin Name', 0, 2)
+        add_column_filter(self.COL_FUNCTION, 'Function', 1, 0)
+        add_column_filter(self.COL_TYPE, 'Type', 1, 1)
+        clear_filters = QPushButton('Clear filters')
+        clear_filters.clicked.connect(self.clear_filters)
+        column_filter_layout.addWidget(clear_filters, 1, 5)
+        layout.addWidget(column_filter_box)
 
         self.table = QTableWidget(0, 9)
         self.table.setHorizontalHeaderLabels(['Mark', 'Unit', 'Pin Number', 'Pin Name', 'Pin Function', 'Type', 'Show #', 'Show Name', 'Show Function'])
@@ -312,11 +342,35 @@ class SplitPinManagerDialog(QDialog):
     def _visible_rows(self):
         return [r for r in range(self.table.rowCount()) if not self.table.isRowHidden(r)]
 
+    def _cell_text(self, row, col):
+        item = self.table.item(row, col)
+        return item.text().lower() if item else ''
+
+    def clear_filters(self):
+        self.filter_edit.clear()
+        for edit in getattr(self, 'column_filters', {}).values():
+            edit.clear()
+        self.only_marked.setChecked(False)
+        self.invert_filter.setChecked(False)
+        self.apply_filter()
+
     def apply_filter(self):
         text = self.filter_edit.text().strip().lower()
         marked_only = self.only_marked.isChecked()
+        invert = self.invert_filter.isChecked()
+        column_terms = []
+        for col, edit in getattr(self, 'column_filters', {}).items():
+            term = edit.text().strip().lower()
+            if term:
+                column_terms.append((col, term))
         for r in range(self.table.rowCount()):
-            ok = (not text or text in self._row_text(r)) and (not marked_only or self._is_marked(r))
+            text_ok = not text or text in self._row_text(r)
+            column_ok = all(term in self._cell_text(r, col) for col, term in column_terms)
+            marked_ok = not marked_only or self._is_marked(r)
+            filter_ok = text_ok and column_ok
+            if invert and (text or column_terms):
+                filter_ok = not filter_ok
+            ok = filter_ok and marked_ok
             self.table.setRowHidden(r, not ok)
 
     def mark_selected_rows(self):

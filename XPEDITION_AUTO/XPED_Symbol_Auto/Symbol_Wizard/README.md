@@ -172,3 +172,10 @@ Typical workflow:
 7. Double-click a row whenever you want to jump back to that pin on the canvas.
 
 Display visibility and edited Pin Function values are stored in the pin model. Mentor export writes the visible pin label as the native `L` record and writes Pin Function as an invisible pin `A ... PINFUNCTION=...` attribute using the Pin Name label coordinates.
+
+
+### Split Pin Manager: column filters and inverted filters
+
+Open **Tools → Split Pin Manager / Multi-Edit Pins** to review every pin of the current split symbol in one table. The global filter searches across Unit, Pin Number, Pin Name, Pin Function, and Type. The **Column filters** section lets you filter each of these columns independently; all active column filters are combined. Enable **Invert filter** to show rows that do *not* match the current global/column filters. Use **Marked only** to restrict the result to already marked rows.
+
+The same dialog can bulk-edit visibility of Pin Number, Pin Name, and Pin Function, and can bulk-edit Pin Function text for marked, filtered, or all pins.
