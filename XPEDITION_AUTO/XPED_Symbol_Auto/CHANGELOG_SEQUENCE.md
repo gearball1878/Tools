@@ -8,3 +8,7 @@ Imported snapshot from `Symbol_Wizard_2.zip`.
 
 Imported snapshot from `Symbol_Wizard_3.zip`.
 
+## v4
+
+Imported snapshot from `Symbol_Wizard_4.zip`.
+

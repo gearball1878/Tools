@@ -15,6 +15,12 @@ class LineStyle(str, Enum):
     SOLID='solid'; DASH='dash'; DOT='dot'; DASH_DOT='dash_dot'
 
 @dataclass
+class TransformModel:
+    rotation: float=0.0
+    scale_x: float=1.0
+    scale_y: float=1.0
+
+@dataclass
 class StyleModel:
     stroke: Tuple[int,int,int]=(0,0,0)
     fill: Tuple[int,int,int]|None=None
@@ -22,13 +28,13 @@ class StyleModel:
     line_style: str=LineStyle.SOLID.value
 
 @dataclass
-class GraphicModel:
+class GraphicModel(TransformModel):
     shape: str='line'
     x: float=0.0; y: float=0.0; w: float=2.0; h: float=2.0
     style: StyleModel=field(default_factory=StyleModel)
 
 @dataclass
-class PinModel:
+class PinModel(TransformModel):
     number: str='1'; name: str='PIN'; function: str='FUNC'
     pin_type: str=PinType.BIDI.value; side: str=PinSide.LEFT.value
     x: float=0.0; y: float=0.0; length: float=2.0
@@ -37,12 +43,12 @@ class PinModel:
     line_width: float=0.03; line_style: str=LineStyle.SOLID.value
 
 @dataclass
-class TextModel:
+class TextModel(TransformModel):
     text: str='Text'; x: float=0.0; y: float=0.0
     font_family: str='Arial'; font_size_grid: float=0.9; color: Tuple[int,int,int]=(0,0,0)
 
 @dataclass
-class SymbolBodyModel:
+class SymbolBodyModel(TransformModel):
     x: float=0.0; y: float=0.0; width: float=16.0; height: float=24.0
     color: Tuple[int,int,int]=(0,0,0); line_width: float=0.03; line_style: str=LineStyle.SOLID.value
     attributes: Dict[str,str]=field(default_factory=lambda:{'Order Code':'','Package':'','RefDes':'U?','Value':'','Frequency':'','Tolerance':'','Technology':''})
@@ -85,6 +91,10 @@ class LibraryModel:
         return s
 
     def current_symbol(self) -> SymbolModel:
+        if not self.symbols:
+            self.symbols.append(SymbolModel())
+            self.current_symbol_index=0
+        self.current_symbol_index=max(0,min(self.current_symbol_index,len(self.symbols)-1))
         return self.symbols[self.current_symbol_index]
 
 def to_dict(obj):

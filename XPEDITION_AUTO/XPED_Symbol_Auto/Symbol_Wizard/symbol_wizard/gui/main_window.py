@@ -1,7 +1,7 @@
 from __future__ import annotations
 import copy
 from pathlib import Path
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QColor, QKeySequence
 from PySide6.QtWidgets import *
 from symbol_wizard.models.document import *
@@ -14,8 +14,8 @@ from symbol_wizard.io.json_store import save_library, load_library, save_symbol,
 
 class MainWindow(QMainWindow):
     def __init__(self):
-        super().__init__(); self.library=LibraryModel(); self.current_unit_index=0; self.draw_tool=DrawTool.SELECT.value; self.clipboard=None; self.suspend=False
-        self.scene=SymbolScene(self); self.view=SymbolView(self.scene,self); self.setWindowTitle('Symbol Wizard'); self.resize(1500,950)
+        super().__init__(); self.library=LibraryModel(); self.current_unit_index=0; self.draw_tool=DrawTool.SELECT.value; self.clipboard=None; self.suspend=False; self.updating_scene=False
+        self.scene=SymbolScene(self); self.view=SymbolView(self.scene,self); self.refresh_timer=QTimer(self); self.refresh_timer.setSingleShot(True); self.refresh_timer.timeout.connect(self._scheduled_refresh); self._visual_only_refresh=False; self.setWindowTitle('Symbol Wizard'); self.resize(1500,950)
         self._build_ui(); self.rebuild_all()
     @property
     def symbol(self): return self.library.current_symbol()
@@ -32,7 +32,9 @@ class MainWindow(QMainWindow):
         self.unit_tabs=QTabWidget(); self.unit_tabs.currentChanged.connect(self.change_unit)
         self.object_tree=QTreeWidget(); self.object_tree.setHeaderLabels(['Object','Info']); self.object_tree.itemClicked.connect(self.tree_clicked)
         self.pin_table=QTableWidget(0,5); self.pin_table.setHorizontalHeaderLabels(['Unit','Number','Name','Function','Type']); self.pin_table.cellChanged.connect(self.pin_table_changed)
-        left_tabs=QTabWidget(); symtab=QWidget(); lay=QVBoxLayout(symtab); lay.addWidget(QLabel('Symbols')); lay.addWidget(self.symbol_tabs); lay.addWidget(QLabel('Units / Split Symbols')); lay.addWidget(self.unit_tabs); lay.addWidget(QLabel('Symbol object tree')); lay.addWidget(self.object_tree); left_tabs.addTab(symtab,'Symbols')
+        self.split_checkbox=QCheckBox('This symbol is a Split Symbol'); self.split_checkbox.toggled.connect(self.set_split_symbol)
+        self.add_unit_button=QPushButton('Add Unit / Split Part'); self.add_unit_button.clicked.connect(self.add_unit)
+        left_tabs=QTabWidget(); symtab=QWidget(); lay=QVBoxLayout(symtab); lay.addWidget(QLabel('Symbols')); lay.addWidget(self.symbol_tabs); lay.addWidget(self.split_checkbox); lay.addWidget(QLabel('Units / Split Symbols')); lay.addWidget(self.unit_tabs); lay.addWidget(self.add_unit_button); lay.addWidget(QLabel('Symbol object tree')); lay.addWidget(self.object_tree); left_tabs.addTab(symtab,'Symbols')
         left_tabs.addTab(self.pin_table,'Pins')
         split_info=QTextEdit(); split_info.setReadOnly(True); split_info.setPlainText('Split Symbol Ansicht: Jeder Symbol-Reiter kann mehrere Units enthalten. Pins müssen innerhalb des gesamten Symbols eindeutig sein.'); left_tabs.addTab(split_info,'Split Symbols')
         self.props=QWidget(); self.form=QFormLayout(self.props)
@@ -46,7 +48,7 @@ class MainWindow(QMainWindow):
             if sc: a.setShortcut(QKeySequence(sc))
             file.addAction(a)
         edit=mb.addMenu('&Edit')
-        for name,fn,sc in [('Copy',self.copy_selected,'Ctrl+C'),('Paste',self.paste_selected,'Ctrl+V'),('Delete',self.delete_selected,'Del'),('Validate Pins',self.validate_pins,None)]:
+        for name,fn,sc in [('Copy',self.copy_selected,'Ctrl+C'),('Paste',self.paste_selected,'Ctrl+V'),('Delete',self.delete_selected,'Del'),('Validate Pins',self.validate_pins,None),('Add Unit / Split Part',self.add_unit,None)]:
             a=QAction(name,self); a.triggered.connect(fn); 
             if sc: a.setShortcut(QKeySequence(sc))
             edit.addAction(a)
@@ -62,6 +64,10 @@ class MainWindow(QMainWindow):
         tb.addWidget(QLabel(' Width grid:')); self.line_width=QDoubleSpinBox(); self.line_width.setRange(.01,1); self.line_width.setSingleStep(.01); self.line_width.setValue(.03); tb.addWidget(self.line_width)
         self.line_style.currentTextChanged.connect(self.apply_line_defaults); self.line_width.valueChanged.connect(self.apply_line_defaults)
         color=QPushButton('RGB'); color.clicked.connect(self.pick_default_color); tb.addWidget(color); self.default_color=(0,0,0)
+        tb.addSeparator(); rotate_l=QPushButton('⟲ 15°'); rotate_l.clicked.connect(lambda:self.rotate_selected(-15)); tb.addWidget(rotate_l)
+        rotate_r=QPushButton('⟳ 15°'); rotate_r.clicked.connect(lambda:self.rotate_selected(15)); tb.addWidget(rotate_r)
+        bigger=QPushButton('Scale +'); bigger.clicked.connect(lambda:self.scale_selected(1.1)); tb.addWidget(bigger)
+        smaller=QPushButton('Scale -'); smaller.clicked.connect(lambda:self.scale_selected(1/1.1)); tb.addWidget(smaller)
     def set_tool(self,t):
         self.draw_tool=t
         for k,a in self.tool_buttons.items(): a.setChecked(k==t)
@@ -70,7 +76,8 @@ class MainWindow(QMainWindow):
         c=QColorDialog.getColor(QColor(*self.default_color),self)
         if c.isValid(): self.default_color=(c.red(),c.green(),c.blue()); self.apply_line_defaults()
 
-    def rebuild_all(self): self.rebuild_symbol_tabs(); self.rebuild_unit_tabs(); self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table(); self.grid_spin.setValue(self.symbol.grid_inch)
+    def rebuild_all(self):
+        self.rebuild_symbol_tabs(); self.rebuild_unit_tabs(); self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table(); self.grid_spin.setValue(self.symbol.grid_inch); self.split_checkbox.blockSignals(True); self.split_checkbox.setChecked(self.symbol.is_split); self.split_checkbox.blockSignals(False)
     def rebuild_symbol_tabs(self):
         self.symbol_tabs.blockSignals(True); self.symbol_tabs.clear()
         for s in self.library.symbols: self.symbol_tabs.addTab(QWidget(),s.name)
@@ -80,6 +87,8 @@ class MainWindow(QMainWindow):
         for u in self.symbol.units: self.unit_tabs.addTab(QWidget(),u.name)
         self.current_unit_index=min(self.current_unit_index,len(self.symbol.units)-1); self.unit_tabs.setCurrentIndex(self.current_unit_index); self.unit_tabs.blockSignals(False)
     def rebuild_scene(self):
+        self.updating_scene=True
+        self.scene.blockSignals(True)
         self.scene.clear(); u=self.current_unit; self.scene.addItem(BodyItem(u.body,self))
         # visible body attributes rendered as editable text decorations
         self.add_attribute_text_items(u)
@@ -87,15 +96,17 @@ class MainWindow(QMainWindow):
         for p in u.pins: self.scene.addItem(PinItem(p,self))
         for t in u.texts: self.scene.addItem(TextItem(t,self))
         self.scene.update()
+        self.scene.blockSignals(False)
+        self.updating_scene=False
     def add_attribute_text_items(self,u):
         b=u.body; g=self.grid_px; x=b.x*g; y=-b.y*g; w=b.width*g; h=b.height*g
         ref=b.attributes.get('RefDes','')
         if b.visible_attributes.get('RefDes',False) and ref:
-            txt=TextItem(TextModel(ref,b.x,b.y+1, font_size_grid=min(.9,1.0), color=b.color),self); txt.setFlag(QGraphicsItem.ItemIsMovable,False); txt.setData(0,'ATTR_REF_DES'); self.scene.addItem(txt)
+            txt = TextItem(TextModel(text=ref, x=b.x, y=b.y + 1, font_size_grid=min(.9, 1.0), color=b.color), self); txt.setFlag(QGraphicsItem.ItemIsMovable, False); txt.setData(0, 'ATTR_REF_DES'); self.scene.addItem(txt)
         row=1
         for k,v in b.attributes.items():
             if k=='RefDes' or not b.visible_attributes.get(k,False) or not v: continue
-            txt=TextItem(TextModel(f'{k}: {v}', b.x, b.y-b.height-row, font_size_grid=.75, color=b.color),self); txt.setFlag(QGraphicsItem.ItemIsMovable,False); txt.setData(0,'ATTR_BODY'); self.scene.addItem(txt); row+=1
+            txt = TextItem(TextModel(text=f'{k}: {v}', x=b.x, y=b.y - b.height - row, font_size_grid=.75, color=b.color), self); txt.setFlag(QGraphicsItem.ItemIsMovable, False); txt.setData(0, 'ATTR_BODY'); self.scene.addItem(txt); row += 1
     def rebuild_tree(self):
         self.object_tree.clear(); root=QTreeWidgetItem([self.symbol.name,'Symbol']); self.object_tree.addTopLevelItem(root)
         for ui,u in enumerate(self.symbol.units):
@@ -120,6 +131,7 @@ class MainWindow(QMainWindow):
                     it=QTableWidgetItem(val); it.setData(Qt.UserRole,(ui,pi,c)); self.pin_table.setItem(r,c,it)
         self.suspend=False
     def refresh_properties(self):
+        if self.updating_scene: return
         while self.form.rowCount(): self.form.removeRow(0)
         sel=[i for i in self.scene.selectedItems() if i.data(0) not in ('ATTR_BODY','ATTR_REF_DES')]
         if not sel: self.form.addRow(QLabel('No selection')); return
@@ -128,7 +140,8 @@ class MainWindow(QMainWindow):
         elif kind=='PIN': self.pin_props(item)
         elif kind=='TEXT': self.text_props(item)
         elif kind=='GRAPHIC': self.graphic_props(item)
-    def _line(self,val,fn): w=QLineEdit(str(val)); w.textChanged.connect(fn); return w
+    def _line(self,val,fn):
+        w=QLineEdit(str(val)); w.textEdited.connect(fn); return w
     def _dbl(self,val,fn,mi=-999,ma=999,step=.1): w=QDoubleSpinBox(); w.setRange(mi,ma); w.setSingleStep(step); w.setValue(float(val)); w.valueChanged.connect(fn); return w
     def _combo(self,items,val,fn): w=QComboBox(); w.addItems(items); w.setCurrentText(val); w.currentTextChanged.connect(fn); return w
     def body_props(self,item):
@@ -136,6 +149,7 @@ class MainWindow(QMainWindow):
         self.form.addRow('Line style',self._combo([x.value for x in LineStyle],m.line_style,lambda v:self.set_and_refresh(m,'line_style',v))); self.form.addRow('Line width',self._dbl(m.line_width,lambda v:self.set_and_refresh(m,'line_width',v),.01,1,.01))
         for k in list(m.attributes.keys()):
             row=QWidget(); l=QHBoxLayout(row); l.setContentsMargins(0,0,0,0); cb=QCheckBox('visible'); cb.setChecked(m.visible_attributes.get(k,False)); ed=QLineEdit(m.attributes.get(k,'')); cb.toggled.connect(lambda v,key=k:self.set_attr_vis(m,key,v)); ed.textChanged.connect(lambda v,key=k:self.set_attr_val(m,key,v)); l.addWidget(cb); l.addWidget(ed); self.form.addRow(k,row)
+        self.transform_props(m)
         b=QPushButton('Color RGB'); b.clicked.connect(lambda:self.color_model(m)); self.form.addRow('Color',b)
     def pin_props(self,item):
         m=item.model
@@ -145,32 +159,65 @@ class MainWindow(QMainWindow):
         inv=QCheckBox(); inv.setChecked(m.inverted); inv.toggled.connect(lambda v:self.set_pin_attr(m,'inverted',v)); self.form.addRow('Inverted',inv)
         for label,attr in [('Show Number','visible_number'),('Show Name','visible_name'),('Show Function','visible_function')]: cb=QCheckBox(); cb.setChecked(getattr(m,attr)); cb.toggled.connect(lambda v,a=attr:self.set_pin_attr(m,a,v)); self.form.addRow(label,cb)
         self.form.addRow('Line style',self._combo([x.value for x in LineStyle],m.line_style,lambda v:self.set_pin_attr(m,'line_style',v))); self.form.addRow('Line width',self._dbl(m.line_width,lambda v:self.set_pin_attr(m,'line_width',v),.01,1,.01))
+        self.transform_props(m)
         b=QPushButton('Color RGB'); b.clicked.connect(lambda:self.color_model(m)); self.form.addRow('Color',b)
     def text_props(self,item):
-        m=item.model; self.form.addRow('Text',self._line(m.text,lambda v:self.set_text_attr(item,'text',v))); self.form.addRow('Font',self._line(m.font_family,lambda v:self.set_text_attr(item,'font_family',v))); self.form.addRow('Size grid',self._dbl(m.font_size_grid,lambda v:self.set_text_attr(item,'font_size_grid',v),.1,5,.1)); b=QPushButton('Color RGB'); b.clicked.connect(lambda:self.color_model(m)); self.form.addRow('Color',b)
+        m=item.model; self.form.addRow('Text',self._line(m.text,lambda v:self.set_text_attr(item,'text',v))); self.form.addRow('Font',self._line(m.font_family,lambda v:self.set_text_attr(item,'font_family',v))); self.form.addRow('Size grid',self._dbl(m.font_size_grid,lambda v:self.set_text_attr(item,'font_size_grid',v),.1,5,.1)); self.transform_props(m); b=QPushButton('Color RGB'); b.clicked.connect(lambda:self.color_model(m)); self.form.addRow('Color',b)
     def graphic_props(self,item):
-        m=item.model; self.form.addRow('Shape',self._combo(['line','rect','ellipse'],m.shape,lambda v:self.set_and_refresh(m,'shape',v))); self.form.addRow('Width [grid]',self._dbl(m.w,lambda v:self.set_and_refresh(m,'w',v),-100,300)); self.form.addRow('Height [grid]',self._dbl(m.h,lambda v:self.set_and_refresh(m,'h',v),-100,300)); self.form.addRow('Line style',self._combo([x.value for x in LineStyle],m.style.line_style,lambda v:self.set_style(m,'line_style',v))); self.form.addRow('Line width',self._dbl(m.style.line_width,lambda v:self.set_style(m,'line_width',v),.01,1,.01)); b=QPushButton('Stroke RGB'); b.clicked.connect(lambda:self.color_model(m.style,'stroke')); self.form.addRow('Color',b)
-    def set_and_refresh(self,m,a,v): setattr(m,a,v); self.rebuild_scene(); self.rebuild_tree()
-    def set_style(self,m,a,v): setattr(m.style,a,v); self.rebuild_scene(); self.rebuild_tree()
-    def set_body_dim(self,item,a,v): setattr(item.model,a,v); self.rebuild_scene(); self.rebuild_tree()
-    def set_attr_vis(self,m,k,v): m.visible_attributes[k]=v; self.rebuild_scene(); self.rebuild_tree()
-    def set_attr_val(self,m,k,v): m.attributes[k]=v; self.rebuild_scene(); self.rebuild_tree()
+        m=item.model; self.form.addRow('Shape',self._combo(['line','rect','ellipse'],m.shape,lambda v:self.set_and_refresh(m,'shape',v))); self.form.addRow('Width [grid]',self._dbl(m.w,lambda v:self.set_and_refresh(m,'w',v),-100,300)); self.form.addRow('Height [grid]',self._dbl(m.h,lambda v:self.set_and_refresh(m,'h',v),-100,300)); self.form.addRow('Line style',self._combo([x.value for x in LineStyle],m.style.line_style,lambda v:self.set_style(m,'line_style',v))); self.form.addRow('Line width',self._dbl(m.style.line_width,lambda v:self.set_style(m,'line_width',v),.01,1,.01)); self.transform_props(m)
+        b=QPushButton('Stroke RGB'); b.clicked.connect(lambda:self.color_model(m.style,'stroke')); self.form.addRow('Color',b)
+    def transform_props(self,m):
+        if hasattr(m,'rotation'):
+            self.form.addRow('Rotation [deg]', self._dbl(m.rotation, lambda v:self.set_and_refresh(m,'rotation',v), -360, 360, 15))
+        if hasattr(m,'scale_x'):
+            self.form.addRow('Scale X', self._dbl(m.scale_x, lambda v:self.set_and_refresh(m,'scale_x',v), .1, 10, .1))
+            self.form.addRow('Scale Y', self._dbl(m.scale_y, lambda v:self.set_and_refresh(m,'scale_y',v), .1, 10, .1))
+    def set_and_refresh(self,m,a,v): setattr(m,a,v); self.schedule_scene_refresh()
+    def set_style(self,m,a,v): setattr(m.style,a,v); self.schedule_scene_refresh()
+    def set_body_dim(self,item,a,v): setattr(item.model,a,v); self.schedule_scene_refresh()
+    def set_attr_vis(self,m,k,v): m.visible_attributes[k]=v; self.schedule_scene_refresh()
+    def set_attr_val(self,m,k,v): m.attributes[k]=v; self.schedule_scene_refresh()
     def set_pin_attr(self,m,a,v):
         setattr(m,a,v); d=duplicate_pin_numbers(self.symbol)
         if d: self.statusBar().showMessage('Duplicate pin number(s): '+', '.join(d),8000)
-        self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
-    def set_text_attr(self,item,a,v): setattr(item.model,a,v); self.rebuild_scene(); self.rebuild_tree()
+        self.schedule_scene_refresh()
+    def set_text_attr(self,item,a,v): setattr(item.model,a,v); self.schedule_scene_refresh()
     def color_model(self,m,attr='color'):
         c=QColorDialog.getColor(QColor(*getattr(m,attr)),self)
-        if c.isValid(): setattr(m,attr,(c.red(),c.green(),c.blue())); self.rebuild_scene(); self.rebuild_tree()
+        if c.isValid(): setattr(m,attr,(c.red(),c.green(),c.blue())); self.schedule_scene_refresh()
     def live_refresh(self):
         self.rebuild_tree(); self.rebuild_pin_table()
+    def schedule_scene_refresh(self, visual_only=False):
+        self._visual_only_refresh = self._visual_only_refresh or visual_only
+        self.refresh_timer.start(60)
+    def _scheduled_refresh(self):
+        visual_only=self._visual_only_refresh; self._visual_only_refresh=False
+        self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
+    def rotate_selected(self,deg):
+        for it in self.scene.selectedItems():
+            if hasattr(it,'rotate_by'): it.rotate_by(deg)
+        self.schedule_scene_refresh(visual_only=True)
+    def scale_selected(self,factor):
+        for it in self.scene.selectedItems():
+            if hasattr(it,'scale_selected'): it.scale_selected(factor)
+        self.schedule_scene_refresh(visual_only=True)
+    def set_split_symbol(self,v):
+        self.symbol.is_split=bool(v)
+        if self.symbol.is_split and len(self.symbol.units)==1:
+            self.statusBar().showMessage('Split Symbol aktiviert. Füge bei Bedarf weitere Units/Split Parts hinzu.',5000)
+        self.rebuild_tree()
+    def add_unit(self):
+        self.symbol.is_split=True; self.split_checkbox.blockSignals(True); self.split_checkbox.setChecked(True); self.split_checkbox.blockSignals(False)
+        self.symbol.units.append(SymbolUnitModel(name=f'Unit {len(self.symbol.units)+1}'))
+        self.current_unit_index=len(self.symbol.units)-1
+        self.rebuild_unit_tabs(); self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
+
     def apply_line_defaults(self):
         for it in self.scene.selectedItems():
             if it.data(0)=='PIN': it.model.line_style=self.line_style.currentText(); it.model.line_width=self.line_width.value(); it.model.color=self.default_color
             if it.data(0)=='GRAPHIC': it.model.style.line_style=self.line_style.currentText(); it.model.style.line_width=self.line_width.value(); it.model.style.stroke=self.default_color
             if it.data(0)=='BODY': it.model.line_style=self.line_style.currentText(); it.model.line_width=self.line_width.value(); it.model.color=self.default_color
-        self.rebuild_scene(); self.rebuild_tree()
+        self.schedule_scene_refresh()
     def add_pin(self,side,x=None,y=None):
         p=create_auto_pin(self.symbol,self.current_unit,side)
         if x is not None: p.x=x
@@ -224,7 +271,7 @@ class MainWindow(QMainWindow):
         kind,ui,idx=data; self.current_unit_index=ui; self.rebuild_unit_tabs(); self.rebuild_scene()
     def change_symbol(self,i):
         if i<0: return
-        self.library.current_symbol_index=i; self.current_unit_index=0; self.rebuild_unit_tabs(); self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table(); self.grid_spin.setValue(self.symbol.grid_inch)
+        self.library.current_symbol_index=i; self.current_unit_index=0; self.rebuild_unit_tabs(); self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table(); self.grid_spin.setValue(self.symbol.grid_inch); self.split_checkbox.blockSignals(True); self.split_checkbox.setChecked(self.symbol.is_split); self.split_checkbox.blockSignals(False)
     def change_unit(self,i):
         if i<0: return
         self.current_unit_index=i; self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
