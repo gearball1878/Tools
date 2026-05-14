@@ -191,6 +191,16 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
         super().hoverLeaveEvent(event)
 
     def mousePressEvent(self, event):
+        self._undo_state_pushed_for_drag = False
+        if self.isSelected() and event.button() == Qt.LeftButton:
+            # Body move/resize/rotate changes multiple attached objects (pins, texts, graphics,
+            # body attributes).  Save the state before Qt starts moving the item so Ctrl+Z
+            # restores the complete pre-move group state.
+            try:
+                self.window.push_undo_state()
+                self._undo_state_pushed_for_drag = True
+            except Exception:
+                pass
         if self.isSelected():
             if _rotation_handle(self.rect(), self.window.grid_px * self.rotate_handle_factor).contains(event.pos()):
                 self._rotating = True
@@ -208,6 +218,7 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
                     'h': float(self.model.height),
                     'pins': [(p, float(p.x), float(p.y), float(p.length)) for p in self.window.current_unit.pins],
                     'texts': [(t, float(t.x), float(t.y)) for t in self.window.current_unit.texts],
+                    'attributes': [(t, float(t.x), float(t.y)) for t in getattr(self.window.current_unit.body, 'attribute_texts', {}).values()],
                     'graphics': [(gr, float(gr.x), float(gr.y), float(gr.w), float(gr.h)) for gr in self.window.current_unit.graphics],
                 }
                 event.accept()
@@ -296,6 +307,7 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
             'w': float(self.model.width), 'h': float(self.model.height),
             'pins': [(p, float(p.x), float(p.y), float(p.length)) for p in self.window.current_unit.pins],
             'texts': [(t, float(t.x), float(t.y)) for t in self.window.current_unit.texts],
+            'attributes': [(t, float(t.x), float(t.y)) for t in getattr(self.window.current_unit.body, 'attribute_texts', {}).values()],
             'graphics': [(gr, float(gr.x), float(gr.y), float(gr.w), float(gr.h)) for gr in self.window.current_unit.graphics],
         }
         self.model.width = max(1, round(self.model.width * factor))

@@ -825,29 +825,48 @@ class TemplateEditorDialog(QDialog):
         self.refresh_properties()
 
     def add_attribute_text_items(self, u):
-        """Create selectable, transformable text items for body attributes in the template editor.
+        """Create selectable, transformable and persistent text items for body attributes.
 
-        The text content itself is generated from the owning body attributes, so it is
-        locked in the text editor.  Geometry/font/alignment changes are allowed and
-        follow the same interaction rules as in the main Symbol Wizard.
+        Attribute texts are owned by BODY. Their coordinates are stored in
+        body.attribute_texts so they can be moved/aligned manually and still stay
+        attached when BODY is resized or scaled.
         """
         b = u.body
-        row = 1
+
+        def attr_model(key: str, default_text: str, default_x: float, default_y: float, font, default_h='left', default_v='upper'):
+            tm = b.attribute_texts.get(key)
+            if tm is None:
+                tm = TextModel(text=default_text, x=default_x, y=default_y,
+                               font_family=font.family, font_size_grid=font.size_grid, color=font.color)
+                tm.h_align = default_h
+                tm.v_align = default_v
+                b.attribute_texts[key] = tm
+            tm.text = default_text
+            if not getattr(tm, 'font_family', ''):
+                tm.font_family = font.family
+            if not getattr(tm, 'font_size_grid', 0):
+                tm.font_size_grid = font.size_grid
+            if not getattr(tm, 'color', None):
+                tm.color = font.color
+            tm._is_attribute_text = True
+            tm._attribute_key = key
+            return tm
+
         ref = b.attributes.get('RefDes', '')
         if b.visible_attributes.get('RefDes', False):
             label = ref if str(ref).strip() else 'RefDes'
-            tm = TextModel(text=label, x=b.x, y=b.y + 1, font_family=b.refdes_font.family, font_size_grid=b.refdes_font.size_grid, color=b.refdes_font.color)
-            tm._is_attribute_text = True
+            tm = attr_model('RefDes', label, b.x, b.y + 1, b.refdes_font, getattr(b, 'refdes_align', 'left'), 'lower')
             txt = TextItem(tm, self)
             txt.setData(0, 'ATTR_REF_DES')
             self.apply_item_selectability(txt)
             self.scene.addItem(txt)
+
+        row = 1
         for k, v in b.attributes.items():
             if k == 'RefDes' or not b.visible_attributes.get(k, False):
                 continue
             label = f'{k}: {v}' if str(v).strip() else str(k)
-            tm = TextModel(text=label, x=b.x, y=b.y - b.height - row, font_family=b.attribute_font.family, font_size_grid=b.attribute_font.size_grid, color=b.attribute_font.color)
-            tm._is_attribute_text = True
+            tm = attr_model(str(k), label, b.x, b.y - b.height - row, b.attribute_font, getattr(b, 'body_attr_align', 'left'), 'upper')
             txt = TextItem(tm, self)
             txt.setData(0, 'ATTR_BODY')
             self.apply_item_selectability(txt)
@@ -882,6 +901,8 @@ class TemplateEditorDialog(QDialog):
             p.x -= ax; p.y -= ay
         for t in self.unit.texts:
             t.x -= ax; t.y -= ay
+        for t in getattr(self.unit.body, 'attribute_texts', {}).values():
+            t.x -= ax; t.y -= ay
         for g in self.unit.graphics:
             g.x -= ax; g.y -= ay
         if hasattr(self, 'origin_combo'):
@@ -905,7 +926,9 @@ class TemplateEditorDialog(QDialog):
     def select_all_canvas(self):
         self.set_tool(DrawTool.SELECT.value)
         for item in self.scene.items():
-            if item.data(0) in ('BODY','PIN','TEXT','GRAPHIC') and self.selection_enabled.get(item.data(0), True): item.setSelected(True)
+            kind = item.data(0)
+            filter_kind = 'TEXT' if kind in ('ATTR_REF_DES', 'ATTR_BODY') else kind
+            if kind in ('BODY','PIN','TEXT','ATTR_REF_DES','ATTR_BODY','GRAPHIC') and self.selection_enabled.get(filter_kind, True): item.setSelected(True)
         self.refresh_properties()
     def copy_selected(self):
         self.set_tool(DrawTool.SELECT.value)
@@ -954,7 +977,35 @@ class TemplateEditorDialog(QDialog):
         for p in u.pins: p.x = b.x if p.side == PinSide.LEFT.value else b.x + b.width
 
     def scale_current_unit_children_from_body_resize(self, st, body):
-        # Template editor keeps pins docked; detailed proportional scaling is available in the main canvas.
+        """Attach all body-owned/near-body objects to BODY while resizing in the template editor.
+
+        Pins remain docked to the BODY edge. Plain text, graphics and displayed
+        symbol attributes are moved proportionally with the BODY, exactly like in
+        the Symbol Wizard canvas.
+        """
+        old_x = float(st.get('x', body.x)); old_y = float(st.get('y', body.y))
+        old_w = max(float(st.get('w', body.width)), 1e-9)
+        old_h = max(float(st.get('h', body.height)), 1e-9)
+        sx = float(body.width) / old_w
+        sy = float(body.height) / old_h
+        grid = float(getattr(self, 'grid_inch', 1.0) or 1.0)
+        def sg(v):
+            return round(float(v) / grid) * grid
+        for p, px, py, plen in st.get('pins', []):
+            p.x = body.x if p.side == PinSide.LEFT.value else body.x + body.width
+            p.y = sg(body.y + (py - old_y) * sy)
+            p.length = max(grid, sg(plen * max(abs(sx), .1)))
+        for t, tx, ty in st.get('texts', []):
+            t.x = sg(body.x + (tx - old_x) * sx)
+            t.y = sg(body.y + (ty - old_y) * sy)
+        for t, tx, ty in st.get('attributes', []):
+            t.x = sg(body.x + (tx - old_x) * sx)
+            t.y = sg(body.y + (ty - old_y) * sy)
+        for gr, gx, gy, gw, gh in st.get('graphics', []):
+            gr.x = sg(body.x + (gx - old_x) * sx)
+            gr.y = sg(body.y + (gy - old_y) * sy)
+            gr.w = sg(gw * sx)
+            gr.h = sg(gh * sy)
         self.dock_pins_to_body(self.unit)
 
     def update_current_unit_canvas_positions(self):
@@ -1023,6 +1074,8 @@ class TemplateEditorDialog(QDialog):
         for p in self.unit.pins:
             p.x += dx; p.y += dy
         for t in self.unit.texts:
+            t.x += dx; t.y += dy
+        for t in getattr(self.unit.body, 'attribute_texts', {}).values():
             t.x += dx; t.y += dy
         for g in self.unit.graphics:
             g.x += dx; g.y += dy
@@ -2385,6 +2438,7 @@ class MainWindow(QMainWindow):
             'w': float(item.model.width), 'h': float(item.model.height),
             'pins': [(p, float(p.x), float(p.y), float(p.length)) for p in self.current_unit.pins],
             'texts': [(t, float(t.x), float(t.y)) for t in self.current_unit.texts],
+            'attributes': [(t, float(t.x), float(t.y)) for t in getattr(self.current_unit.body, 'attribute_texts', {}).values()],
             'graphics': [(gr, float(gr.x), float(gr.y), float(gr.w), float(gr.h)) for gr in self.current_unit.graphics],
         }
         setattr(item.model, a, float(v))
@@ -2604,8 +2658,9 @@ class MainWindow(QMainWindow):
         sx = float(body.width) / old_w
         sy = float(body.height) / old_h
 
+        grid = float(getattr(getattr(self, 'symbol', None), 'grid_inch', 1.0) or getattr(self, 'grid_inch', 1.0) or 1.0)
         def sg(v):
-            return round(v * 2) / 2
+            return round(float(v) / grid) * grid
 
         for p, px, py, plen in start_state.get('pins', []):
             # Pins stay docked to the selected side; Y follows body height scaling.
@@ -2613,6 +2668,9 @@ class MainWindow(QMainWindow):
             p.y = sg(body.y + (py - old_y) * sy)
             p.length = max(.5, sg(plen * max(abs(sx), .1)))
         for t, tx, ty in start_state.get('texts', []):
+            t.x = sg(body.x + (tx - old_x) * sx)
+            t.y = sg(body.y + (ty - old_y) * sy)
+        for t, tx, ty in start_state.get('attributes', []):
             t.x = sg(body.x + (tx - old_x) * sx)
             t.y = sg(body.y + (ty - old_y) * sy)
         for gr, gx, gy, gw, gh in start_state.get('graphics', []):
@@ -2652,6 +2710,9 @@ class MainWindow(QMainWindow):
         for t in u.texts:
             t.x += dx
             t.y += dy
+        for t in getattr(u.body, 'attribute_texts', {}).values():
+            t.x += dx
+            t.y += dy
         for g in u.graphics:
             g.x += dx
             g.y += dy
@@ -2672,6 +2733,8 @@ class MainWindow(QMainWindow):
                 xs.extend([p.x - p.length, p.x + p.length])
                 ys.append(p.y)
             for t in u.texts:
+                xs.append(t.x); ys.append(t.y)
+            for t in getattr(u.body, 'attribute_texts', {}).values():
                 xs.append(t.x); ys.append(t.y)
             for g in u.graphics:
                 xs.extend([g.x, g.x + g.w]); ys.extend([g.y, g.y - g.h])
@@ -2698,6 +2761,9 @@ class MainWindow(QMainWindow):
                 p.y = u.body.y + (p.y - u.body.y) * scale
                 p.length = max(.5, p.length * scale)
             for t in u.texts:
+                t.x = u.body.x + (t.x - u.body.x) * scale
+                t.y = u.body.y + (t.y - u.body.y) * scale
+            for t in getattr(u.body, 'attribute_texts', {}).values():
                 t.x = u.body.x + (t.x - u.body.x) * scale
                 t.y = u.body.y + (t.y - u.body.y) * scale
             for g in u.graphics:
@@ -3385,6 +3451,10 @@ class MainWindow(QMainWindow):
             for p in unit.pins:
                 p.x -= ax; p.y -= ay
             for t in unit.texts:
+                t.x -= ax; t.y -= ay
+            # Body/TBody attributes are rendered from body.attribute_texts and must
+            # follow Origo Reset exactly like pins, plain text and graphics.
+            for t in getattr(unit.body, 'attribute_texts', {}).values():
                 t.x -= ax; t.y -= ay
             for g in unit.graphics:
                 g.x -= ax; g.y -= ay
