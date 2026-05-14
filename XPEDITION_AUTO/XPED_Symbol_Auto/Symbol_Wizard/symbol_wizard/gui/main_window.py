@@ -318,6 +318,25 @@ class TemplateEditorDialog(QDialog):
         if show_message:
             QMessageBox.information(self, 'Template', f'Template "{name}" saved.')
 
+    
+    def keyPressEvent(self, event):
+        try:
+            if event.modifiers() & Qt.ControlModifier:
+                if event.key() == Qt.Key_V:
+                    self.paste_selected(); return
+                if event.key() == Qt.Key_C:
+                    self.copy_selected(); return
+                if event.key() == Qt.Key_X:
+                    self.cut_selected(); return
+                if event.key() == Qt.Key_A:
+                    self.select_all_canvas(); return
+                if event.key() == Qt.Key_Z:
+                    self.undo(); return
+                if event.key() == Qt.Key_Y:
+                    self.redo(); return
+        except Exception:
+            pass
+        super().keyPressEvent(event)
     def closeEvent(self, event):
         if not self._ask_save_if_dirty():
             event.ignore(); return
@@ -2921,11 +2940,31 @@ class MainWindow(QMainWindow):
 
     def validate_pins(self, silent=False):
         dup = duplicate_pin_numbers(self.symbol)
-        if dup and not silent:
-            QMessageBox.warning(self, 'Pin validation', 'Doppelte Pinnummern im Symbol sind verboten: ' + ', '.join(dup))
-        elif not dup and not silent:
-            QMessageBox.information(self, 'Pin validation', 'Keine doppelten Pinnummern gefunden.')
-        return not dup
+        name_map = {}
+        dup_names = []
+        try:
+            for u in getattr(self.symbol, 'units', []):
+                for p in getattr(u, 'pins', []):
+                    n = str(getattr(p, 'name', '') or '').strip()
+                    if not n:
+                        continue
+                    if n in name_map and n not in dup_names:
+                        dup_names.append(n)
+                    name_map[n] = True
+        except Exception:
+            pass
+
+        msgs = []
+        if dup:
+            msgs.append('Doppelte Pinnummern im Symbol sind verboten: ' + ', '.join(dup))
+        if dup_names:
+            msgs.append('Doppelte Pinnamen im Symbol sind verboten: ' + ', '.join(dup_names))
+
+        if msgs and not silent:
+            QMessageBox.warning(self, 'Pin validation', '\n'.join(msgs))
+        elif not msgs and not silent:
+            QMessageBox.information(self, 'Pin validation', 'Keine doppelten Pinnummern oder Pinnamen gefunden.')
+        return not msgs
 
     def zoom_to_fit_symbol(self):
         items = [i for i in self.scene.items() if i.data(0) not in ('ATTR_REF_DES', 'ATTR_BODY')]
