@@ -90,7 +90,7 @@ class SymbolScene(QGraphicsScene):
     def __init__(self, window):
         super().__init__()
         self.window = window
-        self.setSceneRect(-6000, -6000, 12000, 12000)
+        self.setSceneRect(-30000, -30000, 60000, 60000)
 
     @property
     def grid_px(self):

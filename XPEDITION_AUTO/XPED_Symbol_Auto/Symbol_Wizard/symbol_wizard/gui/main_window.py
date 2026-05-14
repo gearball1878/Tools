@@ -1344,6 +1344,8 @@ class MainWindow(QMainWindow):
 
         self.unit_tabs = QTabWidget()
         self.unit_tabs.currentChanged.connect(self.change_unit)
+        self.unit_tabs.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.unit_tabs.customContextMenuRequested.connect(self.unit_tab_context_menu)
         self.add_unit_button = QPushButton('Add Unit / Split Part')
         self.add_unit_button.clicked.connect(self.add_unit)
 
@@ -1607,15 +1609,13 @@ class MainWindow(QMainWindow):
         # --- Symbol setup -----------------------------------------------
         self.addToolBarBreak()
         setup_tb = make_bar('Symbol Setup')
-        # Symbol names are assigned when the symbol is created and can be changed via Edit/RMT on the symbol tab.
+        # Symbol names and split-part names are changed via the tab context menus.
+        # The former Unit/Part edit field was intentionally removed from the ribbon.
         self.symbol_name_edit = None
-        setup_tb.addWidget(QLabel('Unit/Part:'))
         self.unit_name_edit = QLineEdit()
-        self.unit_name_edit.setMinimumWidth(140)
+        self.unit_name_edit.setVisible(False)
         self.unit_name_edit.editingFinished.connect(self.apply_unit_name_from_edit)
-        setup_tb.addWidget(self.unit_name_edit)
 
-        setup_tb.addSeparator()
         setup_tb.addWidget(QLabel('Grid inch:'))
         self.grid_spin = QDoubleSpinBox()
         self.grid_spin.setRange(.05, .5)
@@ -3814,6 +3814,53 @@ Use **File > Import PINMUX CSV** to import pin information from a CSV file. Afte
         self.set_format_guide_to_active_origin()
         self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
         self.statusBar().showMessage(f'Origin auf {mode} nachgezogen.', 3000)
+
+    def unit_tab_context_menu(self, pos):
+        # Context menu for split-part tabs in the Units / Split Parts row.
+        if self.symbol.kind != SymbolKind.SPLIT.value:
+            return
+        tab = self.unit_tabs.tabBar().tabAt(pos)
+        if tab < 0 or tab >= len(self.symbol.units):
+            return
+        menu = QMenu(self.unit_tabs)
+        menu.addAction('Rename Split Part', lambda t=tab: self.rename_split_part_from_tab(t))
+        menu.addAction('Delete Split Part', lambda t=tab: self.delete_split_part_from_tab(t))
+        menu.exec(self.unit_tabs.mapToGlobal(pos))
+
+    def rename_split_part_from_tab(self, tab_index: int):
+        if self.symbol.kind != SymbolKind.SPLIT.value:
+            return
+        if tab_index < 0 or tab_index >= len(self.symbol.units):
+            return
+        old = self.symbol.units[tab_index].name
+        name, ok = QInputDialog.getText(self, 'Rename Split Part', 'New split-part name:', text=old)
+        name = name.strip() if ok else ''
+        if not name or name == old:
+            return
+        existing = {u.name for i, u in enumerate(self.symbol.units) if i != tab_index}
+        if name in existing:
+            QMessageBox.warning(self, 'Rename Split Part', f'A split part named "{name}" already exists.')
+            return
+        self.push_undo_state()
+        self.symbol.units[tab_index].name = name
+        self.current_unit_index = tab_index
+        self.rebuild_unit_tabs(); self.rebuild_canvas_tabs(); self.rebuild_tree(); self.rebuild_pin_table(); self.update_name_editors()
+
+    def delete_split_part_from_tab(self, tab_index: int):
+        if self.symbol.kind != SymbolKind.SPLIT.value:
+            return
+        if tab_index < 0 or tab_index >= len(self.symbol.units):
+            return
+        if len(self.symbol.units) <= 1:
+            QMessageBox.warning(self, 'Delete Split Part', 'The last split part cannot be deleted.')
+            return
+        name = self.symbol.units[tab_index].name
+        if QMessageBox.question(self, 'Delete Split Part', f'Delete split part "{name}"?') != QMessageBox.Yes:
+            return
+        self.push_undo_state()
+        del self.symbol.units[tab_index]
+        self.current_unit_index = max(0, min(tab_index, len(self.symbol.units) - 1))
+        self.rebuild_canvas_tabs(); self.rebuild_unit_tabs(); self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table(); self.update_name_editors()
 
     def symbol_tab_context_menu(self, kind: str, tabs: QTabWidget, pos):
         tab = tabs.tabBar().tabAt(pos)
