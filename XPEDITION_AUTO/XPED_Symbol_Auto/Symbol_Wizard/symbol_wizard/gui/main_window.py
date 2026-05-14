@@ -711,11 +711,11 @@ class MainWindow(QMainWindow):
         inv = QCheckBox(); inv.setChecked(m.inverted); inv.toggled.connect(lambda v: self.set_pin_attr(m, 'inverted', v)); self.form.addRow('Inverted', inv)
         for label, attr in [('Show Number', 'visible_number'), ('Show Name', 'visible_name'), ('Show Function', 'visible_function')]:
             cb = QCheckBox(); cb.setChecked(getattr(m, attr)); cb.toggled.connect(lambda v, a=attr: self.set_pin_attr(m, a, v)); self.form.addRow(label, cb)
+        self.form.addRow('Length [grid]', self._dbl(m.length, lambda v: self.set_pin_length(m, v), 1, 100, 1))
         self.form.addRow('Line style', self._combo([x.value for x in LineStyle], m.line_style, lambda v: self.set_pin_attr(m, 'line_style', v)))
         self.form.addRow('Line width', self._dbl(m.line_width, lambda v: self.set_pin_attr(m, 'line_width', v), .01, 1, .01))
         self.font_props('Pin number font', m.number_font)
         self.font_props('Pin label font', m.label_font)
-        self.transform_props(m)
         b = QPushButton('Color RGB'); b.clicked.connect(lambda: self.color_model(m)); self.form.addRow('Color', b)
 
     def text_props(self, item):
@@ -804,6 +804,15 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage('Duplicate pin number(s): ' + ', '.join(dup), 8000)
         self.schedule_scene_refresh()
 
+    def set_pin_length(self, m, v):
+        # Pin length is always an integer grid multiple.
+        m.length = max(1.0, round(float(v)))
+        # Remove any rotation/scale from older project files or pasted data.
+        m.rotation = 0.0
+        m.scale_x = 1.0
+        m.scale_y = 1.0
+        self.schedule_scene_refresh()
+
     def set_text_attr(self, item, a, v):
         setattr(item.model, a, v)
         if a == 'text':
@@ -833,6 +842,11 @@ class MainWindow(QMainWindow):
                 item.setRect(0, 0, model.width * g, model.height * g)
                 item.setPen(item.pen().__class__(QColor(*model.color), max(1, model.line_width * g)))
             elif kind == 'PIN':
+                model.rotation = 0.0
+                model.scale_x = 1.0
+                model.scale_y = 1.0
+                item.setRotation(0.0)
+                item.setTransform(item.transform().__class__())
                 item.setPos(model.x * g, -model.y * g)
             elif kind == 'TEXT':
                 item.setPos(model.x * g, -model.y * g)

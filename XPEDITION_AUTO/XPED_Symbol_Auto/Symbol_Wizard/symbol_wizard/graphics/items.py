@@ -253,7 +253,12 @@ class PinItem(TransformMixin, QGraphicsItem):
         self.setPos(model.x * g, -model.y * g)
         self.common_flags()
         self.setData(0, 'PIN')
-        self.apply_transform_from_model()
+        # Pins are controlled only by their side (left/right) and length.
+        # Rotation is intentionally disabled for EDA symbols.
+        self.model.rotation = 0.0
+        self.model.scale_x = 1.0
+        self.model.scale_y = 1.0
+        self.setRotation(0.0)
 
     def boundingRect(self):
         g = self.window.grid_px
@@ -299,11 +304,12 @@ class PinItem(TransformMixin, QGraphicsItem):
         self.model.y = -self.pos().y() / g
 
     def rotate_by(self, deg):
-        # EDA pins are constrained to horizontal orientation only. Rotation toggles
-        # between 0° and 180°; arbitrary angles are intentionally blocked.
-        cur = 180.0 if float(getattr(self.model, 'rotation', 0.0) or 0.0) >= 90.0 else 0.0
-        self.model.rotation = 0.0 if cur == 180.0 else 180.0
-        self.setRotation(self.model.rotation)
+        # Pin rotation is disabled. Use the Side property (left/right) instead.
+        self.model.rotation = 0.0
+        self.model.scale_x = 1.0
+        self.model.scale_y = 1.0
+        self.setRotation(0.0)
+        self.setTransform(QTransform())
         self.update()
 
     def scale_selected(self, factor):

@@ -41,6 +41,12 @@ class SymbolView(QGraphicsView):
         bar.setValue(bar.value() - delta)
         event.accept()
 
+
+    def contextMenuEvent(self, event):
+        # Suppress default context menu and return to Select/Edit mode.
+        self.window.set_tool(DrawTool.SELECT.value)
+        event.accept()
+
     def keyPressEvent(self, event):
         focus_item = self.scene().focusItem()
         if focus_item is not None and hasattr(focus_item, 'textInteractionFlags') and focus_item.textInteractionFlags() != Qt.NoTextInteraction:
@@ -79,6 +85,13 @@ class SymbolView(QGraphicsView):
         super().keyPressEvent(event)
 
     def mousePressEvent(self, event):
+        # Right mouse button always returns the canvas to Select/Edit mode.
+        # This works from every draw tool and avoids getting stuck in insert mode.
+        if event.button() == Qt.RightButton:
+            self.window.set_tool(DrawTool.SELECT.value)
+            event.accept()
+            return
+
         tool = self.window.draw_tool
         if event.button() == Qt.LeftButton and tool != DrawTool.SELECT.value:
             p = self.mapToScene(event.position().toPoint())
