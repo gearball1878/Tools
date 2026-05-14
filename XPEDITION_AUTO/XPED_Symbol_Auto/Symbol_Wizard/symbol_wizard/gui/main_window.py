@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from dataclasses import asdict
 from PySide6.QtCore import Qt, QTimer, QRectF
-from PySide6.QtGui import QAction, QColor, QKeySequence
+from PySide6.QtGui import QAction, QColor, QKeySequence, QFontDatabase
 from PySide6.QtWidgets import *
 
 from symbol_wizard.models.document import *
@@ -75,6 +75,7 @@ class TemplateEditorDialog(QDialog):
         self.scene = SymbolScene(self)
         self.view = SymbolView(self.scene, self)
         self.clipboard = []
+        self.clipboard_is_cut = False
         self.undo_stack = []
         self.redo_stack = []
         self.max_history = 10
@@ -96,6 +97,29 @@ class TemplateEditorDialog(QDialog):
     def scene_to_grid_x(self, x): return round(x / self.grid_px)
     def scene_to_grid_y(self, y): return round(-y / self.grid_px)
 
+    def _font_families(self):
+        try:
+            return QFontDatabase.families()
+        except Exception:
+            return ['Arial', 'Calibri', 'Times New Roman', 'Courier New']
+
+    def _font_combo(self, value, fn):
+        w = QComboBox(); w.addItems(self._font_families()); w.setEditable(True); w.setCurrentText(str(value)); w.currentTextChanged.connect(fn); return w
+
+    def _unique_pin_name(self, base='PIN'):
+        existing = {str(p.name) for p in self.unit.pins}
+        root = str(base or 'PIN').strip() or 'PIN'
+        if root not in existing:
+            return root
+        i = 2
+        while f'{root}_{i}' in existing:
+            i += 1
+        return f'{root}_{i}'
+
+    def _unique_pin_number(self):
+        existing = [str(p.number) for p in self.unit.pins]
+        return next_pin_number(existing)
+
     def _build_ui(self):
         layout = QVBoxLayout(self)
         top = QHBoxLayout()
@@ -115,9 +139,15 @@ class TemplateEditorDialog(QDialog):
         for label, fn in [('Alles markieren', self.select_all_canvas), ('Undo', self.undo), ('Redo', self.redo)]:
             b = QPushButton(label); b.clicked.connect(fn); tools.addWidget(b)
         tools.addWidget(QLabel('Markierbar:'))
+        self.selection_mode_combo = QComboBox()
+        self.selection_mode_combo.addItems(['ALL', 'BODY', 'PIN', 'TEXT', 'GRAPHIC', 'Custom'])
+        self.selection_mode_combo.currentTextChanged.connect(self.set_selection_mode)
+        tools.addWidget(self.selection_mode_combo)
+        self.selection_custom_checks = {}
         for kind in ('BODY', 'PIN', 'TEXT', 'GRAPHIC'):
-            cb = QCheckBox(kind); cb.setChecked(True)
+            cb = QCheckBox(kind); cb.setChecked(True); cb.setVisible(False)
             cb.toggled.connect(lambda checked, k=kind: self.set_selection_enabled(k, checked))
+            self.selection_custom_checks[kind] = cb
             tools.addWidget(cb)
         tools.addStretch(); layout.addLayout(tools)
         splitter = QSplitter()
@@ -185,8 +215,25 @@ class TemplateEditorDialog(QDialog):
         self.scene.blockSignals(False); self.scene.update(); self.refresh_properties()
 
     def refresh_properties(self):
+        if not hasattr(self, 'form') or self.form is None:
+            return
         while self.form.rowCount(): self.form.removeRow(0)
         sel = self.scene.selectedItems()
+        if len(sel) > 1:
+            self.form.addRow(QLabel(f'{len(sel)} Objekte ausgewählt'))
+            pins = [i for i in sel if i.data(0) == 'PIN']
+            if len(pins) == len(sel):
+                self.form.addRow(QLabel(f'<b>Multi-Edit: {len(pins)} PINs</b>'))
+                fn = QLineEdit('')
+                fn.setPlaceholderText('Pin Function für alle ausgewählten Pins setzen')
+                fn.returnPressed.connect(lambda editor=fn, items=pins: self._set_selected_pins_attr(items, 'function', editor.text()))
+                self.form.addRow('Pin Function', fn)
+                for label, attr in [('Show Number', 'visible_number'), ('Show Name', 'visible_name'), ('Show Function', 'visible_function')]:
+                    cb = self._multi_pin_visibility_checkbox(pins, attr)
+                    self.form.addRow(label, cb)
+            else:
+                self.form.addRow(QLabel('Multi-Edit ist nur möglich, wenn ausschließlich PINs ausgewählt sind.'))
+            return
         if not sel:
             self.form.addRow(QLabel('Keine Auswahl. Template-Canvas ist unabhängig vom Symbol Wizard.'))
             self.form.addRow(QLabel('<b>Attribut-Visibility des Templates</b>'))
@@ -215,9 +262,15 @@ class TemplateEditorDialog(QDialog):
             self.form.addRow('Pin Type', self._combo([x.value for x in PinType], m.pin_type, lambda v: self._set(m, 'pin_type', v)))
             self.form.addRow('Side', self._combo([x.value for x in PinSide], m.side, lambda v: self._set_pin_side(m, v)))
             inv=QCheckBox(); inv.setChecked(m.inverted); inv.toggled.connect(lambda v: self._set(m, 'inverted', v)); self.form.addRow('Inverted', inv)
+            self.form.addRow(QLabel('<b>PIN-Attribute</b>'))
+            for label, attr in [('Show Number', 'visible_number'), ('Show Name', 'visible_name'), ('Show Function', 'visible_function')]:
+                cb = QCheckBox(); cb.setChecked(getattr(m, attr)); cb.toggled.connect(lambda v, a=attr: self._set(m, a, v)); self.form.addRow(label, cb)
             self.form.addRow('Length', self._dbl(m.length, lambda v: self._set(m, 'length', v), 0.5, 100))
+            self.form.addRow('Number font', self._font_combo(m.number_font.family, lambda v: self._set(m.number_font, 'family', v)))
+            self.form.addRow('Label font', self._font_combo(m.label_font.family, lambda v: self._set(m.label_font, 'family', v)))
         elif kind == 'TEXT':
             self.form.addRow('Text', self._line(m.text, lambda v: self._set(m, 'text', v)))
+            self.form.addRow('Font', self._font_combo(m.font_family, lambda v: self._set(m, 'font_family', v)))
             self.form.addRow('Size', self._dbl(m.font_size_grid, lambda v: self._set(m, 'font_size_grid', v), .1, 10))
         elif kind == 'GRAPHIC':
             self.form.addRow('Shape', self._combo(['line','rect','ellipse'], m.shape, lambda v: self._set(m, 'shape', v)))
@@ -232,10 +285,44 @@ class TemplateEditorDialog(QDialog):
         w=QDoubleSpinBox(); w.setRange(lo, hi); w.setDecimals(3); w.setSingleStep(step); w.setValue(float(value)); w.valueChanged.connect(fn); return w
     def _combo(self, items, val, fn):
         w=QComboBox(); w.addItems(items); w.setCurrentText(str(val)); w.currentTextChanged.connect(fn); return w
+    def _multi_pin_visibility_checkbox(self, pin_items, attr):
+        pins = [getattr(i, 'model', None) for i in pin_items if getattr(i, 'model', None) is not None and i.data(0) == 'PIN']
+        values = [bool(getattr(p, attr, False)) for p in pins]
+        cb = QCheckBox()
+        cb.setTristate(True)
+        if values and all(values):
+            cb.setCheckState(Qt.Checked)
+        elif values and not any(values):
+            cb.setCheckState(Qt.Unchecked)
+        else:
+            cb.setCheckState(Qt.PartiallyChecked)
+        cb.stateChanged.connect(lambda state, a=attr, items=pin_items: self._apply_multi_pin_visibility_state(items, a, state))
+        return cb
     def _set(self, m, a, v):
         self.push_undo_state(); self._selection_restore_ids={id(m)}; setattr(m, a, v); self.rebuild_scene()
     def _set_pin_side(self, m, v):
         self.push_undo_state(); self._selection_restore_ids={id(m)}; m.side=v; self.dock_pins_to_body(self.unit); self.rebuild_scene()
+    def _apply_multi_pin_visibility_choice(self, pin_items, attr, index):
+        # 0 = unchanged, 1 = hidden/False, 2 = visible/True
+        if int(index) == 0:
+            return
+        self._set_selected_pins_attr(pin_items, attr, int(index) == 2)
+
+    def _apply_multi_pin_visibility_state(self, pin_items, attr, state):
+        # Backward-compatible handler for older tristate widgets. PySide may pass
+        # either an int or a Qt.CheckState enum, so compare defensively.
+        value = getattr(state, 'value', state)
+        if value == getattr(Qt.CheckState.PartiallyChecked, 'value', 1) or value == 1:
+            return
+        self._set_selected_pins_attr(pin_items, attr, value == getattr(Qt.CheckState.Checked, 'value', 2) or value == 2)
+
+    def _set_selected_pins_attr(self, pin_items, attr, value):
+        pins = [getattr(i, 'model', None) for i in pin_items if getattr(i, 'model', None) is not None and i.data(0) == 'PIN']
+        if not pins or len(pins) != len(pin_items): return
+        if attr not in ('function', 'visible_number', 'visible_name', 'visible_function'): return
+        self.push_undo_state(); self._selection_restore_ids={id(p) for p in pins}
+        for p in pins: setattr(p, attr, value)
+        self.rebuild_scene()
     def _set_attr_vis(self, key, val): self._selection_restore_ids=self._capture_selection_ids(); self.unit.body.visible_attributes.__setitem__(key, val); self.rebuild_scene()
     def _set_attr_val(self, key, val): self._selection_restore_ids=self._capture_selection_ids(); self.unit.body.attributes.__setitem__(key, val); self.rebuild_scene()
 
@@ -253,16 +340,64 @@ class TemplateEditorDialog(QDialog):
         selectable = self.selection_enabled.get(kind, True)
         item.setFlag(QGraphicsItem.ItemIsSelectable, selectable)
         item.setFlag(QGraphicsItem.ItemIsMovable, selectable and kind not in ('ATTR_REF_DES', 'ATTR_BODY'))
+        # Disabled object classes must not intercept mouse clicks. This makes
+        # Custom selection behave like the Template Canvas also in the Wizard.
+        try:
+            item.setAcceptedMouseButtons(Qt.AllButtons if selectable else Qt.NoButton)
+        except Exception:
+            pass
         if not selectable:
             item.setSelected(False)
         z = {'BODY': 0, 'GRAPHIC': 1, 'TEXT': 2, 'PIN': 3}.get(kind, -1)
         item.setZValue(z)
 
+    def _apply_selection_filter_to_scene(self):
+        """Apply the current object-type selection filter to all canvas items.
+
+        This is used by both preset modes and Custom mode. It also forcibly
+        deselects objects that are no longer selectable, which prevents stale
+        selections after switching filters or after a rubber-band selection.
+        """
+        for item in self.scene.items():
+            if item.data(0) in self.selection_enabled:
+                self.apply_item_selectability(item)
+                if not self.selection_enabled.get(item.data(0), True):
+                    item.setSelected(False)
+
+    def set_selection_mode(self, mode):
+        custom = (mode == 'Custom')
+        if hasattr(self, 'selection_custom_checks'):
+            for cb in self.selection_custom_checks.values():
+                cb.setVisible(custom)
+        if mode == 'Custom':
+            # In Custom mode, the checkboxes are authoritative.  Do not leave
+            # the scene in the previous preset state; re-apply the currently
+            # checked custom flags immediately.
+            if hasattr(self, 'selection_custom_checks'):
+                for kind, cb in self.selection_custom_checks.items():
+                    self.selection_enabled[kind] = cb.isChecked()
+            self._apply_selection_filter_to_scene()
+            self.refresh_properties()
+            return
+        for kind in ('BODY', 'PIN', 'TEXT', 'GRAPHIC'):
+            self.selection_enabled[kind] = (mode == 'ALL' or mode == kind)
+            if hasattr(self, 'selection_custom_checks'):
+                self.selection_custom_checks[kind].blockSignals(True)
+                self.selection_custom_checks[kind].setChecked(self.selection_enabled[kind])
+                self.selection_custom_checks[kind].blockSignals(False)
+        self._apply_selection_filter_to_scene()
+        self.refresh_properties()
+
     def set_selection_enabled(self, kind, checked):
         self.selection_enabled[kind] = bool(checked)
-        for item in self.scene.items():
-            if item.data(0) == kind:
-                self.apply_item_selectability(item)
+        if hasattr(self, 'selection_mode_combo') and self.selection_mode_combo.currentText() != 'Custom':
+            self.selection_mode_combo.blockSignals(True)
+            self.selection_mode_combo.setCurrentText('Custom')
+            self.selection_mode_combo.blockSignals(False)
+            if hasattr(self, 'selection_custom_checks'):
+                for cb in self.selection_custom_checks.values():
+                    cb.setVisible(True)
+        self._apply_selection_filter_to_scene()
         self.refresh_properties()
 
     def add_attribute_text_items(self, u):
@@ -286,7 +421,7 @@ class TemplateEditorDialog(QDialog):
             row += 1
 
     def add_pin(self, side, x=None, y=None):
-        self.push_undo_state(); p=PinModel(number=str(len(self.unit.pins)+1), side=side, name='PIN', function='')
+        self.push_undo_state(); p=PinModel(number=self._unique_pin_number(), side=side, name=self._unique_pin_name('PIN'), function='')
         p.x = x if x is not None else (self.unit.body.x if side == PinSide.LEFT.value else self.unit.body.x + self.unit.body.width)
         p.y = y if y is not None else self.unit.body.y - 1 - len(self.unit.pins)
         self.unit.pins.append(p); self.dock_pins_to_body(self.unit); self.rebuild_scene()
@@ -303,22 +438,30 @@ class TemplateEditorDialog(QDialog):
         self.refresh_properties()
     def copy_selected(self):
         self.set_tool(DrawTool.SELECT.value)
+        self.clipboard_is_cut = False
         self.clipboard=[(i.data(0), copy.deepcopy(i.model)) for i in self.scene.selectedItems() if i.data(0) in ('BODY','PIN','TEXT','GRAPHIC')]
     def cut_selected(self):
         self.set_tool(DrawTool.SELECT.value)
-        self.copy_selected()
+        self.clipboard=[(i.data(0), copy.deepcopy(i.model)) for i in self.scene.selectedItems() if i.data(0) in ('BODY','PIN','TEXT','GRAPHIC')]
+        self.clipboard_is_cut = True
         self.delete_selected()
 
     def paste_selected(self):
         self.set_tool(DrawTool.SELECT.value)
         self.push_undo_state()
-        for kind, m in self.clipboard:
+        for kind, src in self.clipboard:
+            m = copy.deepcopy(src)
             if hasattr(m,'x'): m.x += 1
             if hasattr(m,'y'): m.y -= 1
-            if kind=='PIN': self.unit.pins.append(m)
+            if kind=='PIN':
+                if not getattr(self, 'clipboard_is_cut', False):
+                    m.number = self._unique_pin_number()
+                    m.name = self._unique_pin_name(getattr(m, 'name', 'PIN'))
+                self.unit.pins.append(m)
             elif kind=='TEXT': self.unit.texts.append(m)
             elif kind=='GRAPHIC': self.unit.graphics.append(m)
             elif kind=='BODY': self.unit.body=m
+        self.clipboard_is_cut = False
         self.rebuild_scene()
     def delete_selected(self):
         self.set_tool(DrawTool.SELECT.value)
@@ -345,17 +488,16 @@ class TemplateEditorDialog(QDialog):
         selectable = self.selection_enabled.get(kind, True)
         item.setFlag(QGraphicsItem.ItemIsSelectable, selectable)
         item.setFlag(QGraphicsItem.ItemIsMovable, selectable and kind not in ('ATTR_REF_DES', 'ATTR_BODY'))
+        # Disabled object classes must not intercept mouse clicks. This makes
+        # Custom selection behave like the Template Canvas also in the Wizard.
+        try:
+            item.setAcceptedMouseButtons(Qt.AllButtons if selectable else Qt.NoButton)
+        except Exception:
+            pass
         if not selectable:
             item.setSelected(False)
         z = {'BODY': 0, 'GRAPHIC': 1, 'TEXT': 2, 'PIN': 3}.get(kind, -1)
         item.setZValue(z)
-
-    def set_selection_enabled(self, kind, checked):
-        self.selection_enabled[kind] = bool(checked)
-        for item in self.scene.items():
-            if item.data(0) == kind:
-                self.apply_item_selectability(item)
-        self.refresh_properties()
 
     def rebuild_tree(self): pass
     def rebuild_pin_table(self): pass
@@ -368,6 +510,7 @@ class MainWindow(QMainWindow):
         self.current_unit_index = 0
         self.draw_tool = DrawTool.SELECT.value
         self.clipboard: list[tuple[str, object]] = []
+        self.clipboard_is_cut = False
         self.undo_stack: list[LibraryModel] = []
         self.redo_stack: list[LibraryModel] = []
         self.max_history = 10
@@ -412,6 +555,26 @@ class MainWindow(QMainWindow):
 
     def scene_to_grid_y(self, y):
         return round(-y / self.grid_px)
+
+    def _font_families(self):
+        try:
+            return QFontDatabase.families()
+        except Exception:
+            return ['Arial', 'Calibri', 'Times New Roman', 'Courier New']
+
+    def _font_combo(self, value, fn):
+        w = QComboBox(); w.addItems(self._font_families()); w.setEditable(True); w.setCurrentText(str(value)); w.currentTextChanged.connect(fn); return w
+
+    def _unique_pin_name(self, base='PIN', unit=None):
+        unit = unit or self.current_unit
+        existing = {str(p.name) for p in unit.pins}
+        root = str(base or 'PIN').strip() or 'PIN'
+        if root not in existing:
+            return root
+        i = 2
+        while f'{root}_{i}' in existing:
+            i += 1
+        return f'{root}_{i}'
 
     # ------------------------------------------------------------------ UI
     def _build_ui(self):
@@ -655,9 +818,15 @@ class MainWindow(QMainWindow):
         self.tool_buttons[self.draw_tool].setChecked(True)
         draw_tb.addSeparator()
         draw_tb.addWidget(QLabel('Markierbar:'))
+        self.selection_mode_combo = QComboBox()
+        self.selection_mode_combo.addItems(['ALL', 'BODY', 'PIN', 'TEXT', 'GRAPHIC', 'Custom'])
+        self.selection_mode_combo.currentTextChanged.connect(self.set_selection_mode)
+        draw_tb.addWidget(self.selection_mode_combo)
+        self.selection_custom_checks = {}
         for kind in ('BODY', 'PIN', 'TEXT', 'GRAPHIC'):
-            cb = QCheckBox(kind); cb.setChecked(True)
+            cb = QCheckBox(kind); cb.setChecked(True); cb.setVisible(False)
             cb.toggled.connect(lambda checked, k=kind: self.set_selection_enabled(k, checked))
+            self.selection_custom_checks[kind] = cb
             draw_tb.addWidget(cb)
 
         # --- Symbol setup -----------------------------------------------
@@ -953,16 +1122,64 @@ class MainWindow(QMainWindow):
         selectable = self.selection_enabled.get(kind, True)
         item.setFlag(QGraphicsItem.ItemIsSelectable, selectable)
         item.setFlag(QGraphicsItem.ItemIsMovable, selectable and kind not in ('ATTR_REF_DES', 'ATTR_BODY'))
+        # Disabled object classes must not intercept mouse clicks. This makes
+        # Custom selection behave like the Template Canvas also in the Wizard.
+        try:
+            item.setAcceptedMouseButtons(Qt.AllButtons if selectable else Qt.NoButton)
+        except Exception:
+            pass
         if not selectable:
             item.setSelected(False)
         z = {'BODY': 0, 'GRAPHIC': 1, 'TEXT': 2, 'PIN': 3}.get(kind, -1)
         item.setZValue(z)
 
+    def _apply_selection_filter_to_scene(self):
+        """Apply the current object-type selection filter to all canvas items.
+
+        This is used by both preset modes and Custom mode. It also forcibly
+        deselects objects that are no longer selectable, which prevents stale
+        selections after switching filters or after a rubber-band selection.
+        """
+        for item in self.scene.items():
+            if item.data(0) in self.selection_enabled:
+                self.apply_item_selectability(item)
+                if not self.selection_enabled.get(item.data(0), True):
+                    item.setSelected(False)
+
+    def set_selection_mode(self, mode):
+        custom = (mode == 'Custom')
+        if hasattr(self, 'selection_custom_checks'):
+            for cb in self.selection_custom_checks.values():
+                cb.setVisible(custom)
+        if mode == 'Custom':
+            # In Custom mode, the checkboxes are authoritative.  Do not leave
+            # the scene in the previous preset state; re-apply the currently
+            # checked custom flags immediately.
+            if hasattr(self, 'selection_custom_checks'):
+                for kind, cb in self.selection_custom_checks.items():
+                    self.selection_enabled[kind] = cb.isChecked()
+            self._apply_selection_filter_to_scene()
+            self.refresh_properties()
+            return
+        for kind in ('BODY', 'PIN', 'TEXT', 'GRAPHIC'):
+            self.selection_enabled[kind] = (mode == 'ALL' or mode == kind)
+            if hasattr(self, 'selection_custom_checks'):
+                self.selection_custom_checks[kind].blockSignals(True)
+                self.selection_custom_checks[kind].setChecked(self.selection_enabled[kind])
+                self.selection_custom_checks[kind].blockSignals(False)
+        self._apply_selection_filter_to_scene()
+        self.refresh_properties()
+
     def set_selection_enabled(self, kind, checked):
         self.selection_enabled[kind] = bool(checked)
-        for item in self.scene.items():
-            if item.data(0) == kind:
-                self.apply_item_selectability(item)
+        if hasattr(self, 'selection_mode_combo') and self.selection_mode_combo.currentText() != 'Custom':
+            self.selection_mode_combo.blockSignals(True)
+            self.selection_mode_combo.setCurrentText('Custom')
+            self.selection_mode_combo.blockSignals(False)
+            if hasattr(self, 'selection_custom_checks'):
+                for cb in self.selection_custom_checks.values():
+                    cb.setVisible(True)
+        self._apply_selection_filter_to_scene()
         self.refresh_properties()
 
     def rebuild_tree(self):
@@ -1102,11 +1319,15 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------------ Properties
     def clear_properties(self):
+        if not hasattr(self, 'form') or self.form is None:
+            return False
         while self.form.rowCount():
             self.form.removeRow(0)
+        return True
 
     def refresh_properties(self):
-        self.clear_properties()
+        if not self.clear_properties():
+            return
         selected = [i for i in self.scene.selectedItems() if i.data(0) not in ('ATTR_REF_DES', 'ATTR_BODY')]
         if not selected:
             self.form.addRow(QLabel('No selection'))
@@ -1114,16 +1335,17 @@ class MainWindow(QMainWindow):
         if len(selected) > 1:
             self.form.addRow(QLabel(f'{len(selected)} objects selected'))
             pins = [i for i in selected if i.data(0) == 'PIN']
-            if pins:
-                self.form.addRow(QLabel(f'{len(pins)} selected pin(s)'))
-                side = QComboBox(); side.addItems([x.value for x in PinSide])
-                self.form.addRow('Pin Side', side)
-                b = QPushButton('Assign side to selected pins')
-                b.clicked.connect(lambda: self.set_selected_pins_side(side.currentText()))
-                self.form.addRow('', b)
-                b = QPushButton('Distribute selected pins vertically')
-                b.clicked.connect(self.distribute_selected_pins_vertical)
-                self.form.addRow('', b)
+            if len(pins) == len(selected):
+                self.form.addRow(QLabel(f'<b>Multi-Edit: {len(pins)} PINs</b>'))
+                fn = QLineEdit('')
+                fn.setPlaceholderText('Pin Function für alle ausgewählten Pins setzen')
+                fn.returnPressed.connect(lambda editor=fn, items=pins: self.set_selected_pins_attr(items, 'function', editor.text()))
+                self.form.addRow('Pin Function', fn)
+                for label, attr in [('Show Number', 'visible_number'), ('Show Name', 'visible_name'), ('Show Function', 'visible_function')]:
+                    cb = self._multi_pin_visibility_checkbox(pins, attr)
+                    self.form.addRow(label, cb)
+            else:
+                self.form.addRow(QLabel('Multi-Edit ist nur möglich, wenn ausschließlich PINs ausgewählt sind.'))
             return
         item = selected[0]
         kind = item.data(0)
@@ -1154,6 +1376,20 @@ class MainWindow(QMainWindow):
         w.setCurrentText(str(val))
         w.currentTextChanged.connect(fn)
         return w
+
+    def _multi_pin_visibility_checkbox(self, pin_items, attr):
+        pins = [getattr(i, 'model', None) for i in pin_items if getattr(i, 'model', None) is not None and i.data(0) == 'PIN']
+        values = [bool(getattr(p, attr, False)) for p in pins]
+        cb = QCheckBox()
+        cb.setTristate(True)
+        if values and all(values):
+            cb.setCheckState(Qt.Checked)
+        elif values and not any(values):
+            cb.setCheckState(Qt.Unchecked)
+        else:
+            cb.setCheckState(Qt.PartiallyChecked)
+        cb.stateChanged.connect(lambda state, a=attr, items=pin_items: self._apply_multi_pin_visibility_state(items, a, state))
+        return cb
 
     def body_props(self, item):
         m = item.model
@@ -1204,7 +1440,7 @@ class MainWindow(QMainWindow):
     def text_props(self, item):
         m = item.model
         self.form.addRow('Text', self._line(m.text, lambda v: self.set_text_attr(item, 'text', v)))
-        self.form.addRow('Font', self._line(m.font_family, lambda v: self.set_text_attr(item, 'font_family', v)))
+        self.form.addRow('Font', self._font_combo(m.font_family, lambda v: self.set_text_attr(item, 'font_family', v)))
         self.form.addRow('Size grid', self._dbl(m.font_size_grid, lambda v: self.set_text_attr(item, 'font_size_grid', v), .1, 5, .1))
         self.transform_props(m)
         b = QPushButton('Color RGB'); b.clicked.connect(lambda: self.color_model(m)); self.form.addRow('Color', b)
@@ -1221,7 +1457,7 @@ class MainWindow(QMainWindow):
 
     def font_props(self, title, f, refresh_attrs=False):
         self.form.addRow(QLabel(title))
-        self.form.addRow('Family', self._line(f.family, lambda v: self.set_font_attr(f, 'family', v, refresh_attrs)))
+        self.form.addRow('Family', self._font_combo(f.family, lambda v: self.set_font_attr(f, 'family', v, refresh_attrs)))
         self.form.addRow('Size [grid]', self._dbl(f.size_grid, lambda v: self.set_font_attr(f, 'size_grid', v, refresh_attrs), .1, 5, .1))
         b = QPushButton('Font Color RGB')
         b.clicked.connect(lambda: self.color_font(f, refresh_attrs))
@@ -1284,6 +1520,33 @@ class MainWindow(QMainWindow):
         m.attributes[k] = v
         self.update_attribute_items_for_unit()
         self.rebuild_tree()
+
+    def _apply_multi_pin_visibility_choice(self, pin_items, attr, index):
+        # 0 = unchanged, 1 = hidden/False, 2 = visible/True
+        if int(index) == 0:
+            return
+        self.set_selected_pins_attr(pin_items, attr, int(index) == 2)
+
+    def _apply_multi_pin_visibility_state(self, pin_items, attr, state):
+        # Backward-compatible handler for older tristate widgets. PySide may pass
+        # either an int or a Qt.CheckState enum, so compare defensively.
+        value = getattr(state, 'value', state)
+        if value == getattr(Qt.CheckState.PartiallyChecked, 'value', 1) or value == 1:
+            return
+        self.set_selected_pins_attr(pin_items, attr, value == getattr(Qt.CheckState.Checked, 'value', 2) or value == 2)
+
+    def set_selected_pins_attr(self, pin_items, attr, value):
+        pins = [getattr(i, 'model', None) for i in pin_items if getattr(i, 'model', None) is not None and i.data(0) == 'PIN']
+        if not pins or len(pins) != len(pin_items):
+            return
+        if attr not in ('function', 'visible_number', 'visible_name', 'visible_function'):
+            return
+        self.push_undo_state()
+        selected_ids = {id(p) for p in pins}
+        for p in pins:
+            setattr(p, attr, value)
+        self._selection_restore_ids = selected_ids
+        self.schedule_scene_refresh()
 
     def set_pin_attr(self, m, a, v):
         self.push_undo_state()
@@ -1499,6 +1762,7 @@ class MainWindow(QMainWindow):
     def add_pin(self, side, x=None, y=None):
         self.push_undo_state()
         p = create_auto_pin(self.symbol, self.current_unit, side)
+        p.name = self._unique_pin_name(getattr(p, 'name', 'PIN'))
         if x is not None: p.x = x
         if y is not None: p.y = y
         # Keep the docking side strict; y may be edited freely.
@@ -1537,6 +1801,7 @@ class MainWindow(QMainWindow):
 
     def copy_selected(self):
         self.set_tool(DrawTool.SELECT.value)
+        self.clipboard_is_cut = False
         self.clipboard = []
         for it in self.scene.selectedItems():
             if it.data(0) in ('PIN', 'TEXT', 'GRAPHIC', 'BODY'):
@@ -1546,7 +1811,11 @@ class MainWindow(QMainWindow):
 
     def cut_selected(self):
         self.set_tool(DrawTool.SELECT.value)
-        self.copy_selected()
+        self.clipboard = []
+        for it in self.scene.selectedItems():
+            if it.data(0) in ('PIN', 'TEXT', 'GRAPHIC', 'BODY'):
+                self.clipboard.append((it.data(0), copy.deepcopy(it.model)))
+        self.clipboard_is_cut = True
         self.delete_selected()
 
     def paste_selected(self):
@@ -1563,9 +1832,11 @@ class MainWindow(QMainWindow):
             if hasattr(m, 'y'):
                 m.y -= 1
             if kind == 'PIN':
-                # Doppelte Pinnummern bleiben verboten; Kopien bekommen automatisch freie Nummern.
-                m.number = next_pin_number(existing_pins)
-                existing_pins.append(m.number)
+                # Kopieren erzeugt eindeutige Pin-Nummern und Pin-Namen; Ausschneiden/Einfügen behält sie.
+                if not getattr(self, 'clipboard_is_cut', False):
+                    m.number = next_pin_number(existing_pins)
+                    existing_pins.append(m.number)
+                    m.name = self._unique_pin_name(getattr(m, 'name', 'PIN'))
                 self.current_unit.pins.append(m)
                 pasted_models.append(m)
             elif kind == 'TEXT':
@@ -1578,6 +1849,7 @@ class MainWindow(QMainWindow):
                 self.current_unit.body = m
                 pasted_models.append(m)
         self.dock_pins_to_body(self.current_unit)
+        self.clipboard_is_cut = False
         self._selection_restore_ids = {id(m) for m in pasted_models}
         self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
 
@@ -1768,11 +2040,19 @@ class MainWindow(QMainWindow):
             self.select_model_in_scene(u.graphics[idx])
 
     def left_workspace_changed(self, idx):
-        # 0 = single, 1 = split. Pins are part of the respective hierarchy trees.
-        if idx == 0 and self.symbol.kind != SymbolKind.SINGLE.value and self._symbol_indices(SymbolKind.SINGLE.value):
-            self.change_symbol_from_tab(SymbolKind.SINGLE.value, 0)
-        elif idx == 1 and self.symbol.kind != SymbolKind.SPLIT.value and self._symbol_indices(SymbolKind.SPLIT.value):
-            self.change_symbol_from_tab(SymbolKind.SPLIT.value, self.split_tabs.currentIndex())
+        # Switching between Symbols and Split Symbols must be immediate: no discard prompt.
+        kind = SymbolKind.SINGLE.value if idx == 0 else SymbolKind.SPLIT.value
+        indices = self._symbol_indices(kind)
+        if not indices:
+            self.rebuild_canvas_tabs(); self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
+            return
+        tabs = self.single_tabs if kind == SymbolKind.SINGLE.value else self.split_tabs
+        tab_index = max(0, tabs.currentIndex())
+        tab_index = min(tab_index, len(indices) - 1)
+        self.library.current_symbol_index = indices[tab_index]
+        self.current_unit_index = 0
+        self.rebuild_canvas_tabs(); self.rebuild_unit_tabs(); self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
+        self.update_name_editors()
 
     def change_symbol_from_canvas_tab(self, tab_index: int):
         if tab_index != self.library.current_symbol_index and not self.confirm_discard_if_dirty():
@@ -1790,8 +2070,6 @@ class MainWindow(QMainWindow):
         indices = self._symbol_indices(kind)
         if tab_index >= len(indices): return
         target_index = indices[tab_index]
-        if target_index != self.library.current_symbol_index and not self.confirm_discard_if_dirty():
-            self.rebuild_symbol_tabs(); return
         self.library.current_symbol_index = target_index
         self.current_unit_index = 0
         self.rebuild_canvas_tabs(); self.rebuild_unit_tabs(); self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
@@ -2026,7 +2304,25 @@ class MainWindow(QMainWindow):
             return
         menu = QMenu(tabs)
         menu.addAction('Symbol umbenennen', lambda: self.rename_symbol_from_tab(kind, tab))
+        menu.addAction('Symbol löschen', lambda: self.delete_symbol_from_tab(kind, tab))
         menu.exec(tabs.mapToGlobal(pos))
+
+    def delete_symbol_from_tab(self, kind: str, tab_index: int):
+        indices = self._symbol_indices(kind)
+        if tab_index < 0 or tab_index >= len(indices):
+            return
+        si = indices[tab_index]
+        name = self.library.symbols[si].name
+        if len(self.library.symbols) <= 1:
+            QMessageBox.warning(self, 'Symbol löschen', 'Das letzte Symbol kann nicht gelöscht werden.')
+            return
+        if QMessageBox.question(self, 'Symbol löschen', f'Symbol "{name}" wirklich löschen?') != QMessageBox.Yes:
+            return
+        self.push_undo_state()
+        del self.library.symbols[si]
+        self.library.current_symbol_index = max(0, min(si, len(self.library.symbols)-1))
+        self.current_unit_index = 0
+        self.rebuild_all()
 
     def rename_symbol_from_tab(self, kind: str, tab_index: int):
         indices = self._symbol_indices(kind)
