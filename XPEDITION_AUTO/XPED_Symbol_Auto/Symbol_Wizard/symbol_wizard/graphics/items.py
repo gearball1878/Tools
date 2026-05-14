@@ -1,6 +1,6 @@
 from __future__ import annotations
-from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QFont, QPainter, QPen, QBrush, QTransform
+from PySide6.QtCore import QPointF, QRectF, Qt, QEvent
+from PySide6.QtGui import QColor, QFont, QPainter, QPen, QBrush, QTransform, QTextCursor
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem, QGraphicsTextItem
 from symbol_wizard.models.document import PinSide, LineStyle
 from symbol_wizard.rules.grid import snap
@@ -102,6 +102,7 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
         self.window = window
         self._resizing = None
         self._resize_anchor_scene = None
+        self._resize_start = None
         self._last_model_pos = (model.x, model.y)
         g = window.grid_px
         super().__init__(0, 0, model.width * g, model.height * g)
@@ -120,6 +121,8 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
         dx, dy = self.model.x - old_x, self.model.y - old_y
         if abs(dx) > 1e-9 or abs(dy) > 1e-9:
             self.window.move_current_unit_group(dx, dy, source_body=self.model)
+            self.window.update_current_unit_canvas_positions()
+            self.window.update_attribute_items_for_unit()
         self._last_model_pos = (self.model.x, self.model.y)
 
     def _handles(self):
@@ -140,64 +143,71 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
             h = _hit_handle(self._handles(), event.pos())
             if h:
                 self._resizing = h
-                scene_rect = self.mapRectToScene(self.rect())
-                opposite = {
-                    'tl': scene_rect.bottomRight(), 'tr': scene_rect.bottomLeft(),
-                    'bl': scene_rect.topRight(), 'br': scene_rect.topLeft(),
-                    'l': QPointF(scene_rect.right(), scene_rect.center().y()),
-                    'r': QPointF(scene_rect.left(), scene_rect.center().y()),
-                    't': QPointF(scene_rect.center().x(), scene_rect.bottom()),
-                    'b': QPointF(scene_rect.center().x(), scene_rect.top()),
+                self._resize_start = {
+                    'x': float(self.model.x),
+                    'y': float(self.model.y),
+                    'w': float(self.model.width),
+                    'h': float(self.model.height),
+                    'pins': [(p, float(p.x), float(p.y), float(p.length)) for p in self.window.current_unit.pins],
+                    'texts': [(t, float(t.x), float(t.y)) for t in self.window.current_unit.texts],
+                    'graphics': [(gr, float(gr.x), float(gr.y), float(gr.w), float(gr.h)) for gr in self.window.current_unit.graphics],
                 }
-                self._resize_anchor_scene = opposite[h]
                 event.accept()
                 return
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
-        if self._resizing and self._resize_anchor_scene is not None:
+        if self._resizing and self._resize_start is not None:
             g = self.window.grid_px
-            p = event.scenePos()
-            p = QPointF(snap(p.x(), g), snap(p.y(), g))
-            a = self._resize_anchor_scene
-            old_x, old_y = self.model.x, self.model.y
+            p = QPointF(snap(event.scenePos().x(), g), snap(event.scenePos().y(), g))
+            st = self._resize_start
 
-            if self._resizing in ('l', 'r'):
-                top = self.sceneBoundingRect().top()
-                bottom = self.sceneBoundingRect().bottom()
-                left, right = sorted([a.x(), p.x()])
-            elif self._resizing in ('t', 'b'):
-                left = self.sceneBoundingRect().left()
-                right = self.sceneBoundingRect().right()
-                top, bottom = sorted([a.y(), p.y()])
-            else:
-                left, right = sorted([a.x(), p.x()])
-                top, bottom = sorted([a.y(), p.y()])
+            left = st['x'] * g
+            top = -st['y'] * g
+            right = left + st['w'] * g
+            bottom = top + st['h'] * g
+
+            # Edge handles resize exactly one axis. Corner handles resize both axes.
+            if self._resizing in ('l', 'tl', 'bl'):
+                left = p.x()
+            if self._resizing in ('r', 'tr', 'br'):
+                right = p.x()
+            if self._resizing in ('t', 'tl', 'tr'):
+                top = p.y()
+            if self._resizing in ('b', 'bl', 'br'):
+                bottom = p.y()
 
             min_size = g
+            if right < left:
+                left, right = right, left
+            if bottom < top:
+                top, bottom = bottom, top
             if right - left < min_size:
-                if p.x() < a.x():
+                if self._resizing in ('l', 'tl', 'bl'):
                     left = right - min_size
                 else:
                     right = left + min_size
             if bottom - top < min_size:
-                if p.y() < a.y():
+                if self._resizing in ('t', 'tl', 'tr'):
                     top = bottom - min_size
                 else:
                     bottom = top + min_size
 
+            old = (self.model.x, self.model.y, self.model.width, self.model.height)
+            new_x = left / g
+            new_y = -top / g
+            new_w = (right - left) / g
+            new_h = (bottom - top) / g
+
             self.prepareGeometryChange()
             self.setPos(left, top)
-            self.setRect(0, 0, right - left, bottom - top)
-            self.model.x = left / g
-            self.model.y = -top / g
-            self.model.width = (right - left) / g
-            self.model.height = (bottom - top) / g
-            dx, dy = self.model.x - old_x, self.model.y - old_y
-            if abs(dx) > 1e-9 or abs(dy) > 1e-9:
-                self.window.move_current_unit_group(dx, dy, source_body=self.model)
-            self._last_model_pos = (self.model.x, self.model.y)
-            self.window.dock_pins_to_body(self.window.current_unit)
+            self.setRect(0, 0, new_w * g, new_h * g)
+            self.model.x, self.model.y, self.model.width, self.model.height = new_x, new_y, new_w, new_h
+            self._last_model_pos = (new_x, new_y)
+
+            self.window.scale_current_unit_children_from_body_resize(st, self.model)
+            self.window.update_current_unit_canvas_positions()
+            self.window.update_attribute_items_for_unit()
             self.window.live_refresh()
             self.update()
             event.accept()
@@ -207,18 +217,30 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
     def mouseReleaseEvent(self, event):
         self._resizing = None
         self._resize_anchor_scene = None
+        self._resize_start = None
         self.window.enforce_symbol_size_limit(silent=True)
+        self.window.update_current_unit_canvas_positions()
+        self.window.update_attribute_items_for_unit()
         self.window.rebuild_tree()
         self.window.rebuild_pin_table()
         self.scene().update()
         super().mouseReleaseEvent(event)
 
     def scale_selected(self, factor):
-        self.model.width = max(1, self.model.width * factor)
-        self.model.height = max(1, self.model.height * factor)
+        st = {
+            'x': float(self.model.x), 'y': float(self.model.y),
+            'w': float(self.model.width), 'h': float(self.model.height),
+            'pins': [(p, float(p.x), float(p.y), float(p.length)) for p in self.window.current_unit.pins],
+            'texts': [(t, float(t.x), float(t.y)) for t in self.window.current_unit.texts],
+            'graphics': [(gr, float(gr.x), float(gr.y), float(gr.w), float(gr.h)) for gr in self.window.current_unit.graphics],
+        }
+        self.model.width = max(1, round(self.model.width * factor))
+        self.model.height = max(1, round(self.model.height * factor))
         g = self.window.grid_px
         self.setRect(0, 0, self.model.width * g, self.model.height * g)
-        self.window.dock_pins_to_body(self.window.current_unit)
+        self.window.scale_current_unit_children_from_body_resize(st, self.model)
+        self.window.update_current_unit_canvas_positions()
+        self.window.update_attribute_items_for_unit()
         self.update()
 
 
@@ -297,11 +319,21 @@ class TextItem(TransformMixin, QGraphicsTextItem):
         self.setTextCursor(cursor)
         event.accept()
 
+    def keyPressEvent(self, event):
+        if self.textInteractionFlags() != Qt.NoTextInteraction and event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            self.model.text = self.toPlainText()
+            self.setTextInteractionFlags(Qt.NoTextInteraction)
+            self.clearFocus()
+            self.scene().window.live_refresh()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
     def focusOutEvent(self, e):
+        # Do not leave edit mode just because properties/tree rebuild focus changed.
+        # Text edit is intentionally committed with Enter only.
         self.model.text = self.toPlainText()
-        self.setTextInteractionFlags(Qt.NoTextInteraction)
         super().focusOutEvent(e)
-        self.scene().window.live_refresh()
 
     def update_model_pos(self):
         g = self.window.grid_px
@@ -318,6 +350,7 @@ class GraphicItem(TransformMixin, QGraphicsItem):
         self.window = window
         self._resizing = None
         self._resize_anchor_scene = None
+        self._resize_start = None
         g = window.grid_px
         self.setPos(model.x * g, -model.y * g)
         self.common_flags()
@@ -368,43 +401,51 @@ class GraphicItem(TransformMixin, QGraphicsItem):
             h = _hit_handle(self._handles(), event.pos())
             if h:
                 self._resizing = h
-                scene_rect = self.mapRectToScene(self._rect())
-                opposite = {
-                    'tl': scene_rect.bottomRight(), 'tr': scene_rect.bottomLeft(),
-                    'bl': scene_rect.topRight(), 'br': scene_rect.topLeft(),
-                    'l': QPointF(scene_rect.right(), scene_rect.center().y()),
-                    'r': QPointF(scene_rect.left(), scene_rect.center().y()),
-                    't': QPointF(scene_rect.center().x(), scene_rect.bottom()),
-                    'b': QPointF(scene_rect.center().x(), scene_rect.top()),
+                g = self.window.grid_px
+                self._resize_start = {
+                    'x': float(self.model.x), 'y': float(self.model.y),
+                    'w': float(self.model.w), 'h': float(self.model.h),
                 }
-                self._resize_anchor_scene = opposite[h]
                 event.accept()
                 return
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
-        if self._resizing and self._resize_anchor_scene is not None:
+        if self._resizing and self._resize_start is not None:
             g = self.window.grid_px
-            p = event.scenePos()
-            p = QPointF(snap(p.x(), g), snap(p.y(), g))
-            a = self._resize_anchor_scene
-            cur = self.sceneBoundingRect()
-            if self._resizing in ('l', 'r'):
-                top, bottom = cur.top(), cur.bottom()
-                left, right = sorted([a.x(), p.x()])
-            elif self._resizing in ('t', 'b'):
-                left, right = cur.left(), cur.right()
-                top, bottom = sorted([a.y(), p.y()])
-            else:
-                left, right = sorted([a.x(), p.x()])
-                top, bottom = sorted([a.y(), p.y()])
+            p = QPointF(snap(event.scenePos().x(), g), snap(event.scenePos().y(), g))
+            st = self._resize_start
+            left = st['x'] * g
+            top = -st['y'] * g
+            right = left + st['w'] * g
+            bottom = top + st['h'] * g
 
-            # Lines may be perfectly horizontal or vertical; other shapes keep a small visible size.
-            min_size = 0 if self.model.shape == 'line' else g * .25
-            if right - left < min_size:
-                right = left + min_size
-            if bottom - top < min_size:
-                bottom = top + min_size
+            # Edge handles are one-dimensional only; corners are true 2D resize.
+            if self._resizing in ('l', 'tl', 'bl'):
+                left = p.x()
+            if self._resizing in ('r', 'tr', 'br'):
+                right = p.x()
+            if self._resizing in ('t', 'tl', 'tr'):
+                top = p.y()
+            if self._resizing in ('b', 'bl', 'br'):
+                bottom = p.y()
+
+            if self.model.shape != 'line':
+                min_size = g * .25
+                if right < left:
+                    left, right = right, left
+                if bottom < top:
+                    top, bottom = bottom, top
+                if right - left < min_size:
+                    if self._resizing in ('l', 'tl', 'bl'):
+                        left = right - min_size
+                    else:
+                        right = left + min_size
+                if bottom - top < min_size:
+                    if self._resizing in ('t', 'tl', 'tr'):
+                        top = bottom - min_size
+                    else:
+                        bottom = top + min_size
 
             self.prepareGeometryChange()
             self.setPos(left, top)
@@ -421,6 +462,7 @@ class GraphicItem(TransformMixin, QGraphicsItem):
     def mouseReleaseEvent(self, event):
         self._resizing = None
         self._resize_anchor_scene = None
+        self._resize_start = None
         self.window.enforce_symbol_size_limit(silent=True)
         self.window.rebuild_tree()
         self.scene().update()
@@ -432,8 +474,8 @@ class GraphicItem(TransformMixin, QGraphicsItem):
         self.model.y = -self.pos().y() / g
 
     def scale_selected(self, factor):
-        self.model.w *= factor
-        self.model.h *= factor
+        self.model.w = round(self.model.w * factor * 2) / 2
+        self.model.h = round(self.model.h * factor * 2) / 2
         self.prepareGeometryChange()
         self.update()
 

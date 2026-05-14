@@ -415,7 +415,8 @@ class MainWindow(QMainWindow):
 
     def _line(self, value, fn):
         w = QLineEdit(str(value))
-        w.textChanged.connect(fn)
+        # Commit text edits only with Enter. This prevents live rebuilds while typing.
+        w.returnPressed.connect(lambda widget=w: fn(widget.text()))
         return w
 
     def _dbl(self, value, fn, lo=-999, hi=999, step=.1):
@@ -448,7 +449,7 @@ class MainWindow(QMainWindow):
             cb.setChecked(m.visible_attributes.get(k, False))
             ed = QLineEdit(m.attributes.get(k, ''))
             cb.toggled.connect(lambda v, key=k: self.set_attr_vis(m, key, v))
-            ed.textChanged.connect(lambda v, key=k: self.set_attr_val(m, key, v))
+            ed.returnPressed.connect(lambda key=k, editor=ed: self.set_attr_val(m, key, editor.text()))
             l.addWidget(cb)
             l.addWidget(ed)
             self.form.addRow(k, row)
@@ -504,18 +505,27 @@ class MainWindow(QMainWindow):
         self.schedule_scene_refresh()
 
     def set_body_dim(self, item, a, v):
-        setattr(item.model, a, v)
-        self.dock_pins_to_body(self.current_unit)
+        st = {
+            'x': float(item.model.x), 'y': float(item.model.y),
+            'w': float(item.model.width), 'h': float(item.model.height),
+            'pins': [(p, float(p.x), float(p.y), float(p.length)) for p in self.current_unit.pins],
+            'texts': [(t, float(t.x), float(t.y)) for t in self.current_unit.texts],
+            'graphics': [(gr, float(gr.x), float(gr.y), float(gr.w), float(gr.h)) for gr in self.current_unit.graphics],
+        }
+        setattr(item.model, a, round(float(v) * 2) / 2)
+        self.scale_current_unit_children_from_body_resize(st, item.model)
         self.enforce_symbol_size_limit()
         self.schedule_scene_refresh()
 
     def set_attr_vis(self, m, k, v):
         m.visible_attributes[k] = v
-        self.schedule_scene_refresh()
+        self.update_attribute_items_for_unit()
+        self.rebuild_tree()
 
     def set_attr_val(self, m, k, v):
         m.attributes[k] = v
-        self.schedule_scene_refresh()
+        self.update_attribute_items_for_unit()
+        self.rebuild_tree()
 
     def set_pin_attr(self, m, a, v):
         setattr(m, a, v)
@@ -528,6 +538,8 @@ class MainWindow(QMainWindow):
 
     def set_text_attr(self, item, a, v):
         setattr(item.model, a, v)
+        if a == 'text':
+            item.setPlainText(v)
         self.schedule_scene_refresh()
 
     def color_model(self, m, attr='color'):
@@ -539,6 +551,69 @@ class MainWindow(QMainWindow):
     def live_refresh(self):
         self.rebuild_tree()
         self.rebuild_pin_table()
+
+    def update_current_unit_canvas_positions(self):
+        """Update existing QGraphicsItems from their models without rebuilding the scene."""
+        g = self.grid_px
+        for item in self.scene.items():
+            model = getattr(item, 'model', None)
+            if model is None:
+                continue
+            kind = item.data(0)
+            if kind == 'BODY':
+                item.setPos(model.x * g, -model.y * g)
+                item.setRect(0, 0, model.width * g, model.height * g)
+                item.setPen(item.pen().__class__(QColor(*model.color), max(1, model.line_width * g)))
+            elif kind == 'PIN':
+                item.setPos(model.x * g, -model.y * g)
+            elif kind == 'TEXT':
+                item.setPos(model.x * g, -model.y * g)
+            elif kind == 'GRAPHIC':
+                item.setPos(model.x * g, -model.y * g)
+            item.update()
+        self.scene.update()
+
+    def update_attribute_items_for_unit(self):
+        """Regenerate body-owned attribute text only; keeps normal objects selected and avoids stale text remnants."""
+        selected_ids = self._capture_selection_ids()
+        for item in list(self.scene.items()):
+            if item.data(0) in ('ATTR_REF_DES', 'ATTR_BODY'):
+                self.scene.removeItem(item)
+        self.add_attribute_text_items(self.current_unit)
+        for item in self.scene.items():
+            model = getattr(item, 'model', None)
+            if model is not None and id(model) in selected_ids:
+                item.setSelected(True)
+        self.scene.update()
+
+    def scale_current_unit_children_from_body_resize(self, start_state: dict, body: SymbolBodyModel):
+        """Keep pins/text/graphics grouped with body while resizing.
+
+        Side handles modify one dimension only. Corner handles modify both dimensions.
+        Positions are snapped because the body resize itself is snapped to the grid.
+        """
+        old_x = float(start_state.get('x', body.x)); old_y = float(start_state.get('y', body.y))
+        old_w = max(float(start_state.get('w', body.width)), 1e-9)
+        old_h = max(float(start_state.get('h', body.height)), 1e-9)
+        sx = float(body.width) / old_w
+        sy = float(body.height) / old_h
+
+        def sg(v):
+            return round(v * 2) / 2
+
+        for p, px, py, plen in start_state.get('pins', []):
+            # Pins stay docked to the selected side; Y follows body height scaling.
+            p.x = body.x if p.side == PinSide.LEFT.value else body.x + body.width
+            p.y = sg(body.y + (py - old_y) * sy)
+            p.length = max(.5, sg(plen * max(abs(sx), .1)))
+        for t, tx, ty in start_state.get('texts', []):
+            t.x = sg(body.x + (tx - old_x) * sx)
+            t.y = sg(body.y + (ty - old_y) * sy)
+        for gr, gx, gy, gw, gh in start_state.get('graphics', []):
+            gr.x = sg(body.x + (gx - old_x) * sx)
+            gr.y = sg(body.y + (gy - old_y) * sy)
+            gr.w = sg(gw * sx)
+            gr.h = sg(gh * sy)
 
     def schedule_scene_refresh(self, visual_only=False):
         # Keep selected canvas objects selected during deferred refreshes.
