@@ -42,7 +42,7 @@ def _symbol(d):
     kind=d.get('kind')
     if not kind:
         kind=SymbolKind.SPLIT.value if d.get('is_split', False) else SymbolKind.SINGLE.value
-    return SymbolModel(name=d.get('name','Symbol'), kind=kind, is_split=(kind==SymbolKind.SPLIT.value), grid_inch=d.get('grid_inch',0.1), sheet_format=d.get('sheet_format', SheetFormat.A3.value), origin=d.get('origin', OriginMode.CENTER.value), symbol_type=d.get('symbol_type','IC'), symbol_subtype=d.get('symbol_subtype','Generic IC'), units=[_unit(x) for x in d.get('units',[]) ] or [SymbolUnitModel()])
+    return SymbolModel(name=d.get('name','Symbol'), kind=kind, is_split=(kind==SymbolKind.SPLIT.value), grid_inch=d.get('grid_inch',0.1), sheet_format=d.get('sheet_format', SheetFormat.A3.value), origin=d.get('origin', OriginMode.CENTER.value), units=[_unit(x) for x in d.get('units',[]) ] or [SymbolUnitModel()])
 
 def save_library(path, library: LibraryModel):
     Path(path).write_text(json.dumps(to_dict(library), indent=2), encoding='utf-8')

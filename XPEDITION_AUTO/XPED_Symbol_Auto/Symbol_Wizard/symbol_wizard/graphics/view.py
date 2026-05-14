@@ -1,6 +1,6 @@
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPainter
-from PySide6.QtWidgets import QGraphicsView
+from PySide6.QtWidgets import QGraphicsView, QMenu
 from symbol_wizard.models.document import DrawTool, GraphicModel, PinSide, TextModel
 
 
@@ -43,8 +43,17 @@ class SymbolView(QGraphicsView):
 
 
     def contextMenuEvent(self, event):
-        # Suppress default context menu and return to Select/Edit mode.
         self.window.set_tool(DrawTool.SELECT.value)
+        menu = QMenu(self)
+        menu.addAction('Alles markieren', self.window.select_all_canvas)
+        menu.addAction('Kopieren', self.window.copy_selected)
+        menu.addAction('Einfügen', self.window.paste_selected)
+        menu.addSeparator()
+        menu.addAction('Rückgängig', self.window.undo)
+        menu.addAction('Wiederholen', self.window.redo)
+        menu.addSeparator()
+        menu.addAction('Löschen', self.window.delete_selected)
+        menu.exec(event.globalPos())
         event.accept()
 
     def keyPressEvent(self, event):
@@ -52,6 +61,15 @@ class SymbolView(QGraphicsView):
         if focus_item is not None and hasattr(focus_item, 'textInteractionFlags') and focus_item.textInteractionFlags() != Qt.NoTextInteraction:
             super().keyPressEvent(event)
             return
+        if event.modifiers() & Qt.ControlModifier:
+            if event.key() == Qt.Key_A:
+                self.window.select_all_canvas(); event.accept(); return
+            if event.key() == Qt.Key_C:
+                self.window.copy_selected(); event.accept(); return
+            if event.key() == Qt.Key_Z:
+                self.window.undo(); event.accept(); return
+            if event.key() == Qt.Key_Y:
+                self.window.redo(); event.accept(); return
         selected = self.scene().selectedItems()
         if selected:
             if event.key() in (Qt.Key_R, Qt.Key_E):
@@ -102,12 +120,12 @@ class SymbolView(QGraphicsView):
             elif tool == DrawTool.PIN_RIGHT.value:
                 self.window.add_pin(PinSide.RIGHT.value, x=gx, y=gy)
             elif tool == DrawTool.TEXT.value:
-                m = TextModel(x=gx, y=gy, font_size_grid=0.5)
+                m = TextModel(x=gx, y=gy)
                 self.window.current_unit.texts.append(m)
                 self.window.select_model_after_rebuild(m)
                 self.window.rebuild_scene()
                 self.window.rebuild_tree()
-            elif tool in (DrawTool.LINE.value, DrawTool.CURVE.value, DrawTool.RECT.value, DrawTool.ELLIPSE.value):
+            elif tool in (DrawTool.LINE.value, DrawTool.RECT.value, DrawTool.ELLIPSE.value):
                 self.window.add_graphic(tool, gx, gy)
             event.accept()
             return

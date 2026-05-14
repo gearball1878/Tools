@@ -10,7 +10,7 @@ class PinSide(str, Enum):
 class OriginMode(str, Enum):
     BOTTOM_LEFT='bottom_left'; BOTTOM_RIGHT='bottom_right'; CENTER='center'; TOP_LEFT='top_left'; TOP_RIGHT='top_right'
 class DrawTool(str, Enum):
-    SELECT='select'; PIN_LEFT='pin_left'; PIN_RIGHT='pin_right'; TEXT='text'; LINE='line'; RECT='rect'; ELLIPSE='ellipse'; CURVE='curve'
+    SELECT='select'; PIN_LEFT='pin_left'; PIN_RIGHT='pin_right'; TEXT='text'; LINE='line'; RECT='rect'; ELLIPSE='ellipse'
 class SymbolKind(str, Enum):
     SINGLE='single'; SPLIT='split'
 class SheetFormat(str, Enum):
@@ -89,8 +89,6 @@ class SymbolModel:
     grid_inch: float=0.100
     sheet_format: str=SheetFormat.A3.value
     origin: str=OriginMode.CENTER.value
-    symbol_type: str='IC'
-    symbol_subtype: str='Generic IC'
     units: List[SymbolUnitModel]=field(default_factory=lambda:[SymbolUnitModel()])
 
 @dataclass

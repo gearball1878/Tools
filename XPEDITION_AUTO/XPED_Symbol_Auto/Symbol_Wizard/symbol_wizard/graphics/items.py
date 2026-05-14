@@ -304,14 +304,12 @@ class PinItem(TransformMixin, QGraphicsItem):
         self.model.y = -self.pos().y() / g
 
     def rotate_by(self, deg):
-        # Pins rotate in exact 90 degree increments.
-        try:
-            cur = float(getattr(self.model, 'rotation', 0.0) or 0.0)
-        except (TypeError, ValueError):
-            cur = 0.0
-        step = 90 if deg >= 0 else -90
-        self.model.rotation = (round(cur / 90) * 90 + step) % 360
-        self.setRotation(float(self.model.rotation))
+        # Pin rotation is disabled. Use the Side property (left/right) instead.
+        self.model.rotation = 0.0
+        self.model.scale_x = 1.0
+        self.model.scale_y = 1.0
+        self.setRotation(0.0)
+        self.setTransform(QTransform())
         self.update()
 
     def scale_selected(self, factor):
@@ -415,14 +413,6 @@ class GraphicItem(TransformMixin, QGraphicsItem):
         painter.setBrush(QBrush(rgb(m.style.fill)) if m.style.fill else QBrush(Qt.NoBrush))
         if m.shape == 'line':
             painter.drawLine(QPointF(0, 0), QPointF(m.w * g, m.h * g))
-        elif m.shape == 'curve':
-            path_start = QPointF(0, 0)
-            path_end = QPointF(m.w * g, m.h * g)
-            ctrl = QPointF((m.w * g) / 2, (m.h * g) / 2 - 1.5 * g)
-            from PySide6.QtGui import QPainterPath
-            path = QPainterPath(path_start)
-            path.quadTo(ctrl, path_end)
-            painter.drawPath(path)
         elif m.shape == 'rect':
             painter.drawRect(QRectF(0, 0, m.w * g, m.h * g))
         elif m.shape == 'ellipse':
