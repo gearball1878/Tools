@@ -180,3 +180,7 @@ Imported snapshot from `Symbol_Wizard_45.zip`.
 
 Imported snapshot from `Symbol_Wizard_46.zip`.
 
+## v47
+
+Imported snapshot from `Symbol_Wizard_47.zip`.
+

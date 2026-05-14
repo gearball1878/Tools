@@ -13,7 +13,7 @@ from symbol_wizard.rules.grid import PX_PER_INCH, duplicate_pin_numbers, next_pi
 from symbol_wizard.rules.placement import create_auto_pin
 from symbol_wizard.graphics.scene import SymbolScene, SHEET_INCHES, sheet_rect_for
 from symbol_wizard.graphics.view import SymbolView
-from symbol_wizard.graphics.items import BodyItem, PinItem, TextItem, GraphicItem
+from symbol_wizard.graphics.items import BodyItem, PinItem, TextItem, GraphicItem, pen_for
 from symbol_wizard.io.json_store import save_library, load_library, save_symbol, load_symbol
 
 
@@ -80,9 +80,18 @@ class TemplateEditorDialog(QDialog):
         self.redo_stack = []
         self.max_history = 10
         self.dirty = False
+        self._loading_template = False
+        self._reverting_template_combo = False
+        self._current_template_name = None
+        self._clean_template_snapshot = None
         self.selection_enabled = {'BODY': True, 'PIN': True, 'TEXT': True, 'GRAPHIC': True}
         self._selection_restore_ids: set[int] = set()
         self.setWindowTitle('Edit Symbol Templates')
+        self.setWindowFlag(Qt.WindowMinMaxButtonsHint, True)
+        self.setWindowFlag(Qt.WindowCloseButtonHint, True)
+        self._loading_template = False
+        self._current_template_name = None
+        self._clean_template_snapshot = None
         self.resize(1200, 800)
         self._build_ui()
         self.load_selected_template()
@@ -125,10 +134,11 @@ class TemplateEditorDialog(QDialog):
         layout = QVBoxLayout(self)
         top = QHBoxLayout()
         self.template_combo = QComboBox(); self.template_combo.addItems(sorted(self.templates.keys()))
-        self.template_combo.currentTextChanged.connect(self.load_selected_template)
+        self.template_combo.currentTextChanged.connect(self.request_template_change)
+        self.template_combo.activated.connect(lambda _idx: self.request_template_change(self.template_combo.currentText()))
         top.addWidget(QLabel('Template:')); top.addWidget(self.template_combo, 1)
         self.rename_edit = QLineEdit(); top.addWidget(QLabel('Name / Save as:')); top.addWidget(self.rename_edit, 1)
-        save_btn = QPushButton('Save Template'); save_btn.clicked.connect(self.save_template)
+        save_btn = QPushButton('Save Template'); save_btn.clicked.connect(lambda _checked=False: self.save_template())
         top.addWidget(save_btn)
         layout.addLayout(top)
         tools = QHBoxLayout()
@@ -137,11 +147,12 @@ class TemplateEditorDialog(QDialog):
             b = QPushButton(label); b.setCheckable(True); b.clicked.connect(lambda _, t=tool.value: self.set_tool(t))
             tools.addWidget(b); self.tool_buttons[tool.value] = b
         self.tool_buttons[self.draw_tool].setChecked(True)
-        for label, fn in [('Select All', self.select_all_canvas), ('Undo', self.undo), ('Redo', self.redo), ('⟲ 15°', lambda: self.rotate_selected(-15)), ('⟳ 15°', lambda: self.rotate_selected(15)), ('Flip H', self.flip_selected_horizontal), ('Flip V', self.flip_selected_vertical)]:
+        for label, fn in [('Select All', self.select_all_canvas), ('Undo', self.undo), ('Redo', self.redo)]:
             b = QPushButton(label); b.clicked.connect(fn); tools.addWidget(b)
-        color = QPushButton('RGB')
-        color.clicked.connect(self.pick_default_color)
-        tools.addWidget(color)
+        tools.addStretch(); layout.addLayout(tools)
+        tools = QHBoxLayout()
+        for label, fn in [('⟲ 15°', lambda: self.rotate_selected(-15)), ('⟳ 15°', lambda: self.rotate_selected(15)), ('Flip H', self.flip_selected_horizontal), ('Flip V', self.flip_selected_vertical)]:
+            b = QPushButton(label); b.clicked.connect(fn); tools.addWidget(b)
         tools.addWidget(QLabel('Origin:'))
         self.origin_combo = QComboBox()
         self.origin_combo.addItems([x.value for x in OriginMode])
@@ -215,18 +226,79 @@ class TemplateEditorDialog(QDialog):
                 it.flip_vertical()
         self.live_refresh()
 
+    def _template_state(self):
+        """Stable serializable state used to detect unsaved template edits."""
+        try:
+            return asdict(self.unit)
+        except Exception:
+            return copy.deepcopy(self.unit)
+
+    def _template_has_unsaved_changes(self) -> bool:
+        """Detect changes even when a canvas operation did not mark dirty."""
+        if bool(getattr(self, 'dirty', False)):
+            return True
+        try:
+            return getattr(self, '_clean_template_snapshot', None) is not None and self._template_state() != self._clean_template_snapshot
+        except Exception:
+            return bool(getattr(self, 'dirty', False))
+
+    def _ask_save_if_dirty(self) -> bool:
+        """Return True when the pending action may continue."""
+        if not (getattr(self, 'dirty', False) or self._template_has_unsaved_changes()):
+            return True
+        ans = QMessageBox.question(
+            self,
+            'Save Changes?',
+            'Das aktuelle Template wurde geändert. Änderungen speichern?',
+            QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+            QMessageBox.Yes,
+        )
+        if ans == QMessageBox.Cancel:
+            return False
+        if ans == QMessageBox.Yes:
+            self.save_template(show_message=False)
+        else:
+            self._clean_template_snapshot = self._template_state()
+            self.dirty = False
+        return True
+
+    def request_template_change(self, name):
+        if getattr(self, '_loading_template', False) or getattr(self, '_reverting_template_combo', False):
+            return
+        old = getattr(self, '_current_template_name', None)
+        if old is None:
+            self.load_selected_template()
+            return
+        if name == old:
+            return
+        if not self._ask_save_if_dirty():
+            self._reverting_template_combo = True
+            try:
+                self.template_combo.blockSignals(True)
+                self.template_combo.setCurrentText(old)
+                self.template_combo.blockSignals(False)
+            finally:
+                self._reverting_template_combo = False
+            return
+        self.load_selected_template()
+
     def load_selected_template(self):
         name = self.template_combo.currentText()
         if not name: return
+        self._loading_template = True
         self.unit = copy.deepcopy(self.templates[name]); self.symbol.units=[self.unit]
         if hasattr(self, 'origin_combo'):
             self.origin_combo.blockSignals(True)
             self.origin_combo.setCurrentText(getattr(self.symbol, 'origin', OriginMode.CENTER.value))
             self.origin_combo.blockSignals(False)
         self.rename_edit.setText(name)
+        self._current_template_name = name
+        self._clean_template_snapshot = self._template_state()
+        self.dirty = False
+        self._loading_template = False
         self.rebuild_scene()
 
-    def save_template(self):
+    def save_template(self, show_message=True):
         name = self.rename_edit.text().strip() or self.template_combo.currentText() or 'Template'
         self.templates[name] = copy.deepcopy(self.unit)
         if hasattr(self.main, 'merge_save_template_to_file'):
@@ -236,28 +308,30 @@ class TemplateEditorDialog(QDialog):
             self.main.apply_template_style_to_matching_symbols(name, self.unit)
         if self.template_combo.findText(name) < 0:
             self.template_combo.addItem(name)
+        self.template_combo.blockSignals(True)
         self.template_combo.setCurrentText(name)
+        self.template_combo.blockSignals(False)
+        self._current_template_name = name
+        self._clean_template_snapshot = self._template_state()
         self.dirty = False
         self.main.rebuild_all()
-        QMessageBox.information(self, 'Template', f'Template "{name}" saved.')
+        if show_message:
+            QMessageBox.information(self, 'Template', f'Template "{name}" saved.')
 
     def closeEvent(self, event):
-        if getattr(self, 'dirty', False):
-            ans = QMessageBox.question(self, 'Save Changes?', 'Save Changes?', QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel, QMessageBox.Yes)
-            if ans == QMessageBox.Cancel:
-                event.ignore(); return
-            if ans == QMessageBox.Yes:
-                self.save_template()
+        if not self._ask_save_if_dirty():
+            event.ignore(); return
         event.accept()
 
     def reject(self):
-        if getattr(self, 'dirty', False):
-            ans = QMessageBox.question(self, 'Save Changes?', 'Save Changes?', QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel, QMessageBox.Yes)
-            if ans == QMessageBox.Cancel:
-                return
-            if ans == QMessageBox.Yes:
-                self.save_template()
+        if not self._ask_save_if_dirty():
+            return
         super().reject()
+
+    def done(self, r):
+        if r == QDialog.Rejected and not self._ask_save_if_dirty():
+            return
+        super().done(r)
 
     def rebuild_scene(self):
         selected_ids = self._selection_restore_ids or self._capture_selection_ids()
@@ -303,6 +377,7 @@ class TemplateEditorDialog(QDialog):
                 self.form.addRow('Pin Length [grid]', self._dbl(float(self._common_pin_value(pins, 'length', 1.0) or 1.0), lambda v, items=pins: self._set_selected_pins_attr(items, 'length', max(1.0, round(float(v)))), 1, 100, 1))
                 self.form.addRow('Pin Style', self._combo([''] + [x.value for x in LineStyle], self._common_pin_value(pins, 'line_style', ''), lambda v, items=pins: v and self._set_selected_pins_attr(items, 'line_style', v)))
                 self.form.addRow('Pin Width', self._dbl(float(self._common_pin_value(pins, 'line_width', 0.03) or 0.03), lambda v, items=pins: self._set_selected_pins_attr(items, 'line_width', float(v)), .01, 1, .01))
+                self.form.addRow('Color', self._color_button_row('Color RGB', self._common_pin_value(pins, 'color', (0, 0, 0)) or (0, 0, 0), lambda _checked=False, items=pins: self.color_selected_pins(items)))
             else:
                 text_like = [i for i in sel if i.data(0) in ('TEXT', 'ATTR_REF_DES', 'ATTR_BODY')]
                 graphics = [i for i in sel if i.data(0) == 'GRAPHIC']
@@ -328,14 +403,17 @@ class TemplateEditorDialog(QDialog):
         item = sel[0]; kind = item.data(0); m = item.model
         self.form.addRow(QLabel(f'<b>{kind}</b>'))
         if kind == 'BODY':
-            self.form.addRow('Width', self._dbl(m.width, lambda v: self._set(m, 'width', max(0.01, v)), 0.01, 500))
-            self.form.addRow('Height', self._dbl(m.height, lambda v: self._set(m, 'height', max(0.01, v)), 0.01, 500))
+            self.form.addRow('Width [grid]', self._dbl(m.width, lambda v: self._set(m, 'width', max(1.0, round(float(v)))), 1, 500, 1))
+            self.form.addRow('Height [grid]', self._dbl(m.height, lambda v: self._set(m, 'height', max(1.0, round(float(v)))), 1, 500, 1))
+            self.form.addRow('Line style', self._combo([x.value for x in LineStyle], getattr(m, 'line_style', LineStyle.SOLID.value), lambda v: self._set(m, 'line_style', v)))
+            self.form.addRow('Line width', self._dbl(getattr(m, 'line_width', 0.03), lambda v: self._set(m, 'line_width', float(v)), .01, 1, .01))
+            self.form.addRow('Rotation [deg]', self._dbl(getattr(m, 'rotation', 0), lambda v: self._set(m, 'rotation', v), -360, 360, 15))
             self.form.addRow('Color', self._color_button_row('Color RGB', getattr(m, 'color', (0, 0, 0)), lambda _checked=False, model=m: self.color_model(model)))
             self.form.addRow(QLabel('<b>Displayed Attributes</b>'))
             for k in list(m.attributes.keys()):
                 row=QWidget(); l=QHBoxLayout(row); l.setContentsMargins(0,0,0,0)
                 cb=QCheckBox('visible'); cb.setChecked(m.visible_attributes.get(k, False)); ed=QLineEdit(m.attributes.get(k,''))
-                cb.toggled.connect(lambda v, key=k: self._set_attr_vis(key, v)); ed.returnPressed.connect(lambda key=k, e=ed: self._set_attr_val(key, e.text()))
+                cb.toggled.connect(lambda v, key=k: self._set_attr_vis(key, v)); ed.textChanged.connect(lambda *_: setattr(self, 'dirty', True)); ed.editingFinished.connect(lambda key=k, e=ed: self._set_attr_val(key, e.text()))
                 l.addWidget(cb); l.addWidget(ed); self.form.addRow(k, row)
         elif kind == 'PIN':
             for lab, attr in [('Number', 'number'), ('Name', 'name'), ('Function', 'function')]: self.form.addRow(lab, self._line(getattr(m, attr), lambda v, a=attr: self._set(m, a, v)))
@@ -393,7 +471,18 @@ class TemplateEditorDialog(QDialog):
         w.keyPressEvent = key_press
         return w
     def _dbl(self, value, fn, lo=-999, hi=999, step=.1):
-        w=QDoubleSpinBox(); w.setRange(lo, hi); w.setDecimals(3); w.setSingleStep(step); w.setKeyboardTracking(False); w.setValue(float(value)); w.valueChanged.connect(fn); return w
+        w = QDoubleSpinBox()
+        w.setRange(lo, hi)
+        w.setDecimals(3)
+        w.setSingleStep(step)
+        w.setKeyboardTracking(False)
+        # Setting the initial value must not trigger model writes while the
+        # property panel is still being rebuilt.
+        w.blockSignals(True)
+        w.setValue(float(value))
+        w.blockSignals(False)
+        w.valueChanged.connect(lambda v: fn(float(v)))
+        return w
     def _combo(self, items, val, fn):
         w=QComboBox(); w.addItems(items); w.setCurrentText(str(val)); w.currentTextChanged.connect(fn); return w
     def _check(self, value, fn):
@@ -406,6 +495,43 @@ class TemplateEditorDialog(QDialog):
         swatch.setStyleSheet(f'background-color: rgb({int(r)}, {int(g)}, {int(b)}); border: 1px solid #555;')
         lay.addWidget(btn); lay.addWidget(swatch); lay.addStretch(1)
         return row
+
+    def _current_color_for_selection(self):
+        selected = list(self.scene.selectedItems()) if hasattr(self, 'scene') else []
+        colors = []
+        for it in selected:
+            m = getattr(it, 'model', None)
+            if m is None:
+                continue
+            k = it.data(0)
+            if k == 'GRAPHIC':
+                colors.append(getattr(getattr(m, 'style', None), 'stroke', (0, 0, 0)))
+            else:
+                colors.append(getattr(m, 'color', (0, 0, 0)))
+        if colors and all(c == colors[0] for c in colors):
+            return colors[0]
+        return getattr(self, 'default_color', (0, 0, 0))
+
+    def apply_color_to_selected(self, color):
+        selected = list(self.scene.selectedItems()) if hasattr(self, 'scene') else []
+        if not selected:
+            self.default_color = color
+            return
+        self.push_undo_state()
+        self._selection_restore_ids = {id(getattr(i, 'model', None)) for i in selected if getattr(i, 'model', None) is not None}
+        for it in selected:
+            m = getattr(it, 'model', None)
+            if m is None:
+                continue
+            k = it.data(0)
+            if k == 'GRAPHIC':
+                m.style.stroke = color
+            elif k in ('BODY', 'PIN', 'TEXT', 'ATTR_REF_DES', 'ATTR_BODY'):
+                m.color = color
+                if hasattr(it, 'apply_text_from_model'):
+                    it.apply_text_from_model()
+        self.update_current_unit_canvas_positions()
+        self.refresh_properties()
     def _multi_pin_visibility_checkbox(self, pin_items, attr):
         pins = [getattr(i, 'model', None) for i in pin_items if getattr(i, 'model', None) is not None and i.data(0) == 'PIN']
         values = [bool(getattr(p, attr, False)) for p in pins]
@@ -474,16 +600,19 @@ class TemplateEditorDialog(QDialog):
         self.form.addRow('Distribute', row2)
 
     def pick_default_color(self):
-        c = QColorDialog.getColor(QColor(*self.default_color), self)
+        current = self._current_color_for_selection() if hasattr(self, '_current_color_for_selection') else self.default_color
+        c = QColorDialog.getColor(QColor(*current), self)
         if c.isValid():
-            self.default_color = (c.red(), c.green(), c.blue())
+            self.apply_color_to_selected((c.red(), c.green(), c.blue()))
 
     def color_model(self, m, attr='color'):
+        current = getattr(m, attr, (0, 0, 0)) or (0, 0, 0)
+        c = QColorDialog.getColor(QColor(*current), self)
+        if not c.isValid():
+            return
         self.push_undo_state()
-        c = QColorDialog.getColor(QColor(*getattr(m, attr, (0, 0, 0))), self)
-        if c.isValid():
-            setattr(m, attr, (c.red(), c.green(), c.blue()))
-            self.update_current_unit_canvas_positions(); self.refresh_properties()
+        setattr(m, attr, (c.red(), c.green(), c.blue()))
+        self.update_current_unit_canvas_positions(); self.refresh_properties()
 
     def color_text_item(self, item):
         self.push_undo_state()
@@ -508,6 +637,14 @@ class TemplateEditorDialog(QDialog):
                 if hasattr(item, 'apply_text_from_model'):
                     item.apply_text_from_model()
         self.update_current_unit_canvas_positions(); self.refresh_properties()
+
+    def color_selected_pins(self, items):
+        current = self._common_pin_value(items, 'color', (0, 0, 0)) or (0, 0, 0)
+        c = QColorDialog.getColor(QColor(*current), self)
+        if not c.isValid():
+            return
+        value = (c.red(), c.green(), c.blue())
+        self._set_selected_pins_attr(items, 'color', value)
 
     def _set_text_item_attr(self, item, attr, value):
         if item.data(0) in ('ATTR_REF_DES', 'ATTR_BODY') and attr == 'text':
@@ -541,19 +678,23 @@ class TemplateEditorDialog(QDialog):
                 item.apply_text_from_model()
         self.update_current_unit_canvas_positions()
     def _set(self, m, a, v):
-        self.push_undo_state(); self._selection_restore_ids={id(m)}
+        self.push_undo_state()
+        self._selection_restore_ids = {id(m)}
         if a == 'rotation':
             v = (round(float(v) / 15.0) * 15.0) % 360
-        setattr(m, a, v); self.rebuild_scene()
+        setattr(m, a, v)
+        # Do not rebuild the whole scene synchronously from spin-box arrows or
+        # combo-box signals.  Qt can otherwise destroy the editor widget while
+        # it is still handling its own signal, which caused crashes in the
+        # Template Editor BODY width/height/rotation controls.
+        self.update_current_unit_canvas_positions()
+        QTimer.singleShot(0, self.refresh_properties)
 
     def _set_graphic_shape_and_refresh(self, m, v):
         # Shape-specific controls (e.g. curve radius for lines) must appear
-        # immediately after the dropdown changes, not only after reselection.
+        # after the dropdown changes, but deferred so the combo signal can
+        # finish safely.
         self._set(m, 'shape', v)
-        try:
-            self.refresh_properties()
-        except Exception:
-            pass
     def _set_pin_side(self, m, v):
         self.push_undo_state(); self._selection_restore_ids={id(m)}; m.side=v; self.dock_pins_to_body(self.unit); self.rebuild_scene()
     def _apply_multi_pin_visibility_choice(self, pin_items, attr, index):
@@ -573,7 +714,7 @@ class TemplateEditorDialog(QDialog):
     def _set_selected_pins_attr(self, pin_items, attr, value):
         pins = [getattr(i, 'model', None) for i in pin_items if getattr(i, 'model', None) is not None and i.data(0) == 'PIN']
         if not pins or len(pins) != len(pin_items): return
-        if attr not in ('function', 'visible_number', 'visible_name', 'visible_function', 'length', 'line_style', 'line_width'): return
+        if attr not in ('function', 'visible_number', 'visible_name', 'visible_function', 'length', 'line_style', 'line_width', 'color'): return
         self.push_undo_state(); self._selection_restore_ids={id(p) for p in pins}
         for p in pins: setattr(p, attr, value)
         self.rebuild_scene()
@@ -593,14 +734,14 @@ class TemplateEditorDialog(QDialog):
         self._selection_restore_ids = self._capture_selection_ids()
         self.unit.body.visible_attributes[key] = bool(val)
         self.update_attribute_items_for_unit()
-        self.refresh_properties()
+        QTimer.singleShot(0, self.refresh_properties)
 
     def _set_attr_val(self, key, val):
         self.push_undo_state()
         self._selection_restore_ids = self._capture_selection_ids()
         self.unit.body.attributes[key] = val
         self.update_attribute_items_for_unit()
-        self.refresh_properties()
+        QTimer.singleShot(0, self.refresh_properties)
 
 
     def _capture_selection_ids(self):
@@ -826,11 +967,19 @@ class TemplateEditorDialog(QDialog):
             if kind == 'BODY':
                 item.setPos(model.x * g, -model.y * g)
                 item.setRect(0, 0, model.width * g, model.height * g)
+                try:
+                    item.setPen(pen_for(model.color, model.line_width, model.line_style, g))
+                except Exception:
+                    pass
+                if hasattr(item, 'apply_transform_from_model'):
+                    item.apply_transform_from_model()
             elif kind in ('PIN', 'TEXT', 'ATTR_REF_DES', 'ATTR_BODY', 'GRAPHIC'):
                 if hasattr(item, 'apply_text_from_model') and kind in ('TEXT', 'ATTR_REF_DES', 'ATTR_BODY'):
                     item.apply_text_from_model()
                 else:
                     item.setPos(model.x * g, -model.y * g)
+                    if hasattr(item, 'apply_transform_from_model'):
+                        item.apply_transform_from_model()
             item.update()
         self.scene.invalidate(self.scene.sceneRect())
         self.scene.update(self.scene.sceneRect())
@@ -1906,6 +2055,7 @@ class MainWindow(QMainWindow):
                 self.form.addRow('Pin Length [grid]', self._dbl(float(self._common_pin_value(pins, 'length', 1.0) or 1.0), lambda v, items=pins: self.set_selected_pins_attr(items, 'length', max(1.0, round(float(v)))), 1, 100, 1))
                 self.form.addRow('Pin Style', self._combo([''] + [x.value for x in LineStyle], self._common_pin_value(pins, 'line_style', ''), lambda v, items=pins: v and self.set_selected_pins_attr(items, 'line_style', v)))
                 self.form.addRow('Pin Width', self._dbl(float(self._common_pin_value(pins, 'line_width', 0.03) or 0.03), lambda v, items=pins: self.set_selected_pins_attr(items, 'line_width', float(v)), .01, 1, .01))
+                self.form.addRow('Color', self._color_button_row('Color RGB', self._common_pin_value(pins, 'color', (0, 0, 0)) or (0, 0, 0), lambda _checked=False, items=pins: self.color_selected_pins(items)))
             elif len(text_like) == len(selected):
                 self.form.addRow(QLabel(f'<b>Multi-Edit: {len(text_like)} text objects</b>'))
                 self.multi_text_props(text_like)
@@ -1983,6 +2133,44 @@ class MainWindow(QMainWindow):
         lay.addStretch(1)
         return row
 
+    def _current_color_for_selection(self):
+        selected = list(self.scene.selectedItems()) if hasattr(self, 'scene') else []
+        colors = []
+        for it in selected:
+            m = getattr(it, 'model', None)
+            if m is None:
+                continue
+            k = it.data(0)
+            if k == 'GRAPHIC':
+                colors.append(getattr(getattr(m, 'style', None), 'stroke', (0, 0, 0)))
+            else:
+                colors.append(getattr(m, 'color', (0, 0, 0)))
+        if colors and all(c == colors[0] for c in colors):
+            return colors[0]
+        return getattr(self, 'default_color', (0, 0, 0))
+
+    def apply_color_to_selected(self, color):
+        selected = list(self.scene.selectedItems()) if hasattr(self, 'scene') else []
+        if not selected:
+            self.default_color = color
+            return
+        self.push_undo_state()
+        self._selection_restore_ids = {id(getattr(i, 'model', None)) for i in selected if getattr(i, 'model', None) is not None}
+        for it in selected:
+            m = getattr(it, 'model', None)
+            if m is None:
+                continue
+            k = it.data(0)
+            if k == 'GRAPHIC':
+                m.style.stroke = color
+            elif k in ('BODY', 'PIN', 'TEXT', 'ATTR_REF_DES', 'ATTR_BODY'):
+                m.color = color
+                if hasattr(it, 'apply_text_from_model'):
+                    it.apply_text_from_model()
+                if k in ('ATTR_REF_DES', 'ATTR_BODY'):
+                    self._sync_body_font_from_attribute_text(it)
+        self.schedule_scene_refresh(visual_only=True)
+
     def _sync_body_font_from_attribute_text(self, item):
         m = getattr(item, 'model', None)
         if m is None or item.data(0) not in ('ATTR_REF_DES', 'ATTR_BODY'):
@@ -2021,10 +2209,12 @@ class MainWindow(QMainWindow):
         m = item.model
         head = QLabel('<b>BODY</b>')
         self.form.addRow(head)
-        self.form.addRow('Width [grid]', self._dbl(m.width, lambda v: self.set_body_dim(item, 'width', v), 1, 300, 0.5))
-        self.form.addRow('Height [grid]', self._dbl(m.height, lambda v: self.set_body_dim(item, 'height', v), 1, 300, 0.5))
+        self.form.addRow('Width [grid]', self._dbl(m.width, lambda v: self.set_body_dim(item, 'width', max(1.0, round(float(v)))), 1, 300, 1))
+        self.form.addRow('Height [grid]', self._dbl(m.height, lambda v: self.set_body_dim(item, 'height', max(1.0, round(float(v)))), 1, 300, 1))
         self.form.addRow('Line style', self._combo([x.value for x in LineStyle], m.line_style, lambda v: self.set_and_refresh(m, 'line_style', v)))
         self.form.addRow('Line width', self._dbl(m.line_width, lambda v: self.set_and_refresh(m, 'line_width', v), .01, 1, .01))
+        self.transform_props(m)
+        self.form.addRow('Color', self._color_button_row('Color RGB', m.color, lambda _checked=False: self.color_model(m)))
         self.form.addRow(QLabel('<b>BODY-Attribute</b>'))
         self.font_props('RefDes font', m.refdes_font, refresh_attrs=True)
         self.font_props('Attribute font', m.attribute_font, refresh_attrs=True)
@@ -2040,8 +2230,7 @@ class MainWindow(QMainWindow):
             l.addWidget(cb)
             l.addWidget(ed)
             self.form.addRow(k, row)
-        self.transform_props(m)
-        self.form.addRow('Color', self._color_button_row('Color RGB', m.color, lambda: self.color_model(m)))
+
 
     def pin_props(self, item):
         m = item.model
@@ -2234,7 +2423,7 @@ class MainWindow(QMainWindow):
         pins = [getattr(i, 'model', None) for i in pin_items if getattr(i, 'model', None) is not None and i.data(0) == 'PIN']
         if not pins or len(pins) != len(pin_items):
             return
-        if attr not in ('function', 'visible_number', 'visible_name', 'visible_function', 'length', 'line_style', 'line_width'):
+        if attr not in ('function', 'visible_number', 'visible_name', 'visible_function', 'length', 'line_style', 'line_width', 'color'):
             return
         self.push_undo_state()
         selected_ids = {id(p) for p in pins}
@@ -2255,6 +2444,13 @@ class MainWindow(QMainWindow):
         self.update_current_unit_canvas_positions()
         self.schedule_scene_refresh(visual_only=True)
 
+    def color_selected_pins(self, items):
+        current = self._common_pin_value(items, 'color', (0, 0, 0)) or (0, 0, 0)
+        c = QColorDialog.getColor(QColor(*current), self)
+        if not c.isValid():
+            return
+        self.set_selected_pins_attr(items, 'color', (c.red(), c.green(), c.blue()))
+
     def set_pin_attr(self, m, a, v):
         self.push_undo_state()
         setattr(m, a, v)
@@ -2269,10 +2465,6 @@ class MainWindow(QMainWindow):
         self.push_undo_state()
         # Pin length is always an integer grid multiple.
         m.length = max(1.0, round(float(v)))
-        # Remove any rotation/scale from older project files or pasted data.
-        m.rotation = 0.0
-        m.scale_x = 1.0
-        m.scale_y = 1.0
         self.schedule_scene_refresh()
 
     def set_text_attr(self, item, a, v):
@@ -2364,14 +2556,13 @@ class MainWindow(QMainWindow):
             if kind == 'BODY':
                 item.setPos(model.x * g, -model.y * g)
                 item.setRect(0, 0, model.width * g, model.height * g)
-                item.setPen(item.pen().__class__(QColor(*model.color), max(1, model.line_width * g)))
+                item.setPen(pen_for(model.color, model.line_width, model.line_style, g))
+                if hasattr(item, 'apply_transform_from_model'):
+                    item.apply_transform_from_model()
             elif kind == 'PIN':
-                model.rotation = 0.0
-                model.scale_x = 1.0
-                model.scale_y = 1.0
-                item.setRotation(0.0)
-                item.setTransform(item.transform().__class__())
                 item.setPos(model.x * g, -model.y * g)
+                if hasattr(item, 'apply_transform_from_model'):
+                    item.apply_transform_from_model()
             elif kind in ('TEXT', 'ATTR_REF_DES', 'ATTR_BODY'):
                 if hasattr(item, 'apply_text_from_model'):
                     item.apply_text_from_model()
@@ -2379,6 +2570,8 @@ class MainWindow(QMainWindow):
                     item.setPos(model.x * g, -model.y * g)
             elif kind == 'GRAPHIC':
                 item.setPos(model.x * g, -model.y * g)
+                if hasattr(item, 'apply_transform_from_model'):
+                    item.apply_transform_from_model()
             item.update()
         self.scene.invalidate(self.scene.sceneRect())
         self.scene.update(self.scene.sceneRect())
@@ -2524,10 +2717,10 @@ class MainWindow(QMainWindow):
         self.view.setDragMode(QGraphicsView.RubberBandDrag if t == DrawTool.SELECT.value else QGraphicsView.NoDrag)
 
     def pick_default_color(self):
-        c = QColorDialog.getColor(QColor(*self.default_color), self)
+        current = self._current_color_for_selection() if hasattr(self, '_current_color_for_selection') else self.default_color
+        c = QColorDialog.getColor(QColor(*current), self)
         if c.isValid():
-            self.default_color = (c.red(), c.green(), c.blue())
-            self.apply_line_defaults()
+            self.apply_color_to_selected((c.red(), c.green(), c.blue()))
 
     def apply_line_defaults(self):
         self.push_undo_state()
