@@ -142,6 +142,7 @@ class TemplateEditorDialog(QDialog):
         self.selection_mode_combo = QComboBox()
         self.selection_mode_combo.addItems(['ALL', 'BODY', 'PIN', 'TEXT', 'GRAPHIC', 'Custom'])
         self.selection_mode_combo.currentTextChanged.connect(self.set_selection_mode)
+        self.selection_mode_combo.activated.connect(lambda *_: self.set_selection_mode(self.selection_mode_combo.currentText()))
         tools.addWidget(self.selection_mode_combo)
         self.selection_custom_checks = {}
         for kind in ('BODY', 'PIN', 'TEXT', 'GRAPHIC'):
@@ -149,6 +150,7 @@ class TemplateEditorDialog(QDialog):
             cb.toggled.connect(lambda checked, k=kind: self.set_selection_enabled(k, checked))
             self.selection_custom_checks[kind] = cb
             tools.addWidget(cb)
+        self.set_selection_mode(self.selection_mode_combo.currentText())
         tools.addStretch(); layout.addLayout(tools)
         splitter = QSplitter()
         splitter.addWidget(self.view)
@@ -821,6 +823,7 @@ class MainWindow(QMainWindow):
         self.selection_mode_combo = QComboBox()
         self.selection_mode_combo.addItems(['ALL', 'BODY', 'PIN', 'TEXT', 'GRAPHIC', 'Custom'])
         self.selection_mode_combo.currentTextChanged.connect(self.set_selection_mode)
+        self.selection_mode_combo.activated.connect(lambda *_: self.set_selection_mode(self.selection_mode_combo.currentText()))
         draw_tb.addWidget(self.selection_mode_combo)
         self.selection_custom_checks = {}
         for kind in ('BODY', 'PIN', 'TEXT', 'GRAPHIC'):
@@ -828,6 +831,7 @@ class MainWindow(QMainWindow):
             cb.toggled.connect(lambda checked, k=kind: self.set_selection_enabled(k, checked))
             self.selection_custom_checks[kind] = cb
             draw_tb.addWidget(cb)
+        self.set_selection_mode(self.selection_mode_combo.currentText())
 
         # --- Symbol setup -----------------------------------------------
         self.addToolBarBreak()

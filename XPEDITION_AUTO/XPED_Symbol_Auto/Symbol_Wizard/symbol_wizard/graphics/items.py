@@ -278,14 +278,14 @@ class PinItem(TransformMixin, QGraphicsItem):
         painter.setFont(QFont(m.number_font.family, max(6, int(g * m.number_font.size_grid * .45))))
         if m.visible_number:
             painter.drawText(QRectF(min(x1, x2), -.85 * g, abs(x2 - x1), .5 * g), Qt.AlignCenter, m.number)
-        # Display rule: if a dedicated function exists, show function; otherwise show pin name.
-        # Visibility flags can still hide either part explicitly.
-        has_function = bool(str(m.function or '').strip())
+        # Pin name and pin function are independent display attributes.
+        # If both are visible, both are shown; if only one is visible, only that
+        # value is shown. This keeps Template/Wizard visibility controls honest.
         parts = []
-        if has_function:
-            if m.visible_function: parts.append(m.function)
-        else:
-            if m.visible_name: parts.append(m.name)
+        if m.visible_name and str(m.name or '').strip():
+            parts.append(m.name)
+        if m.visible_function and str(m.function or '').strip():
+            parts.append(m.function)
         label = ' / '.join([x for x in parts if x])
         if label:
             painter.setPen(pen_for(m.label_font.color, m.line_width, m.line_style, g))
