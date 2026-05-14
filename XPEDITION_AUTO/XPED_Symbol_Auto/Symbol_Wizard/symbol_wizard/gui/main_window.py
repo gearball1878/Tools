@@ -139,6 +139,18 @@ class TemplateEditorDialog(QDialog):
         self.tool_buttons[self.draw_tool].setChecked(True)
         for label, fn in [('Select All', self.select_all_canvas), ('Undo', self.undo), ('Redo', self.redo), ('⟲ 15°', lambda: self.rotate_selected(-15)), ('⟳ 15°', lambda: self.rotate_selected(15)), ('Flip H', self.flip_selected_horizontal), ('Flip V', self.flip_selected_vertical)]:
             b = QPushButton(label); b.clicked.connect(fn); tools.addWidget(b)
+        color = QPushButton('RGB')
+        color.clicked.connect(self.pick_default_color)
+        tools.addWidget(color)
+        tools.addWidget(QLabel('Origin:'))
+        self.origin_combo = QComboBox()
+        self.origin_combo.addItems([x.value for x in OriginMode])
+        self.origin_combo.setCurrentText(getattr(self.symbol, 'origin', OriginMode.CENTER.value))
+        self.origin_combo.currentTextChanged.connect(self.origin_mode_changed)
+        tools.addWidget(self.origin_combo)
+        origin_btn = QPushButton('Origin Reset')
+        origin_btn.clicked.connect(lambda _checked=False: self.reset_origin_to_selected_anchor())
+        tools.addWidget(origin_btn)
         tools.addWidget(QLabel('Selectable:'))
         self.selection_mode_combo = QComboBox()
         self.selection_mode_combo.addItems(['ALL', 'BODY', 'PIN', 'TEXT', 'GRAPHIC', 'Custom'])
@@ -207,6 +219,10 @@ class TemplateEditorDialog(QDialog):
         name = self.template_combo.currentText()
         if not name: return
         self.unit = copy.deepcopy(self.templates[name]); self.symbol.units=[self.unit]
+        if hasattr(self, 'origin_combo'):
+            self.origin_combo.blockSignals(True)
+            self.origin_combo.setCurrentText(getattr(self.symbol, 'origin', OriginMode.CENTER.value))
+            self.origin_combo.blockSignals(False)
         self.rename_edit.setText(name)
         self.rebuild_scene()
 
@@ -312,10 +328,9 @@ class TemplateEditorDialog(QDialog):
         item = sel[0]; kind = item.data(0); m = item.model
         self.form.addRow(QLabel(f'<b>{kind}</b>'))
         if kind == 'BODY':
-            self.form.addRow('X', self._dbl(m.x, lambda v: self._set(m, 'x', v)))
-            self.form.addRow('Y', self._dbl(m.y, lambda v: self._set(m, 'y', v)))
             self.form.addRow('Width', self._dbl(m.width, lambda v: self._set(m, 'width', max(0.01, v)), 0.01, 500))
             self.form.addRow('Height', self._dbl(m.height, lambda v: self._set(m, 'height', max(0.01, v)), 0.01, 500))
+            self.form.addRow('Color', self._color_button_row('Color RGB', getattr(m, 'color', (0, 0, 0)), lambda _checked=False, model=m: self.color_model(model)))
             self.form.addRow(QLabel('<b>Displayed Attributes</b>'))
             for k in list(m.attributes.keys()):
                 row=QWidget(); l=QHBoxLayout(row); l.setContentsMargins(0,0,0,0)
@@ -331,36 +346,66 @@ class TemplateEditorDialog(QDialog):
             for label, attr in [('Show Number', 'visible_number'), ('Show Name', 'visible_name'), ('Show Function', 'visible_function')]:
                 cb = QCheckBox(); cb.setChecked(getattr(m, attr)); cb.toggled.connect(lambda v, a=attr: self._set(m, a, v)); self.form.addRow(label, cb)
             self.form.addRow('Length', self._dbl(m.length, lambda v: self._set(m, 'length', v), 0.5, 100))
+            self.form.addRow('Color', self._color_button_row('Color RGB', getattr(m, 'color', (0, 0, 0)), lambda _checked=False, model=m: self.color_model(model)))
             self.form.addRow('Number font', self._font_combo(m.number_font.family, lambda v: self._set(m.number_font, 'family', v)))
             self.form.addRow('Label font', self._font_combo(m.label_font.family, lambda v: self._set(m.label_font, 'family', v)))
         elif kind in ('TEXT', 'ATTR_REF_DES', 'ATTR_BODY'):
             is_attr = kind in ('ATTR_REF_DES', 'ATTR_BODY') or bool(getattr(m, '_is_attribute_text', False))
-            line = self._line(m.text, lambda v, item=item: self._set_text_item_attr(item, 'text', v))
+            line = self._line(m.text, lambda v, item=item: self._set_text_item_attr(item, 'text', v)) if is_attr else self._plain_text_editor(m.text, lambda v, item=item: self._set_text_item_attr(item, 'text', v))
             if is_attr:
                 line.setReadOnly(True)
                 line.setToolTip('Attribute text content is driven by the owning object attribute value.')
             self.form.addRow('Text', line)
             self.form.addRow('Font', self._font_combo(m.font_family, lambda v, item=item: self._set_text_item_attr(item, 'font_family', v)))
-            self.form.addRow('Size', self._dbl(m.font_size_grid, lambda v, item=item: self._set_text_item_attr(item, 'font_size_grid', v), .1, 10))
+            self.form.addRow('Size grid', self._dbl(m.font_size_grid, lambda v, item=item: self._set_text_item_attr(item, 'font_size_grid', v), .1, 10))
             self.form.addRow('Horizontal grid anchor', self._combo(['left','center','right'], getattr(m, 'h_align', 'left'), lambda v, item=item: self._set_text_item_attr(item, 'h_align', v)))
             self.form.addRow('Vertical grid anchor', self._combo(['upper','center','lower'], getattr(m, 'v_align', 'upper'), lambda v, item=item: self._set_text_item_attr(item, 'v_align', v)))
+            if is_attr:
+                self.form.addRow('Wrap text', self._check(getattr(m, 'wrap_text', False), lambda v, item=item: self._set_text_item_attr(item, 'wrap_text', v)))
+            else:
+                self.form.addRow('Line break', QLabel('Shift+Enter in canvas / text field'))
             self.form.addRow('Rotation [deg]', self._dbl(getattr(m, 'rotation', 0), lambda v, item=item: self._set_text_item_attr(item, 'rotation', v), -360, 360, 15))
+            self.form.addRow('Color', self._color_button_row('Color RGB', getattr(m, 'color', (0, 0, 0)), lambda _checked=False, item=item: self.color_text_item(item)))
         elif kind == 'GRAPHIC':
             self.form.addRow('Shape', self._combo(['line','rect','ellipse'], m.shape, lambda v: self._set(m, 'shape', v)))
-            self.form.addRow('X', self._dbl(m.x, lambda v: self._set(m, 'x', v)))
-            self.form.addRow('Y', self._dbl(m.y, lambda v: self._set(m, 'y', v)))
-            self.form.addRow('Width', self._dbl(m.w, lambda v: self._set(m, 'w', v), -500, 500))
-            self.form.addRow('Height', self._dbl(m.h, lambda v: self._set(m, 'h', v), -500, 500))
+            self.form.addRow('X', self._dbl(m.x, lambda v: self._set(m, 'x', round(float(v))), -500, 500, 1))
+            self.form.addRow('Y', self._dbl(m.y, lambda v: self._set(m, 'y', round(float(v))), -500, 500, 1))
+            self.form.addRow('Width', self._dbl(m.w, lambda v: self._set(m, 'w', round(float(v))), -500, 500, 1))
+            self.form.addRow('Height', self._dbl(m.h, lambda v: self._set(m, 'h', round(float(v))), -500, 500, 1))
             if m.shape == 'line':
                 self.form.addRow('Curve radius', self._dbl(getattr(m, 'curve_radius', 0), lambda v: self._set(m, 'curve_radius', v), -100, 100, .1))
             self.form.addRow('Rotation [deg]', self._dbl(getattr(m, 'rotation', 0), lambda v: self._set(m, 'rotation', v), -360, 360, 15))
+            self.form.addRow('Color', self._color_button_row('Stroke RGB', getattr(m.style, 'stroke', (0, 0, 0)), lambda _checked=False, style=m.style: self.color_model(style, 'stroke')))
 
     def _line(self, value, fn):
         w=QLineEdit(str(value)); w.returnPressed.connect(lambda widget=w: fn(widget.text())); return w
+    def _plain_text_editor(self, value, fn):
+        w = QTextEdit(str(value))
+        w.setAcceptRichText(False)
+        w.setFixedHeight(72)
+        old_key_press = w.keyPressEvent
+        def key_press(event, editor=w):
+            if event.key() in (Qt.Key_Return, Qt.Key_Enter) and not (event.modifiers() & Qt.ShiftModifier):
+                fn(editor.toPlainText())
+                event.accept()
+                return
+            old_key_press(event)
+        w.keyPressEvent = key_press
+        return w
     def _dbl(self, value, fn, lo=-999, hi=999, step=.1):
         w=QDoubleSpinBox(); w.setRange(lo, hi); w.setDecimals(3); w.setSingleStep(step); w.setKeyboardTracking(False); w.setValue(float(value)); w.valueChanged.connect(fn); return w
     def _combo(self, items, val, fn):
         w=QComboBox(); w.addItems(items); w.setCurrentText(str(val)); w.currentTextChanged.connect(fn); return w
+    def _check(self, value, fn):
+        w=QCheckBox(); w.setChecked(bool(value)); w.toggled.connect(fn); return w
+    def _color_button_row(self, button_text, color, callback):
+        row = QWidget(); lay = QHBoxLayout(row); lay.setContentsMargins(0, 0, 0, 0)
+        btn = QPushButton(button_text); btn.clicked.connect(callback)
+        swatch = QFrame(); swatch.setFixedSize(24, 18); swatch.setFrameShape(QFrame.Box)
+        r, g, b = color or (0, 0, 0)
+        swatch.setStyleSheet(f'background-color: rgb({int(r)}, {int(g)}, {int(b)}); border: 1px solid #555;')
+        lay.addWidget(btn); lay.addWidget(swatch); lay.addStretch(1)
+        return row
     def _multi_pin_visibility_checkbox(self, pin_items, attr):
         pins = [getattr(i, 'model', None) for i in pin_items if getattr(i, 'model', None) is not None and i.data(0) == 'PIN']
         values = [bool(getattr(p, attr, False)) for p in pins]
@@ -411,15 +456,58 @@ class TemplateEditorDialog(QDialog):
         self.form.addRow('Size grid', self._dbl(float(self._common_model_value(items, 'font_size_grid', 1.0) or 1.0), lambda v, its=items: self._set_selected_text_attr(its, 'font_size_grid', v), .1, 10, .1))
         self.form.addRow('Horizontal grid anchor', self._combo(['', 'left','center','right'], self._common_model_value(items, 'h_align', ''), lambda v, its=items: v and self._set_selected_text_attr(its, 'h_align', v)))
         self.form.addRow('Vertical grid anchor', self._combo(['', 'upper','center','lower'], self._common_model_value(items, 'v_align', ''), lambda v, its=items: v and self._set_selected_text_attr(its, 'v_align', v)))
+        attr_items = [i for i in items if i.data(0) in ('ATTR_REF_DES', 'ATTR_BODY') or bool(getattr(getattr(i, 'model', None), '_is_attribute_text', False))]
+        plain_items = [i for i in items if i.data(0) == 'TEXT' and i not in attr_items]
+        if attr_items:
+            self.form.addRow('Wrap text', self._check(bool(self._common_model_value(attr_items, 'wrap_text', False)), lambda v, its=attr_items: self._set_selected_text_attr(its, 'wrap_text', v)))
+        if plain_items:
+            self.form.addRow('Line break', QLabel('Plain text: Shift+Enter in canvas / text field'))
         self.form.addRow('Rotation [deg]', self._dbl(float(self._common_model_value(items, 'rotation', 0) or 0), lambda v, its=items: self._set_selected_text_attr(its, 'rotation', v), -360, 360, 15))
+        self.form.addRow('Color', self._color_button_row('Color RGB', self._common_model_value(items, 'color', (0, 0, 0)) or (0, 0, 0), lambda _checked=False, its=items: self.color_selected_text(its)))
         row = QWidget(); lay = QHBoxLayout(row); lay.setContentsMargins(0,0,0,0)
-        for label, fn in [('Align L', lambda its=items: self.align_text_objects(its, 'left')), ('Align R', lambda its=items: self.align_text_objects(its, 'right')), ('Align Top', lambda its=items: self.align_text_objects(its, 'upper')), ('Align Bottom', lambda its=items: self.align_text_objects(its, 'lower'))]:
+        for label, fn in [('Align L', lambda _checked=False, its=items: self.align_text_objects(its, 'left')), ('Align R', lambda _checked=False, its=items: self.align_text_objects(its, 'right')), ('Align Top', lambda _checked=False, its=items: self.align_text_objects(its, 'upper')), ('Align Bottom', lambda _checked=False, its=items: self.align_text_objects(its, 'lower'))]:
             b=QPushButton(label); b.clicked.connect(fn); lay.addWidget(b)
         self.form.addRow('Arrange', row)
         row2 = QWidget(); lay2 = QHBoxLayout(row2); lay2.setContentsMargins(0,0,0,0)
-        for label, fn in [('Distribute H', lambda its=items: self.distribute_text_objects(its, 'h')), ('Distribute V', lambda its=items: self.distribute_text_objects(its, 'v'))]:
+        for label, fn in [('Distribute H', lambda _checked=False, its=items: self.distribute_text_objects(its, 'h')), ('Distribute V', lambda _checked=False, its=items: self.distribute_text_objects(its, 'v'))]:
             b=QPushButton(label); b.clicked.connect(fn); lay2.addWidget(b)
         self.form.addRow('Distribute', row2)
+
+    def pick_default_color(self):
+        c = QColorDialog.getColor(QColor(*self.default_color), self)
+        if c.isValid():
+            self.default_color = (c.red(), c.green(), c.blue())
+
+    def color_model(self, m, attr='color'):
+        self.push_undo_state()
+        c = QColorDialog.getColor(QColor(*getattr(m, attr, (0, 0, 0))), self)
+        if c.isValid():
+            setattr(m, attr, (c.red(), c.green(), c.blue()))
+            self.update_current_unit_canvas_positions(); self.refresh_properties()
+
+    def color_text_item(self, item):
+        self.push_undo_state()
+        c = QColorDialog.getColor(QColor(*getattr(item.model, 'color', (0, 0, 0))), self)
+        if c.isValid():
+            item.model.color = (c.red(), c.green(), c.blue())
+            if hasattr(item, 'apply_text_from_model'):
+                item.apply_text_from_model()
+            self.update_current_unit_canvas_positions(); self.refresh_properties()
+
+    def color_selected_text(self, items):
+        current = self._common_model_value(items, 'color', (0, 0, 0)) or (0, 0, 0)
+        c = QColorDialog.getColor(QColor(*current), self)
+        if not c.isValid():
+            return
+        self.push_undo_state()
+        value = (c.red(), c.green(), c.blue())
+        self._selection_restore_ids = {id(i.model) for i in items if getattr(i, 'model', None) is not None}
+        for item in items:
+            if item.data(0) in ('TEXT', 'ATTR_REF_DES', 'ATTR_BODY'):
+                item.model.color = value
+                if hasattr(item, 'apply_text_from_model'):
+                    item.apply_text_from_model()
+        self.update_current_unit_canvas_positions(); self.refresh_properties()
 
     def _set_text_item_attr(self, item, attr, value):
         if item.data(0) in ('ATTR_REF_DES', 'ATTR_BODY') and attr == 'text':
@@ -611,6 +699,43 @@ class TemplateEditorDialog(QDialog):
             self.apply_item_selectability(txt)
             self.scene.addItem(txt)
             row += 1
+
+    def body_anchor_point(self, body: SymbolBodyModel, mode: str):
+        mapping = {
+            OriginMode.TOP_LEFT.value: (body.x, body.y),
+            OriginMode.TOP_RIGHT.value: (body.x + body.width, body.y),
+            OriginMode.BOTTOM_LEFT.value: (body.x, body.y - body.height),
+            OriginMode.BOTTOM_RIGHT.value: (body.x + body.width, body.y - body.height),
+            OriginMode.CENTER.value: (body.x + body.width / 2, body.y - body.height / 2),
+        }
+        return mapping.get(mode, mapping[OriginMode.CENTER.value])
+
+    def origin_mode_changed(self, mode: str):
+        self.reset_origin_to_selected_anchor(mode)
+
+    def reset_origin_to_selected_anchor(self, mode: str | None = None):
+        mode = mode or (self.origin_combo.currentText() if hasattr(self, 'origin_combo') else OriginMode.CENTER.value)
+        body = self.unit.body
+        ax, ay = self.body_anchor_point(body, mode)
+        old_mode = getattr(self.symbol, 'origin', OriginMode.CENTER.value)
+        if abs(ax) < 1e-9 and abs(ay) < 1e-9 and old_mode == mode:
+            return
+        self.push_undo_state()
+        self.symbol.origin = mode
+        body.x -= ax
+        body.y -= ay
+        for p in self.unit.pins:
+            p.x -= ax; p.y -= ay
+        for t in self.unit.texts:
+            t.x -= ax; t.y -= ay
+        for g in self.unit.graphics:
+            g.x -= ax; g.y -= ay
+        if hasattr(self, 'origin_combo'):
+            self.origin_combo.blockSignals(True)
+            self.origin_combo.setCurrentText(mode)
+            self.origin_combo.blockSignals(False)
+        self.dock_pins_to_body(self.unit)
+        self.rebuild_scene()
 
     def add_pin(self, side, x=None, y=None):
         self.push_undo_state(); p=PinModel(number=self._unique_pin_number(), side=side, name=self._unique_pin_name('PIN'), function='')
@@ -1720,6 +1845,20 @@ class MainWindow(QMainWindow):
         w.returnPressed.connect(lambda widget=w: fn(widget.text()))
         return w
 
+    def _plain_text_editor(self, value, fn):
+        w = QTextEdit(str(value))
+        w.setAcceptRichText(False)
+        w.setFixedHeight(72)
+        old_key_press = w.keyPressEvent
+        def key_press(event, editor=w):
+            if event.key() in (Qt.Key_Return, Qt.Key_Enter) and not (event.modifiers() & Qt.ShiftModifier):
+                fn(editor.toPlainText())
+                event.accept()
+                return
+            old_key_press(event)
+        w.keyPressEvent = key_press
+        return w
+
     def _dbl(self, value, fn, lo=-999, hi=999, step=.1):
         w = QDoubleSpinBox()
         w.setRange(lo, hi)
@@ -1736,6 +1875,48 @@ class MainWindow(QMainWindow):
         w.setCurrentText(str(val))
         w.currentTextChanged.connect(fn)
         return w
+
+    def _check(self, value, fn):
+        w = QCheckBox()
+        w.setChecked(bool(value))
+        w.toggled.connect(fn)
+        return w
+
+    def _color_button_row(self, button_text, color, callback):
+        row = QWidget()
+        lay = QHBoxLayout(row)
+        lay.setContentsMargins(0, 0, 0, 0)
+        btn = QPushButton(button_text)
+        btn.clicked.connect(callback)
+        swatch = QFrame()
+        swatch.setFixedSize(24, 18)
+        swatch.setFrameShape(QFrame.Box)
+        r, g, b = color or (0, 0, 0)
+        swatch.setStyleSheet(f'background-color: rgb({int(r)}, {int(g)}, {int(b)}); border: 1px solid #555;')
+        lay.addWidget(btn)
+        lay.addWidget(swatch)
+        lay.addStretch(1)
+        return row
+
+    def _sync_body_font_from_attribute_text(self, item):
+        m = getattr(item, 'model', None)
+        if m is None or item.data(0) not in ('ATTR_REF_DES', 'ATTR_BODY'):
+            return
+        body = self.current_unit.body
+        target = body.refdes_font if item.data(0) == 'ATTR_REF_DES' else body.attribute_font
+        target.family = m.font_family
+        target.size_grid = m.font_size_grid
+        target.color = m.color
+
+    def _apply_body_font_to_attribute_texts(self, font, refdes=False):
+        body = self.current_unit.body
+        keys = ['RefDes'] if refdes else [k for k in body.attributes.keys() if k != 'RefDes']
+        for key in keys:
+            tm = body.attribute_texts.get(key) if getattr(body, 'attribute_texts', None) else None
+            if tm is not None:
+                tm.font_family = font.family
+                tm.font_size_grid = font.size_grid
+                tm.color = font.color
 
     def _multi_pin_visibility_checkbox(self, pin_items, attr):
         pins = [getattr(i, 'model', None) for i in pin_items if getattr(i, 'model', None) is not None and i.data(0) == 'PIN']
@@ -1775,9 +1956,7 @@ class MainWindow(QMainWindow):
             l.addWidget(ed)
             self.form.addRow(k, row)
         self.transform_props(m)
-        b = QPushButton('Color RGB')
-        b.clicked.connect(lambda: self.color_model(m))
-        self.form.addRow('Color', b)
+        self.form.addRow('Color', self._color_button_row('Color RGB', m.color, lambda: self.color_model(m)))
 
     def pin_props(self, item):
         m = item.model
@@ -1795,12 +1974,12 @@ class MainWindow(QMainWindow):
         self.form.addRow('Line width', self._dbl(m.line_width, lambda v: self.set_pin_attr(m, 'line_width', v), .01, 1, .01))
         self.font_props('Pin number font', m.number_font)
         self.font_props('Pin label font', m.label_font)
-        b = QPushButton('Color RGB'); b.clicked.connect(lambda: self.color_model(m)); self.form.addRow('Color', b)
+        self.form.addRow('Color', self._color_button_row('Color RGB', m.color, lambda: self.color_model(m)))
 
     def text_props(self, item):
         m = item.model
         is_attr = item.data(0) in ('ATTR_REF_DES', 'ATTR_BODY') or bool(getattr(m, '_is_attribute_text', False))
-        line = self._line(m.text, lambda v: self.set_text_attr(item, 'text', v))
+        line = self._line(m.text, lambda v: self.set_text_attr(item, 'text', v)) if is_attr else self._plain_text_editor(m.text, lambda v: self.set_text_attr(item, 'text', v))
         if is_attr:
             line.setReadOnly(True)
             line.setToolTip('Attribute text content is driven by the owning object attribute value.')
@@ -1809,8 +1988,12 @@ class MainWindow(QMainWindow):
         self.form.addRow('Size grid', self._dbl(m.font_size_grid, lambda v: self.set_text_attr(item, 'font_size_grid', v), .1, 5, .1))
         self.form.addRow('Horizontal grid anchor', self._combo(['left','center','right'], getattr(m, 'h_align', 'left'), lambda v: self.set_text_attr(item, 'h_align', v)))
         self.form.addRow('Vertical grid anchor', self._combo(['upper','center','lower'], getattr(m, 'v_align', 'upper'), lambda v: self.set_text_attr(item, 'v_align', v)))
+        if is_attr:
+            self.form.addRow('Wrap text', self._check(getattr(m, 'wrap_text', False), lambda v: self.set_text_attr(item, 'wrap_text', v)))
+        else:
+            self.form.addRow('Line break', QLabel('Shift+Enter in canvas / text field'))
         self.form.addRow('Rotation [deg]', self._dbl(getattr(m, 'rotation', 0), lambda v: self.set_text_attr(item, 'rotation', v), -360, 360, 15))
-        b = QPushButton('Color RGB'); b.clicked.connect(lambda: self.color_text_item(item)); self.form.addRow('Color', b)
+        self.form.addRow('Color', self._color_button_row('Color RGB', m.color, lambda: self.color_text_item(item)))
 
     def _common_model_value(self, items, attr, default=''):
         vals = [getattr(getattr(i, 'model', None), attr, default) for i in items if getattr(i, 'model', None) is not None]
@@ -1848,36 +2031,35 @@ class MainWindow(QMainWindow):
         self.form.addRow('Size grid', self._dbl(float(self._common_model_value(items, 'font_size_grid', 1.0) or 1.0), lambda v, its=items: self.set_selected_text_attr(its, 'font_size_grid', v), .1, 5, .1))
         self.form.addRow('Horizontal grid anchor', self._combo(['', 'left','center','right'], self._common_model_value(items, 'h_align', ''), lambda v, its=items: v and self.set_selected_text_attr(its, 'h_align', v)))
         self.form.addRow('Vertical grid anchor', self._combo(['', 'upper','center','lower'], self._common_model_value(items, 'v_align', ''), lambda v, its=items: v and self.set_selected_text_attr(its, 'v_align', v)))
+        self.form.addRow('Wrap text', self._check(bool(self._common_model_value(items, 'wrap_text', False)), lambda v, its=items: self.set_selected_text_attr(its, 'wrap_text', v)))
         self.form.addRow('Rotation [deg]', self._dbl(float(self._common_model_value(items, 'rotation', 0) or 0), lambda v, its=items: self.set_selected_text_attr(its, 'rotation', v), -360, 360, 15))
         row = QWidget(); lay = QHBoxLayout(row); lay.setContentsMargins(0,0,0,0)
-        for label, fn in [('Align L', lambda its=items: self.align_text_objects(its, 'left')), ('Align R', lambda its=items: self.align_text_objects(its, 'right')), ('Align Top', lambda its=items: self.align_text_objects(its, 'upper')), ('Align Bottom', lambda its=items: self.align_text_objects(its, 'lower'))]:
+        for label, fn in [('Align L', lambda _checked=False, its=items: self.align_text_objects(its, 'left')), ('Align R', lambda _checked=False, its=items: self.align_text_objects(its, 'right')), ('Align Top', lambda _checked=False, its=items: self.align_text_objects(its, 'upper')), ('Align Bottom', lambda _checked=False, its=items: self.align_text_objects(its, 'lower'))]:
             b=QPushButton(label); b.clicked.connect(fn); lay.addWidget(b)
         self.form.addRow('Arrange', row)
         row2 = QWidget(); lay2 = QHBoxLayout(row2); lay2.setContentsMargins(0,0,0,0)
-        for label, fn in [('Distribute H', lambda its=items: self.distribute_text_objects(its, 'h')), ('Distribute V', lambda its=items: self.distribute_text_objects(its, 'v'))]:
+        for label, fn in [('Distribute H', lambda _checked=False, its=items: self.distribute_text_objects(its, 'h')), ('Distribute V', lambda _checked=False, its=items: self.distribute_text_objects(its, 'v'))]:
             b=QPushButton(label); b.clicked.connect(fn); lay2.addWidget(b)
         self.form.addRow('Distribute', row2)
-        b = QPushButton('Color RGB'); b.clicked.connect(lambda its=items: self.color_selected_text(its)); self.form.addRow('Color', b)
+        self.form.addRow('Color', self._color_button_row('Color RGB', self._common_model_value(items, 'color', (0, 0, 0)) or (0, 0, 0), lambda _checked=False, its=items: self.color_selected_text(its)))
 
     def graphic_props(self, item):
         m = item.model
         self.form.addRow('Shape', self._combo(['line', 'rect', 'ellipse'], m.shape, lambda v: self.set_and_refresh(m, 'shape', v)))
-        self.form.addRow('Width [grid]', self._dbl(m.w, lambda v: self.set_and_refresh(m, 'w', v), -100, 300))
-        self.form.addRow('Height [grid]', self._dbl(m.h, lambda v: self.set_and_refresh(m, 'h', v), -100, 300))
+        self.form.addRow('Width [grid]', self._dbl(m.w, lambda v: self.set_and_refresh(m, 'w', round(float(v))), -100, 300, 1))
+        self.form.addRow('Height [grid]', self._dbl(m.h, lambda v: self.set_and_refresh(m, 'h', round(float(v))), -100, 300, 1))
         self.form.addRow('Line style', self._combo([x.value for x in LineStyle], m.style.line_style, lambda v: self.set_style(m, 'line_style', v)))
         self.form.addRow('Line width', self._dbl(m.style.line_width, lambda v: self.set_style(m, 'line_width', v), .01, 1, .01))
         if m.shape == 'line':
             self.form.addRow('Curve radius', self._dbl(getattr(m, 'curve_radius', 0), lambda v: self.set_and_refresh(m, 'curve_radius', v), -100, 100, .1))
         self.form.addRow('Rotation [deg]', self._dbl(getattr(m, 'rotation', 0), lambda v: self.set_and_refresh(m, 'rotation', v), -360, 360, 15))
-        b = QPushButton('Stroke RGB'); b.clicked.connect(lambda: self.color_model(m.style, 'stroke')); self.form.addRow('Color', b)
+        self.form.addRow('Color', self._color_button_row('Stroke RGB', m.style.stroke, lambda: self.color_model(m.style, 'stroke')))
 
     def font_props(self, title, f, refresh_attrs=False):
         self.form.addRow(QLabel(title))
         self.form.addRow('Family', self._font_combo(f.family, lambda v: self.set_font_attr(f, 'family', v, refresh_attrs)))
         self.form.addRow('Size [grid]', self._dbl(f.size_grid, lambda v: self.set_font_attr(f, 'size_grid', v, refresh_attrs), .1, 5, .1))
-        b = QPushButton('Font Color RGB')
-        b.clicked.connect(lambda: self.color_font(f, refresh_attrs))
-        self.form.addRow('Font color', b)
+        self.form.addRow('Font color', self._color_button_row('Font Color RGB', f.color, lambda: self.color_font(f, refresh_attrs)))
 
     def transform_props(self, m):
         self.form.addRow('Rotation [deg]', self._dbl(getattr(m, 'rotation', 0), lambda v: self.set_and_refresh(m, 'rotation', v), -360, 360, 15))
@@ -1887,6 +2069,11 @@ class MainWindow(QMainWindow):
         self.push_undo_state()
         setattr(f, a, v)
         if refresh_attrs:
+            body = self.current_unit.body
+            if f is body.refdes_font:
+                self._apply_body_font_to_attribute_texts(f, refdes=True)
+            elif f is body.attribute_font:
+                self._apply_body_font_to_attribute_texts(f, refdes=False)
             self.update_attribute_items_for_unit()
         self.schedule_scene_refresh()
 
@@ -1896,6 +2083,11 @@ class MainWindow(QMainWindow):
         if c.isValid():
             f.color = (c.red(), c.green(), c.blue())
             if refresh_attrs:
+                body = self.current_unit.body
+                if f is body.refdes_font:
+                    self._apply_body_font_to_attribute_texts(f, refdes=True)
+                elif f is body.attribute_font:
+                    self._apply_body_font_to_attribute_texts(f, refdes=False)
                 self.update_attribute_items_for_unit()
             self.schedule_scene_refresh()
 
@@ -2005,6 +2197,8 @@ class MainWindow(QMainWindow):
         if a == 'rotation':
             v = (round(float(v) / 15.0) * 15.0) % 360
         setattr(item.model, a, v)
+        if a in ('font_family', 'font_size_grid', 'color'):
+            self._sync_body_font_from_attribute_text(item)
         if hasattr(item, 'apply_text_from_model'):
             item.apply_text_from_model()
         elif a == 'text':
@@ -2023,6 +2217,8 @@ class MainWindow(QMainWindow):
         selected_ids = {id(m) for m in models}
         for item in items:
             setattr(item.model, attr, value)
+            if attr in ('font_family', 'font_size_grid', 'color'):
+                self._sync_body_font_from_attribute_text(item)
             if hasattr(item, 'apply_text_from_model'):
                 item.apply_text_from_model()
         self._selection_restore_ids = selected_ids
@@ -2033,6 +2229,7 @@ class MainWindow(QMainWindow):
         c = QColorDialog.getColor(QColor(*item.model.color), self)
         if c.isValid():
             item.model.color = (c.red(), c.green(), c.blue())
+            self._sync_body_font_from_attribute_text(item)
             if hasattr(item, 'apply_text_from_model'):
                 item.apply_text_from_model()
             self.schedule_scene_refresh(visual_only=True)
@@ -2046,6 +2243,7 @@ class MainWindow(QMainWindow):
         for item in items:
             if item.data(0) in ('TEXT', 'ATTR_REF_DES', 'ATTR_BODY'):
                 item.model.color = value
+                self._sync_body_font_from_attribute_text(item)
                 if hasattr(item, 'apply_text_from_model'):
                     item.apply_text_from_model()
         self.schedule_scene_refresh(visual_only=True)

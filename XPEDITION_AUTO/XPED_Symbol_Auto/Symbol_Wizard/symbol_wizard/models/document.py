@@ -66,6 +66,7 @@ class TextModel(TransformModel):
     text: str='Text'; x: float=0.0; y: float=0.0
     font_family: str='Arial'; font_size_grid: float=0.9; color: Tuple[int,int,int]=(0,0,0)
     h_align: str=TextHAlign.LEFT.value; v_align: str=TextVAlign.UPPER.value
+    wrap_text: bool=False
 
 @dataclass
 class SymbolBodyModel(TransformModel):

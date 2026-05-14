@@ -1,7 +1,7 @@
 from __future__ import annotations
 import math
 from PySide6.QtCore import QPointF, QRectF, Qt, QEvent
-from PySide6.QtGui import QColor, QFont, QPainter, QPen, QBrush, QTransform, QTextCursor, QCursor, QPainterPath
+from PySide6.QtGui import QColor, QFont, QPainter, QPen, QBrush, QTransform, QTextCursor, QCursor, QPainterPath, QTextOption
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem, QGraphicsTextItem
 from symbol_wizard.models.document import PinSide, LineStyle
 from symbol_wizard.rules.grid import snap
@@ -23,8 +23,8 @@ def pen_for(color, width_grid, style, grid_px):
 
 
 class TransformMixin:
-    handle_size_factor = .58
-    rotate_handle_factor = .58
+    handle_size_factor = .32
+    rotate_handle_factor = .32
 
     def apply_transform_from_model(self):
         def f(name, default):
@@ -174,7 +174,7 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
         if self.isSelected():
             painter.save()
             painter.setPen(QPen(QColor(40, 40, 40), 1))
-            painter.setBrush(QBrush(QColor(40, 40, 40)))
+            painter.setBrush(QBrush(QColor(255, 255, 255)))
             for r in self._handles().values():
                 painter.drawRect(r)
             painter.drawEllipse(_rotation_handle(self.rect(), self.window.grid_px * self.rotate_handle_factor))
@@ -356,7 +356,10 @@ class PinItem(TransformMixin, QGraphicsItem):
         if self.isSelected():
             painter.setPen(QPen(QColor(80, 80, 80), 1, Qt.DashLine))
             painter.drawRect(self.boundingRect())
-            painter.setBrush(QBrush(QColor(40, 40, 40)))
+            s = self.window.grid_px * self.handle_size_factor
+            painter.setBrush(QBrush(QColor(255, 255, 255)))
+            for r in _corner_handles(self.boundingRect(), s).values():
+                painter.drawRect(r)
             painter.drawEllipse(_rotation_handle(self.boundingRect(), self.window.grid_px * self.rotate_handle_factor))
 
     def mousePressEvent(self, event):
@@ -419,7 +422,11 @@ class TextItem(TransformMixin, QGraphicsTextItem):
         baseline, because lower/upper must be visually edge-aligned to the
         grid line.
         """
-        br = self.boundingRect()
+        try:
+            size = self.document().size()
+            br = QRectF(0, 0, self.document().idealWidth(), size.height())
+        except Exception:
+            br = self.boundingRect()
         h = getattr(self.model, 'h_align', 'left')
         v = getattr(self.model, 'v_align', 'upper')
         if h == 'center':
@@ -448,6 +455,10 @@ class TextItem(TransformMixin, QGraphicsTextItem):
         self.setFont(QFont(self.model.font_family, max(6, int(g * self.model.font_size_grid * .45))))
         try:
             self.document().setDocumentMargin(0)
+            opt = self.document().defaultTextOption()
+            opt.setWrapMode(QTextOption.WordWrap if bool(getattr(self.model, 'wrap_text', False)) else QTextOption.NoWrap)
+            self.document().setDefaultTextOption(opt)
+            self.setTextWidth(-1 if not bool(getattr(self.model, 'wrap_text', False)) else max(self.window.grid_px, self.boundingRect().width()))
             self.adjustSize()
         except Exception:
             pass
@@ -464,34 +475,12 @@ class TextItem(TransformMixin, QGraphicsTextItem):
     def paint(self, painter, option, widget=None):
         super().paint(painter, option, widget)
         if self.isSelected():
+            # Text objects show only a thin selection rectangle. Resize/rotate
+            # anchors are intentionally reserved for graphical objects.
             painter.save()
             painter.setPen(QPen(QColor(80, 80, 80), 1, Qt.DashLine))
             painter.drawRect(self.boundingRect())
-            painter.setBrush(QBrush(QColor(40, 40, 40)))
-            painter.drawEllipse(_rotation_handle(self.boundingRect(), self.window.grid_px * self.rotate_handle_factor))
             painter.restore()
-
-    def mousePressEvent(self, event):
-        if self.isSelected() and _rotation_handle(self.boundingRect(), self.window.grid_px * self.rotate_handle_factor).contains(event.pos()):
-            self._rotating = True
-            self._rotate_center_scene = self.mapToScene(self.boundingRect().center())
-            self._rotate_start_angle = _angle_from(self._rotate_center_scene, event.scenePos())
-            self._rotate_start_model = float(getattr(self.model, 'rotation', 0.0) or 0.0)
-            event.accept(); return
-        super().mousePressEvent(event)
-
-    def mouseMoveEvent(self, event):
-        if getattr(self, '_rotating', False):
-            delta = _angle_from(self._rotate_center_scene, event.scenePos()) - self._rotate_start_angle
-            self.model.rotation = (round((self._rotate_start_model + delta) / 15.0) * 15.0) % 360
-            self.apply_transform_from_model()
-            self.window.live_refresh()
-            event.accept(); return
-        super().mouseMoveEvent(event)
-
-    def mouseReleaseEvent(self, event):
-        self._rotating = False
-        super().mouseReleaseEvent(event)
 
     def mouseDoubleClickEvent(self, event):
         if self.data(0) in ('ATTR_REF_DES', 'ATTR_BODY') or bool(getattr(self.model, '_is_attribute_text', False)):
@@ -506,6 +495,10 @@ class TextItem(TransformMixin, QGraphicsTextItem):
 
     def keyPressEvent(self, event):
         if self.textInteractionFlags() != Qt.NoTextInteraction and event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            if event.modifiers() & Qt.ShiftModifier:
+                QGraphicsTextItem.keyPressEvent(self, event)
+                event.accept()
+                return
             if not (self.data(0) in ('ATTR_REF_DES', 'ATTR_BODY') or bool(getattr(self.model, '_is_attribute_text', False))):
                 self.model.text = self.toPlainText()
             self.setTextInteractionFlags(Qt.NoTextInteraction)
@@ -611,13 +604,9 @@ class GraphicItem(TransformMixin, QGraphicsItem):
             painter.save()
             painter.setPen(QPen(QColor(80, 80, 80), 1, Qt.DashLine))
             painter.drawRect(self._rect())
-            painter.setBrush(QBrush(QColor(40, 40, 40)))
-            painter.setPen(QPen(QColor(40, 40, 40), 1))
-            for name, r in self._handles().items():
-                if name == 'curve':
-                    painter.drawEllipse(r)
-                else:
-                    painter.drawRect(r)
+            painter.setBrush(QBrush(QColor(255, 255, 255)))
+            for r in self._handles().values():
+                painter.drawRect(r)
             painter.drawEllipse(_rotation_handle(self._rect(), self.window.grid_px * self.rotate_handle_factor))
             painter.restore()
 
