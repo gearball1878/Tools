@@ -2335,154 +2335,343 @@ class MainWindow(QMainWindow):
 
 ## 1. Purpose
 
-Symbol Wizard is a grid-based editor for creating, editing, validating, and exporting electrical symbols for Xpedition-oriented workflows. It combines symbol body editing, pin management, template handling, text and attribute placement, graphical object editing, and validation in one application.
+Symbol Wizard is a grid-based editor for creating, editing, validating, importing, and exporting electronic symbols for Xpedition/Mentor-oriented workflows. It supports both single symbols and split symbols with multiple units/parts.
 
-The editor is designed around a fixed grid. Most object positions, alignments, increments, and body-related transformations are intended to snap to this grid so that generated symbols remain consistent and reproducible.
+The main design goals are:
+
+- consistent grid-based symbol construction
+- reliable pin and attribute management
+- Mentor/Xpedition ASCII import/export
+- split-symbol handling through ZIP archives
+- reusable templates
+- fast multi-edit workflows for large FPGA symbols
 
 ## 2. Main Window Overview
 
-The main window contains three primary areas:
+The window is divided into three areas:
 
-- **Left workspace**: symbol lists, split-symbol units, pin overview tables, and the object tree.
-- **Center canvas**: the graphical symbol editor with grid, body, pins, text, attributes, and graphics.
-- **Right properties panel**: context-sensitive settings for the selected object or selected objects.
+- **Left workspace**: symbol lists, split-symbol units, pin overview, and object tree.
+- **Center canvas**: graphical editor with grid, sheet/format preview, origin, body, pins, text, attributes, and graphics.
+- **Right properties panel**: properties for the selected object or selection.
 
-The ribbon at the top contains drawing tools, setup controls, style controls, transformation tools, pin actions, and this Help section.
+The ribbon contains drawing tools, grid/sheet/origin settings, style controls, transform controls, and pin actions.
 
-## 3. Creating Symbols
+## 3. File Menu Structure
 
-Use **File > New Symbol** to create a regular symbol. Use **File > New Split Symbol** to create a split symbol with multiple units or parts. For split symbols, each unit can be edited separately while validation still checks the full symbol across all units.
+The **File** menu is grouped by workflow.
 
-Symbol names are shown as tabs. You can switch between symbols using the symbol tabs or canvas tabs. Existing symbols can be renamed from the symbol tab context menu.
+### New
 
-## 4. Grid and Sheet Setup
+- **New Symbol** creates a single symbol.
+- **New Split Symbol** creates a split symbol with one or more units.
 
-Use **Grid inch** to define the grid size. The grid is the central reference for body size, object placement, text anchors, pin placement, and many transformations.
+### Project / JSON
 
-Use **Format** to select the sheet format. Use **Zoom Fit** to fit the current symbol into the view.
+- **Open Library JSON** loads a previously saved Wizard library.
+- **Save Current Symbol JSON** saves only the active symbol.
+- **Save All Symbols JSON** saves the complete library.
+- **Import Symbol JSON** imports one Wizard JSON symbol into the current library.
 
-## 5. Origin Handling
+### Mentor Import
 
-Imported symbols are initially aligned by the selected BODY anchor. Pins and stray texts are not used for initial origin placement. The **Origin** selector defines how the symbol origin is interpreted. Use **Origin Reset** to reset the origin based on the selected anchor. When the body origin changes, attached objects such as pins, plain text, graphics, and body attributes are moved consistently with the body.
+- **Import Mentor Single Symbol** imports one `.sym` or `.1` Mentor/Xpedition ASCII file as a single symbol.
+- **Import Mentor Split ZIP** imports a ZIP archive as one split symbol. Each Mentor file in the ZIP becomes one split part/unit.
 
-This is especially important for templates because template body attributes must stay attached in the same way as pins, text, and graphic objects.
+### Mentor Export
 
-## 6. Drawing and Selecting Objects
+- **Export Mentor Single Symbol** exports the current single symbol as one native Mentor ASCII file.
+- **Export Mentor Split ZIP** exports the current split symbol as a ZIP archive. Each split part/unit is written as one native Mentor ASCII file.
 
-Use the draw tools to create objects on the canvas:
+### Other Imports
 
-- **Select/Edit**: select and modify existing objects.
+- **Import PINMUX CSV** imports pin data from a CSV file.
+
+## 4. Single Symbols and Split Symbols
+
+A **single symbol** is one graphical symbol file.
+
+A **split symbol** is one logical component split into multiple units/parts. Split-symbol validation is performed across all units, because pin numbers must be unique across the complete component.
+
+For Mentor/Xpedition workflows:
+
+- Split symbols are imported and exported as `.zip` files.
+- Every file inside the ZIP is one split part/unit.
+- Single symbols are imported and exported as one `.sym` or `.1` file.
+
+## 5. Grid, Sheet Format, Drawing Area, and Origin
+
+Use **Grid inch** to define the working grid. Mentor symbols commonly use a 10 mil internal grid (`Z 10`) with pin anchors on grid coordinates.
+
+Use **Format** to show A0/A1/A2/A3/A4/A5 sheet guides. The canvas shows the sheet/format frame and the drawing/usable region so symbols can be checked visually against the selected format.
+
+Use **Zoom Fit** to fit the current symbol and sheet preview into the view.
+
+### Origin behavior
+
+Imported symbols are initially aligned to the selected origin by the **body itself**, not by pins, labels, or stray graphics. This keeps the body placement predictable.
+
+For native Mentor/Xpedition symbols, the Wizard preserves the Mentor coordinate origin. The Mentor origin is the symbol placement origin from the `.sym/.1` file. The body may start at an offset such as `b 30 30 ...`; this is normal for Mentor symbols. Pin electrical anchors remain the most important grid points.
+
+## 6. Creating and Editing Objects
+
+Use the draw tools:
+
+- **Select/Edit**: select and edit existing objects.
 - **Pin L / Pin R**: create left- or right-oriented pins.
-- **Text**: create plain text objects.
+- **Text**: create plain text.
 - **Line, Rect, Ellipse**: create graphic objects.
 
-The **Selectable** control limits which object types can be selected. This is useful when editing dense symbols where text, pins, body, and graphics overlap.
+The **Selectable** dropdown limits selection to specific object types. This helps when editing dense symbols.
+
+Objects can be moved, resized, rotated, flipped, scaled, copied, pasted, and deleted. Deleting a symbol or split part asks for confirmation because the changes are destructive.
 
 ## 7. Body Editing
 
-The body represents the main symbol container. Body size is edited with width and height fields. Increment/decrement buttons for body and graphic object size use the grid step. If a non-grid value is needed, type the numeric value directly into the field.
+The body is the main symbol container. Its size, position, style, line width, and attributes can be edited from the properties panel.
 
-Body color and rotation belong to the body properties. Body color can also be changed through a global multi-selection color operation when the body is selected.
+When the body moves or is resized, related pins, text, graphics, and body attributes are kept consistent with the body.
 
-When the body is moved or scaled, attached objects must follow consistently. This includes pins, plain texts, graphic objects, symbol attributes, and template body attributes.
+The body does not have to lie on the same visual offset as pins. For Mentor compatibility, the important electrical rule is that **pin connection points** stay on the Mentor grid.
 
 ## 8. Pin Editing
 
-Pins can be edited either in the canvas, the object tree, or the pin tables. The pin overview table supports editing of:
+Pins can be edited from:
 
-- Pin number
-- Pin name
-- Pin function
-- Pin type
-- Side
-- Inverted state
+- the canvas
+- the left pin overview
+- the object tree
+- the properties panel
+- the Split Pin Manager
 
-Use **Selected Pin Actions** to assign sides or distribute selected pins vertically.
+Common pin fields are:
 
-Use **Tools > Validate Pins** to check the pin configuration. Validation includes checks for duplicate pin numbers and duplicate pin names.
+- **Pin Number**: physical pin / ball number
+- **Pin Name**: visible logical label
+- **Pin Function**: functional signal description
+- **Pin Type**: electrical type, e.g. `IN`, `OUT`, `BIDI/BI`, `POWER`, `GROUND`, `ANALOG`
+- **Side**: left/right/top/bottom placement direction
+- **Inverted**: pin inversion flag
+- **Show #**, **Show Name**, **Show Function**: visibility controls
 
-## 9. Text and Attribute Editing
+Pin Name and Pin Function are independent. If both are visible, both may be shown in the Wizard.
 
-Plain text and generated attributes use the same grid-anchor concept. Each text object has a horizontal and vertical anchor combination. The green anchor point represents the exact grid anchor used for placement.
+## 9. Pin Colors
 
-Horizontal anchor modes:
+Mentor `.sym/.1` files normally do not store RGB object colors. The Wizard therefore colors pins semantically by pin type for editing clarity:
 
-- **Left**: the green point is on a vertical grid line at the left side of the text; the text grows to the right.
-- **Center**: the green point is on a vertical grid line at the horizontal center of the text.
-- **Right**: the green point is on a vertical grid line at the right side of the text; the text grows to the left.
+- `IN` = blue
+- `OUT` = red
+- `BIDI` / `BI` = violet
+- `POWER` = orange
+- `GROUND` = green
+- `ANALOG` = cyan
+- `PASSIVE` / unknown = black
 
-Vertical anchor modes:
+These are Wizard UI colors. Native Mentor export does not write RGB colors unless a future format extension explicitly supports it.
 
-- **Upper**: the green point is on a horizontal grid line at the upper edge of the text.
-- **Center**: the green point is on a horizontal grid line at the vertical center of the text.
-- **Lower**: the green point is on a horizontal grid line at the lower edge of the text.
+## 10. Split Pin Manager / Multi-Edit Pins
 
-All nine combinations are supported: upper-left, upper-center, upper-right, center-left, center-center, center-right, lower-left, lower-center, and lower-right. The same behavior applies to plain text and attributes.
+Open **Tools → Split Pin Manager / Multi-Edit Pins** to view and edit all pins of the current symbol or split symbol in one table.
 
-## 10. Text Alignment and Distribution
+### Table features
 
-When multiple text objects or attributes are selected, alignment uses the grid anchor. For example, aligning left moves the selected objects so their left anchors lie on the same vertical grid line. Aligning right uses the right anchor. Center alignment uses the center anchor.
+- Shows all pins across all split units.
+- Supports marking rows for later bulk operations.
+- Supports sorting by clicking column headers.
+- Double-click a pin row to jump to that pin on the canvas.
+- Use **Marked only** to display only marked pins.
 
-Vertical alignment works the same way using horizontal grid lines:
+### Embedded column filters
 
-- Upper aligns upper anchors.
-- Center aligns center anchors.
-- Lower aligns lower anchors.
+Filters are integrated directly into the table as the first row below the column headers.
 
-Distribution keeps selected objects evenly spaced. For text objects, distribution is based on their anchor positions, not only their bounding rectangles. This avoids visible drift from the grid.
+Text columns use text filters:
 
-## 11. Text Wrapping
+- Unit
+- Pin Number
+- Pin Name
+- Pin Function
+- Type
 
-Plain text normally does not wrap automatically. A manual line break can be inserted with **Shift + Enter** when editing text. Attribute text can optionally support wrapping depending on the attribute settings. The default behavior is no wrapping.
+Boolean columns use dropdown filters:
 
-## 12. Graphic Objects
+- **Inverted**: `All`, `Inverted`, `Not inverted`
+- **Show #**: `All`, `Shown`, `Hidden`
+- **Show Name**: `All`, `Shown`, `Hidden`
+- **Show Function**: `All`, `Shown`, `Hidden`
 
-Graphic objects include lines, rectangles, ellipses, and other shape variants. Shape-specific properties are displayed when the shape type is changed. For example, changing a graphic object shape immediately refreshes the available property fields for that shape.
+The global filter searches across unit, pin number, pin name, pin function, type, and state. Global and column filters are combined.
 
-Graphic object width and height spinbox increments follow the grid. Non-grid values can still be entered manually.
+Use **Clear filters** to remove all active filters.
 
-## 13. Color Handling
+### Bulk-edit display attributes
 
-Color can be set on individual objects in their properties. The ribbon RGB control can also be used as a multi-selection color command. When multiple objects are selected, changing color applies to all supported selected objects, including:
+The bulk area at the bottom can apply changes to:
 
-- Body
-- Pins
-- Plain text
-- Attributes
-- Graphic objects
+- marked pins
+- currently filtered pins
+- all pins
 
-The selected color is synchronized with the active selection wherever possible.
+Bulk-edit fields include:
 
-## 14. Rotation and Transformations
+- **Show #**: `Unchanged`, `Show`, `Hide`
+- **Show Name**: `Unchanged`, `Show`, `Hide`
+- **Show Function**: `Unchanged`, `Show`, `Hide`
+- **Inverted**: `Unchanged`, `Inverted`, `Not inverted`
 
-Use the transform buttons to rotate selected objects by 15 degrees clockwise or counter-clockwise. Flip operations mirror selected objects horizontally or vertically. Scale operations change selected object dimensions.
+### Bulk-edit Pin Function text
 
-Pins, graphics, body, text, and attributes should retain their changed transformation values instead of briefly changing and reverting.
+The Pin Function Text controls allow mass-editing of the actual Pin Function value:
 
-## 15. Mentor Pin Attributes
+- `Unchanged`: leave existing function values untouched
+- `Set to text`: write the entered text to all target pins
+- `Clear`: clear the function text
+- `Copy from Pin Name`: copy each pin name into its pin function
+- `Copy from Pin Number`: copy each pin number into its pin function
 
-Mentor export writes the visible pin label as the native `L` record and exports Pin Function as a separate `A ... PINFUNCTION=...` attribute when it differs from the pin name. Additional custom/invisible pin attributes stored on the pin model are exported as native `A` records as well. Mentor symbols themselves normally do not contain RGB pin colors; the Wizard colors pins semantically from PINTYPE for editing only.
+## 11. Mentor/Xpedition Import
+
+Mentor ASCII files use records such as:
+
+- `V` version
+- `K` internal key / ID
+- `|R` timestamp
+- `F` symbol type
+- `D` drawing bounds
+- `Y`, `Z`, `i` metadata/grid/object count
+- `U` symbol/body attributes
+- `b` body rectangle
+- `T` text
+- `P` pin geometry
+- `L` pin label
+- `A` object/pin attributes
+- `E` end marker
+
+During import, the Wizard reads pins, pin labels, pin numbers, pin types, symbol attributes, texts, and geometry. Mentor colors are not read because they are normally not encoded in the `.sym/.1` file.
+
+Imported Mentor split ZIPs are treated as one split symbol, with each file becoming one unit.
+
+## 12. Mentor/Xpedition Export
+
+The Mentor exporter writes native ASCII records in Mentor style.
+
+For split symbols:
+
+- one ZIP is written
+- every split unit becomes one `.1`/symbol file inside the ZIP
+
+For single symbols:
+
+- one `.sym`/`.1` file is written
+
+Export behavior:
+
+- `K` ID is generated dynamically/stably from the symbol/unit name.
+- `|R` timestamp is generated in Mentor-style format `H:MM:SS_M-D-YY`.
+- Pin number is exported as `#=<pin number>`.
+- Pin type is exported as `PINTYPE=<type>`.
+- Pin label is exported as the native `L` record.
+- Pin Function is additionally exported as an invisible pin attribute at the same coordinates as the pin name label:
+
+```text
+A <PinName-X> <PinName-Y> <size> <rotation> <alignment> 0 PINFUNCTION=<pin.function>
+```
+
+Additional invisible pin attributes stored on the pin model can also be exported as native `A` records.
+
+## 13. Invisible Attributes
+
+Mentor supports visible and invisible attributes.
+
+- `U` records are symbol/body attributes.
+- `A` records are object or pin attributes.
+
+The Wizard uses this for metadata such as `PINFUNCTION`, pin type, pin number, and custom pin metadata. Invisible attributes can be preserved without changing the visible drawing.
+
+## 14. Text and Attribute Anchors
+
+Text and attributes use anchor-based placement. The green anchor point is the grid reference.
+
+Horizontal modes:
+
+- Left
+- Center
+- Right
+
+Vertical modes:
+
+- Upper
+- Center
+- Lower
+
+The same anchor logic applies to normal text and attributes.
+
+## 15. Alignment, Distribution, and Transformations
+
+Multi-selection operations use anchor positions where possible so text and attributes remain grid-aligned.
+
+Transform tools include:
+
+- rotate clockwise/counter-clockwise
+- flip horizontal / vertical
+- scale up / down
+- color changes for selected objects
 
 ## 16. Template Editor
 
-Use **Tools > Edit Symbol Templates** to open the template editor. The template editor provides a canvas-based editor for reusable symbol templates. It supports the same core editing concepts as the main Symbol Wizard:
+Open **Tools → Edit Symbol Templates** to edit reusable templates.
 
-- Grid-based placement
-- Origin handling
-- Body editing
-- Pins
-- Plain text
-- Graphics
-- Body attributes
-- Multi-selection operations
-- Undo and redo
-- Copy, cut, paste, and select all
+The template editor supports:
 
-If the current template has real unsaved changes, a save prompt is shown when closing the template editor or switching to another template. Merely selecting another template does not trigger a prompt when the current template data is unchanged.
+- body editing
+- pins
+- text
+- graphics
+- body attributes
+- copy/cut/paste/select all
+- undo/redo
+- grid-based placement
 
-## 16. Keyboard Shortcuts
+A save prompt appears only when the current template has actually changed. Simply selecting or viewing a template should not trigger a save prompt.
 
-The main editor supports common shortcuts:
+## 17. Autosave and Restore
+
+The Wizard can restore the last working state on startup. The autosaved workspace should be stored in the user configuration area, not inside the installation ZIP. This avoids permission problems and prevents temporary session data from being shipped with releases.
+
+Recommended paths:
+
+- Windows: `%APPDATA%/SymbolWizard/`
+- Linux: `~/.config/SymbolWizard/`
+- macOS: `~/Library/Application Support/SymbolWizard/`
+
+## 18. Validation
+
+Use **Tools → Validate Pins** to check pin consistency.
+
+Validation includes:
+
+- duplicate pin numbers
+- duplicate pin names
+- split-symbol-wide uniqueness checks
+- incomplete or inconsistent pin data
+
+For split symbols, validation runs across all units because the complete component must have unique physical pins.
+
+## 19. PINMUX CSV Import
+
+Use **File → Import PINMUX CSV** to import pin data from a CSV file.
+
+Expected columns:
+
+```csv
+Pin Name|Pin Type|Pin Function|Pin Number
+VDD|POWER||1
+PA0|BIDI|ADC_IN0|A1
+```
+
+Supported separators include comma, semicolon, pipe, and tab.
+
+## 20. Keyboard Shortcuts
 
 - **Ctrl + A**: select all canvas objects
 - **Ctrl + C**: copy selected objects
@@ -2494,39 +2683,27 @@ The main editor supports common shortcuts:
 - **Ctrl + S**: save current symbol JSON
 - **Ctrl + Shift + S**: save all symbols JSON
 - **Ctrl + O**: open library JSON
-- **Ctrl + F**: zoom to fit symbol
+- **Ctrl + F**: zoom to fit
 - **F5**: refresh canvas
 
-The template editor also supports the same essential edit shortcuts for template work.
+## 21. Recommended Mentor Workflow
 
-## 17. Saving and Loading
+1. Import Mentor single symbol or split ZIP.
+2. Check the origin and body placement.
+3. Verify that pin anchors lie on the expected grid.
+4. Use Split Pin Manager for filtering, marking, and bulk edits.
+5. Adjust Pin Function visibility or text if needed.
+6. Validate pins.
+7. Export as Mentor single file or split ZIP.
+8. Re-import into Mentor/Xpedition and verify pin connectivity.
 
-Use **File > Save Current Symbol JSON** to save the active symbol. Use **File > Save All Symbols JSON** to save the full library. Use **File > Open Library JSON** to load a saved library. Individual symbol JSON files can also be imported.
-
-Template changes are managed through the template editor. Save prompts appear when necessary to prevent accidental loss of template edits.
-
-## 18. Pinmux Import
-
-Use **File > Import PINMUX CSV** to import pin information from a CSV file. After importing, review the pin table and run **Validate Pins** to detect duplicate numbers, duplicate names, or inconsistent pin data.
-
-## 19. Recommended Workflow
-
-1. Create or open a symbol library.
-2. Set grid and sheet format.
-3. Create or choose a suitable body/template.
-4. Add pins and assign pin metadata.
-5. Add plain text, attributes, and graphics.
-6. Align text and attributes with the grid anchor system.
-7. Use multi-select alignment and distribution for consistent placement.
-8. Validate pins before export or delivery.
-9. Save the current symbol or full library.
-
-## 20. About
+## 22. About
 
 **Editor:** Christian Hopper  
 **Company:** QAVION Consulting GmbH  
 **Customer:** Liebherr Electronics and Drives  
 **Year:** 2026
+
 """
 
     # ------------------------------------------------------------------ Rebuilds
