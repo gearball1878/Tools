@@ -889,16 +889,29 @@ class MainWindow(QMainWindow):
             pins = [i for i in selected if i.data(0) == 'PIN']
             if pins:
                 self.form.addRow(QLabel(f'{len(pins)} selected pin(s)'))
-                side = QComboBox(); side.addItems([x.value for x in PinSide])
+                side = QComboBox(); side.addItems(['<keep>'] + [x.value for x in PinSide])
                 self.form.addRow('Pin Side', side)
-                ptype = QComboBox(); ptype.addItems([x.value for x in PinType])
+                ptype = QComboBox(); ptype.addItems(['<keep>'] + [x.value for x in PinType])
                 self.form.addRow('Pin Type', ptype)
+                inv = QComboBox(); inv.addItems(['<keep>', 'yes', 'no'])
+                self.form.addRow('Inverted', inv)
                 func = QLineEdit('')
                 self.form.addRow('Pin Function', func)
                 length = self._dbl(2.0, lambda v: None, 1, 100, 1)
                 self.form.addRow('Length [grid]', length)
-                b = QPushButton('Apply geometry/function/type to selected pins')
-                b.clicked.connect(lambda: self.apply_pin_bulk_to_selected(side.currentText(), ptype.currentText(), func.text(), length.value()))
+                rot = QComboBox(); rot.addItems(['<keep>', '0', '90', '180', '270'])
+                self.form.addRow('Rotation [deg]', rot)
+                show_number = QComboBox(); show_number.addItems(['<keep>', 'show', 'hide'])
+                self.form.addRow('Show Pin Number', show_number)
+                show_name = QComboBox(); show_name.addItems(['<keep>', 'show', 'hide'])
+                self.form.addRow('Show Pin Name', show_name)
+                show_func = QComboBox(); show_func.addItems(['<keep>', 'show', 'hide'])
+                self.form.addRow('Show Pin Function', show_func)
+                b = QPushButton('Apply to selected pins')
+                b.clicked.connect(lambda: self.apply_pin_bulk_to_selected(
+                    side.currentText(), ptype.currentText(), inv.currentText(),
+                    func.text(), length.value(), rot.currentText(),
+                    show_number.currentText(), show_name.currentText(), show_func.currentText()))
                 self.form.addRow('', b)
                 b = QPushButton('Apply first selected pin geometry/function to ALL pins')
                 b.clicked.connect(self.apply_first_selected_pin_to_all)
@@ -1113,16 +1126,41 @@ class MainWindow(QMainWindow):
             for p in u.pins:
                 yield u, p
 
-    def apply_pin_bulk_to_selected(self, side: str, pin_type: str, function: str, length: float):
+    def apply_pin_bulk_to_selected(self, side: str, pin_type: str, inverted: str, function: str, length: float, rotation: str, show_number: str, show_name: str, show_func: str):
         selected = [it for it in self.scene.selectedItems() if it.data(0) == 'PIN']
+        changed_units = set()
         for it in selected:
             p = it.model
-            p.side = side
-            p.pin_type = pin_type
+            if side and side != '<keep>':
+                p.side = side
+            if pin_type and pin_type != '<keep>':
+                p.pin_type = pin_type
+            if inverted == 'yes':
+                p.inverted = True
+            elif inverted == 'no':
+                p.inverted = False
             if function.strip():
                 p.function = function.strip()
             p.length = max(1.0, round(float(length)))
-        self.dock_pins_to_body(self.current_unit)
+            if rotation and rotation != '<keep>':
+                p.rotation = (round(float(rotation) / 90.0) * 90) % 360
+            if show_number == 'show':
+                p.visible_number = True
+            elif show_number == 'hide':
+                p.visible_number = False
+            if show_name == 'show':
+                p.visible_name = True
+            elif show_name == 'hide':
+                p.visible_name = False
+            if show_func == 'show':
+                p.visible_function = True
+            elif show_func == 'hide':
+                p.visible_function = False
+            for u in self.symbol.units:
+                if p in u.pins:
+                    changed_units.add(id(u))
+                    self.dock_pins_to_body(u)
+                    break
         self.validate_pins(silent=True)
         self.schedule_scene_refresh()
 
@@ -2013,7 +2051,7 @@ class MainWindow(QMainWindow):
                 for t in u.texts:
                     if not getattr(t, 'font_size_grid', None):
                         t.font_size_grid = 0.9
-                    t.font_size_pt = round(float(sym.grid_inch) * 72.0 * float(t.font_size_grid), 2)
+                    t.font_size_pt = round(float(sym.grid_inch) * PX_PER_INCH * float(t.font_size_grid) * 1.28, 2)
 
     def set_origin_mode(self, mode: str):
         self.symbol.origin = mode or OriginMode.CENTER.value

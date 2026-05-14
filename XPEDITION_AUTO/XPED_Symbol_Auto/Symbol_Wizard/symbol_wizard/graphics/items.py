@@ -22,14 +22,7 @@ def pen_for(color, width_grid, style, grid_px):
 
 
 def qfont_for(family, size_px):
-    """Create a canvas font from a grid-derived pixel height.
-
-    The UI stores text size as a grid multiplier, e.g. 0.9 means the
-    visible text should occupy roughly 90% of one grid pitch. Qt point
-    sizes are device/DPI dependent and were the reason attributes appeared
-    far too small. Canvas text therefore uses pixelSize, where the caller
-    passes a value derived from grid_px.
-    """
+    """Create a canvas font from an already grid-derived pixel height."""
     try:
         px = float(size_px)
     except (TypeError, ValueError):
@@ -37,6 +30,26 @@ def qfont_for(family, size_px):
     font = QFont(family or 'Arial')
     font.setPixelSize(max(1, int(round(px))))
     return font
+
+
+def qfont_from_grid(font_model, grid_px):
+    """Return a font whose visible size follows the active grid.
+
+    font_model.size_grid is authoritative: 0.9 means about 90% of one
+    grid pitch, independent of OS DPI/point-size settings. size_pt is kept
+    synchronized as a compatibility/export field but is not used for canvas
+    sizing.
+    """
+    try:
+        sg = float(getattr(font_model, 'size_grid', 0.9) or 0.9)
+    except (TypeError, ValueError):
+        sg = 0.9
+    px = float(grid_px) * sg * 1.28
+    try:
+        font_model.size_pt = round(px, 2)
+    except Exception:
+        pass
+    return qfont_for(getattr(font_model, 'family', 'Arial'), px)
 
 
 class TransformMixin:
@@ -334,7 +347,7 @@ class PinItem(TransformMixin, QGraphicsItem):
             r = .18 * g
             painter.drawEllipse(QPointF((-r if m.side == PinSide.LEFT.value else r), 0), r, r)
         painter.setPen(pen_for(m.number_font.color, m.line_width, m.line_style, g))
-        painter.setFont(qfont_for(m.number_font.family, m.number_font.size_pt))
+        painter.setFont(qfont_from_grid(m.number_font, g))
         if m.visible_number:
             painter.drawText(QRectF(min(x1, x2), -.85 * g, abs(x2 - x1), .5 * g), Qt.AlignCenter, m.number)
         # Display rule: if a dedicated function exists, show function; otherwise show pin name.
@@ -348,7 +361,7 @@ class PinItem(TransformMixin, QGraphicsItem):
         label = ' / '.join([x for x in parts if x])
         if label:
             painter.setPen(pen_for(m.label_font.color, m.line_width, m.line_style, g))
-            painter.setFont(qfont_for(m.label_font.family, m.label_font.size_pt))
+            painter.setFont(qfont_from_grid(m.label_font, g))
             if m.side == PinSide.LEFT.value:
                 painter.drawText(QRectF(.25 * g, -.35 * g, 6 * g, .7 * g), Qt.AlignVCenter | Qt.AlignLeft, label)
             else:
