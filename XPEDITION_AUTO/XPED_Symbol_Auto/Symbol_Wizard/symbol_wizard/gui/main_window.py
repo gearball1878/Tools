@@ -178,7 +178,18 @@ class TemplateEditorDialog(QDialog):
         tools.addStretch(); layout.addLayout(tools)
         splitter = QSplitter()
         splitter.addWidget(self.view)
-        side = QWidget(); self.form = QFormLayout(side); splitter.addWidget(side); splitter.setSizes([850, 300])
+
+        # Keep the property panel usable for symbols/templates with many attributes.
+        # The form itself is placed inside a scroll area, so all dynamically generated
+        # body attributes, pin settings, text settings and graphic settings remain reachable.
+        side = QWidget()
+        self.form = QFormLayout(side)
+        self.form.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
+        self.props_scroll = QScrollArea()
+        self.props_scroll.setWidgetResizable(True)
+        self.props_scroll.setWidget(side)
+        splitter.addWidget(self.props_scroll)
+        splitter.setSizes([850, 300])
         layout.addWidget(splitter, 1)
         buttons = QDialogButtonBox(QDialogButtonBox.Close); buttons.rejected.connect(self.reject); layout.addWidget(buttons)
         self.scene.selectionChanged.connect(self.on_scene_selection_changed)
@@ -1501,6 +1512,14 @@ class MainWindow(QMainWindow):
                 a.setShortcut(QKeySequence(sc))
             view_menu.addAction(a)
 
+        help_menu = mb.addMenu('&Help')
+        a = QAction('How To', self)
+        a.triggered.connect(self.show_how_to)
+        help_menu.addAction(a)
+        a = QAction('About Symbol Wizard', self)
+        a.triggered.connect(self.show_about_dialog)
+        help_menu.addAction(a)
+
     def _ribbon(self):
         """Create permanently visible, grouped edit ribbons.
 
@@ -1640,6 +1659,237 @@ class MainWindow(QMainWindow):
         b = QPushButton('Distribute Vertical')
         b.clicked.connect(self.distribute_selected_pins_vertical)
         pin_tb.addWidget(b)
+
+        # --- Help -------------------------------------------------------
+        self.addToolBarBreak()
+        help_tb = make_bar('Help')
+        howto_btn = QPushButton('How To')
+        howto_btn.clicked.connect(self.show_how_to)
+        help_tb.addWidget(howto_btn)
+        about_btn = QPushButton('About')
+        about_btn.clicked.connect(self.show_about_dialog)
+        help_tb.addWidget(about_btn)
+
+    def show_how_to(self):
+        dlg = QDialog(self)
+        dlg.setWindowTitle('How To - Symbol Wizard')
+        dlg.resize(920, 760)
+        layout = QVBoxLayout(dlg)
+        browser = QTextBrowser(dlg)
+        browser.setOpenExternalLinks(True)
+        browser.setMarkdown(self._how_to_markdown())
+        layout.addWidget(browser, 1)
+        buttons = QDialogButtonBox(QDialogButtonBox.Close, dlg)
+        buttons.rejected.connect(dlg.reject)
+        layout.addWidget(buttons)
+        dlg.exec()
+
+    def show_about_dialog(self):
+        QMessageBox.about(
+            self,
+            'About Symbol Wizard',
+            'Symbol Wizard\n\n'
+            'A grid-based editor for creating and maintaining Xpedition symbol definitions, templates, pins, text attributes, and graphic objects.\n\n'
+            'Editor: Christian Hopper\n'
+            'Company: QAVION Consulting GmbH\n'
+            'Customer: Liebherr Electronics and Drives\n'
+            'Year: 2026'
+        )
+
+    def _how_to_markdown(self):
+        return """# Symbol Wizard - How To Guide
+
+## 1. Purpose
+
+Symbol Wizard is a grid-based editor for creating, editing, validating, and exporting electrical symbols for Xpedition-oriented workflows. It combines symbol body editing, pin management, template handling, text and attribute placement, graphical object editing, and validation in one application.
+
+The editor is designed around a fixed grid. Most object positions, alignments, increments, and body-related transformations are intended to snap to this grid so that generated symbols remain consistent and reproducible.
+
+## 2. Main Window Overview
+
+The main window contains three primary areas:
+
+- **Left workspace**: symbol lists, split-symbol units, pin overview tables, and the object tree.
+- **Center canvas**: the graphical symbol editor with grid, body, pins, text, attributes, and graphics.
+- **Right properties panel**: context-sensitive settings for the selected object or selected objects.
+
+The ribbon at the top contains drawing tools, setup controls, style controls, transformation tools, pin actions, and this Help section.
+
+## 3. Creating Symbols
+
+Use **File > New Symbol** to create a regular symbol. Use **File > New Split Symbol** to create a split symbol with multiple units or parts. For split symbols, each unit can be edited separately while validation still checks the full symbol across all units.
+
+Symbol names are shown as tabs. You can switch between symbols using the symbol tabs or canvas tabs. Existing symbols can be renamed from the symbol tab context menu.
+
+## 4. Grid and Sheet Setup
+
+Use **Grid inch** to define the grid size. The grid is the central reference for body size, object placement, text anchors, pin placement, and many transformations.
+
+Use **Format** to select the sheet format. Use **Zoom Fit** to fit the current symbol into the view.
+
+## 5. Origin Handling
+
+The **Origin** selector defines how the symbol origin is interpreted. Use **Origin Reset** to reset the origin based on the selected anchor. When the body origin changes, attached objects such as pins, plain text, graphics, and body attributes are moved consistently with the body.
+
+This is especially important for templates because template body attributes must stay attached in the same way as pins, text, and graphic objects.
+
+## 6. Drawing and Selecting Objects
+
+Use the draw tools to create objects on the canvas:
+
+- **Select/Edit**: select and modify existing objects.
+- **Pin L / Pin R**: create left- or right-oriented pins.
+- **Text**: create plain text objects.
+- **Line, Rect, Ellipse**: create graphic objects.
+
+The **Selectable** control limits which object types can be selected. This is useful when editing dense symbols where text, pins, body, and graphics overlap.
+
+## 7. Body Editing
+
+The body represents the main symbol container. Body size is edited with width and height fields. Increment/decrement buttons for body and graphic object size use the grid step. If a non-grid value is needed, type the numeric value directly into the field.
+
+Body color and rotation belong to the body properties. Body color can also be changed through a global multi-selection color operation when the body is selected.
+
+When the body is moved or scaled, attached objects must follow consistently. This includes pins, plain texts, graphic objects, symbol attributes, and template body attributes.
+
+## 8. Pin Editing
+
+Pins can be edited either in the canvas, the object tree, or the pin tables. The pin overview table supports editing of:
+
+- Pin number
+- Pin name
+- Pin function
+- Pin type
+- Side
+- Inverted state
+
+Use **Selected Pin Actions** to assign sides or distribute selected pins vertically.
+
+Use **Tools > Validate Pins** to check the pin configuration. Validation includes checks for duplicate pin numbers and duplicate pin names.
+
+## 9. Text and Attribute Editing
+
+Plain text and generated attributes use the same grid-anchor concept. Each text object has a horizontal and vertical anchor combination. The green anchor point represents the exact grid anchor used for placement.
+
+Horizontal anchor modes:
+
+- **Left**: the green point is on a vertical grid line at the left side of the text; the text grows to the right.
+- **Center**: the green point is on a vertical grid line at the horizontal center of the text.
+- **Right**: the green point is on a vertical grid line at the right side of the text; the text grows to the left.
+
+Vertical anchor modes:
+
+- **Upper**: the green point is on a horizontal grid line at the upper edge of the text.
+- **Center**: the green point is on a horizontal grid line at the vertical center of the text.
+- **Lower**: the green point is on a horizontal grid line at the lower edge of the text.
+
+All nine combinations are supported: upper-left, upper-center, upper-right, center-left, center-center, center-right, lower-left, lower-center, and lower-right. The same behavior applies to plain text and attributes.
+
+## 10. Text Alignment and Distribution
+
+When multiple text objects or attributes are selected, alignment uses the grid anchor. For example, aligning left moves the selected objects so their left anchors lie on the same vertical grid line. Aligning right uses the right anchor. Center alignment uses the center anchor.
+
+Vertical alignment works the same way using horizontal grid lines:
+
+- Upper aligns upper anchors.
+- Center aligns center anchors.
+- Lower aligns lower anchors.
+
+Distribution keeps selected objects evenly spaced. For text objects, distribution is based on their anchor positions, not only their bounding rectangles. This avoids visible drift from the grid.
+
+## 11. Text Wrapping
+
+Plain text normally does not wrap automatically. A manual line break can be inserted with **Shift + Enter** when editing text. Attribute text can optionally support wrapping depending on the attribute settings. The default behavior is no wrapping.
+
+## 12. Graphic Objects
+
+Graphic objects include lines, rectangles, ellipses, and other shape variants. Shape-specific properties are displayed when the shape type is changed. For example, changing a graphic object shape immediately refreshes the available property fields for that shape.
+
+Graphic object width and height spinbox increments follow the grid. Non-grid values can still be entered manually.
+
+## 13. Color Handling
+
+Color can be set on individual objects in their properties. The ribbon RGB control can also be used as a multi-selection color command. When multiple objects are selected, changing color applies to all supported selected objects, including:
+
+- Body
+- Pins
+- Plain text
+- Attributes
+- Graphic objects
+
+The selected color is synchronized with the active selection wherever possible.
+
+## 14. Rotation and Transformations
+
+Use the transform buttons to rotate selected objects by 15 degrees clockwise or counter-clockwise. Flip operations mirror selected objects horizontally or vertically. Scale operations change selected object dimensions.
+
+Pins, graphics, body, text, and attributes should retain their changed transformation values instead of briefly changing and reverting.
+
+## 15. Template Editor
+
+Use **Tools > Edit Symbol Templates** to open the template editor. The template editor provides a canvas-based editor for reusable symbol templates. It supports the same core editing concepts as the main Symbol Wizard:
+
+- Grid-based placement
+- Origin handling
+- Body editing
+- Pins
+- Plain text
+- Graphics
+- Body attributes
+- Multi-selection operations
+- Undo and redo
+- Copy, cut, paste, and select all
+
+If a template has unsaved changes, a save prompt is shown when closing the template editor or switching to another template.
+
+## 16. Keyboard Shortcuts
+
+The main editor supports common shortcuts:
+
+- **Ctrl + A**: select all canvas objects
+- **Ctrl + C**: copy selected objects
+- **Ctrl + X**: cut selected objects
+- **Ctrl + V**: paste copied objects
+- **Ctrl + Z**: undo
+- **Ctrl + Y**: redo
+- **Delete**: delete selected objects
+- **Ctrl + S**: save current symbol JSON
+- **Ctrl + Shift + S**: save all symbols JSON
+- **Ctrl + O**: open library JSON
+- **Ctrl + F**: zoom to fit symbol
+- **F5**: refresh canvas
+
+The template editor also supports the same essential edit shortcuts for template work.
+
+## 17. Saving and Loading
+
+Use **File > Save Current Symbol JSON** to save the active symbol. Use **File > Save All Symbols JSON** to save the full library. Use **File > Open Library JSON** to load a saved library. Individual symbol JSON files can also be imported.
+
+Template changes are managed through the template editor. Save prompts appear when necessary to prevent accidental loss of template edits.
+
+## 18. Pinmux Import
+
+Use **File > Import PINMUX CSV** to import pin information from a CSV file. After importing, review the pin table and run **Validate Pins** to detect duplicate numbers, duplicate names, or inconsistent pin data.
+
+## 19. Recommended Workflow
+
+1. Create or open a symbol library.
+2. Set grid and sheet format.
+3. Create or choose a suitable body/template.
+4. Add pins and assign pin metadata.
+5. Add plain text, attributes, and graphics.
+6. Align text and attributes with the grid anchor system.
+7. Use multi-select alignment and distribution for consistent placement.
+8. Validate pins before export or delivery.
+9. Save the current symbol or full library.
+
+## 20. About
+
+**Editor:** Christian Hopper  
+**Company:** QAVION Consulting GmbH  
+**Customer:** Liebherr Electronics and Drives  
+**Year:** 2026
+"""
 
     # ------------------------------------------------------------------ Rebuilds
     def rebuild_all(self):
@@ -3693,24 +3943,64 @@ class MainWindow(QMainWindow):
         if isinstance(body_def.get('refdes_font'), dict):
             body.refdes_font = FontModel(**body_def['refdes_font'])
         attrs = []
+        visible_from_source = {}
+
+        def add_attr_entry(entry):
+            """Accept plain names and imported .sym-style attribute dictionaries.
+
+            .sym imports may provide attributes as dictionaries containing a name and
+            a visibility flag. In that case the visibility from the source file wins.
+            For plain names, visibility is resolved later from body.visible_attributes.
+            """
+            if isinstance(entry, dict):
+                name = (entry.get('name') or entry.get('attribute') or entry.get('key') or entry.get('label') or '').strip()
+                if not name:
+                    return
+                if name not in attrs:
+                    attrs.append(name)
+                if any(k in entry for k in ('visible', 'visibility', 'displayed', 'show')):
+                    raw = entry.get('visible', entry.get('visibility', entry.get('displayed', entry.get('show'))))
+                    visible_from_source[name] = str(raw).strip().lower() not in ('0', 'false', 'no', 'off', 'hidden', '')
+                return
+            name = str(entry).strip()
+            if name and name not in attrs:
+                attrs.append(name)
+
         for a in data.get('global_attributes', []):
-            if a not in attrs: attrs.append(a)
+            add_attr_entry(a)
         for a in type_def.get('attributes', []):
-            if a not in attrs: attrs.append(a)
+            add_attr_entry(a)
         for a in sub_def.get('attributes', []):
-            if a not in attrs: attrs.append(a)
+            add_attr_entry(a)
         if isinstance(body_def.get('attributes'), dict):
             for a in body_def['attributes'].keys():
-                if a not in attrs: attrs.append(a)
+                add_attr_entry(a)
+        elif isinstance(body_def.get('attributes'), list):
+            for a in body_def['attributes']:
+                add_attr_entry(a)
+
         prefix = sub_def.get('prefix', type_def.get('prefix', '?'))
         body.attributes = {a: '' for a in attrs}
-        body.attributes.update(copy.deepcopy(body_def.get('attributes') or {}))
+        if isinstance(body_def.get('attributes'), dict):
+            body.attributes.update(copy.deepcopy(body_def.get('attributes') or {}))
         body.attributes.setdefault('RefDes', f'{prefix}?')
         if not body.attributes.get('RefDes'):
             body.attributes['RefDes'] = f'{prefix}?'
-        body.visible_attributes = {a: a in ('RefDes', 'Value', 'Package') for a in attrs}
-        body.visible_attributes.update(copy.deepcopy(body_def.get('visible_attributes') or {}))
-        body.visible_attributes['RefDes'] = True
+        if 'RefDes' not in attrs:
+            attrs.insert(0, 'RefDes')
+
+        # Visibility belongs to the source/template. Do not force Package/Value/RefDes
+        # visible after a .sym/template import; preserve the source visibility exactly
+        # when present. For legacy definitions without visibility data, keep the old
+        # practical defaults.
+        explicit_vis = body_def.get('visible_attributes')
+        if isinstance(explicit_vis, dict):
+            body.visible_attributes = {a: False for a in attrs}
+            body.visible_attributes.update({str(k): bool(v) for k, v in copy.deepcopy(explicit_vis).items()})
+        elif visible_from_source:
+            body.visible_attributes = {a: visible_from_source.get(a, False) for a in attrs}
+        else:
+            body.visible_attributes = {a: a in ('RefDes', 'Value', 'Package') for a in attrs}
         pins = []
         pin_defs = sub_def.get('default_pins') or type_def.get('default_pins', []) or []
         for idx, pd in enumerate(pin_defs, start=1):
