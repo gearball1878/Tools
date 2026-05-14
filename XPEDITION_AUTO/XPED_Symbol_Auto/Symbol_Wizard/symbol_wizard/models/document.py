@@ -8,7 +8,7 @@ class PinType(str, Enum):
 class PinSide(str, Enum):
     LEFT='left'; RIGHT='right'
 class OriginMode(str, Enum):
-    BOTTOM_LEFT='bottom_left'; BOTTOM_RIGHT='bottom_right'; CENTER='center'; TOP_LEFT='top_left'; TOP_RIGHT='top_right'
+    BOTTOM_LEFT='bottom_left'; BOTTOM_RIGHT='bottom_right'; CENTER='center'; TOP_LEFT='top_left'; TOP_RIGHT='top_right'; CUSTOM='custom'
 class DrawTool(str, Enum):
     SELECT='select'; PIN_LEFT='pin_left'; PIN_RIGHT='pin_right'; TEXT='text'; LINE='line'; RECT='rect'; ELLIPSE='ellipse'
 class SymbolKind(str, Enum):
@@ -22,10 +22,11 @@ class LineStyle(str, Enum):
 @dataclass
 class FontModel:
     family: str='Arial'
-    # Font sizes are stored in common point units. size_grid is kept for
-    # backwards compatibility with older JSON files. 0.100 inch grid => 7.2 pt.
-    size_pt: float=7.2
-    size_grid: float=1.0
+    # Font size is grid-relative. size_grid=0.9 means 90% of the active grid.
+    # size_pt is derived from grid_inch * 72 * size_grid at runtime and stored
+    # only for compatibility/export visibility.
+    size_pt: float=6.48
+    size_grid: float=0.9
     color: Tuple[int,int,int]=(0,0,0)
 
 @dataclass
@@ -55,13 +56,13 @@ class PinModel(TransformModel):
     inverted: bool=False; color: Tuple[int,int,int]=(0,0,0)
     visible_number: bool=True; visible_name: bool=True; visible_function: bool=True
     line_width: float=0.03; line_style: str=LineStyle.SOLID.value
-    number_font: FontModel=field(default_factory=lambda: FontModel(size_pt=4.0, size_grid=0.55))
-    label_font: FontModel=field(default_factory=lambda: FontModel(size_pt=7.2, size_grid=1.0))
+    number_font: FontModel=field(default_factory=lambda: FontModel(size_pt=3.24, size_grid=0.45))
+    label_font: FontModel=field(default_factory=lambda: FontModel(size_pt=6.48, size_grid=0.9))
 
 @dataclass
 class TextModel(TransformModel):
     text: str='Text'; x: float=0.0; y: float=0.0
-    font_family: str='Arial'; font_size_pt: float=7.2; font_size_grid: float=1.0; color: Tuple[int,int,int]=(0,0,0)
+    font_family: str='Arial'; font_size_pt: float=6.48; font_size_grid: float=0.9; color: Tuple[int,int,int]=(0,0,0)
 
 @dataclass
 class SymbolBodyModel(TransformModel):
@@ -70,8 +71,9 @@ class SymbolBodyModel(TransformModel):
     # extends downward from (x, y), therefore x=-width/2 and y=height/2.
     x: float=-8.0; y: float=12.0; width: float=16.0; height: float=24.0
     color: Tuple[int,int,int]=(0,0,0); line_width: float=0.03; line_style: str=LineStyle.SOLID.value
-    attribute_font: FontModel=field(default_factory=lambda: FontModel(size_pt=7.2, size_grid=1.0))
-    refdes_font: FontModel=field(default_factory=lambda: FontModel(size_pt=7.2, size_grid=1.0))
+    body_shape: str='rect'
+    attribute_font: FontModel=field(default_factory=lambda: FontModel(size_pt=6.48, size_grid=0.9))
+    refdes_font: FontModel=field(default_factory=lambda: FontModel(size_pt=6.48, size_grid=0.9))
     attributes: Dict[str,str]=field(default_factory=lambda:{'Order Code':'','Package':'','RefDes':'U?','Value':'','Frequency':'','Tolerance':'','Technology':''})
     visible_attributes: Dict[str,bool]=field(default_factory=lambda:{'Order Code':False,'Package':True,'RefDes':True,'Value':True,'Frequency':False,'Tolerance':False,'Technology':False})
     refdes_align: str='left'; body_attr_align: str='left'
@@ -94,6 +96,8 @@ class SymbolModel:
     grid_inch: float=0.100
     sheet_format: str=SheetFormat.A3.value
     origin: str=OriginMode.CENTER.value
+    origin_x: float=0.0
+    origin_y: float=0.0
     units: List[SymbolUnitModel]=field(default_factory=lambda:[SymbolUnitModel()])
 
 @dataclass

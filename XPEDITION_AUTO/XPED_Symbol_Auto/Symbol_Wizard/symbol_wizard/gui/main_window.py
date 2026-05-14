@@ -11,7 +11,7 @@ from symbol_wizard.rules.grid import PX_PER_INCH, duplicate_pin_numbers, next_pi
 from symbol_wizard.rules.placement import create_auto_pin
 from symbol_wizard.graphics.scene import SymbolScene, SHEET_INCHES, sheet_rect_for
 from symbol_wizard.graphics.view import SymbolView
-from symbol_wizard.graphics.items import BodyItem, PinItem, TextItem, GraphicItem
+from symbol_wizard.graphics.items import BodyItem, PinItem, TextItem, GraphicItem, OriginItem
 from symbol_wizard.io.json_store import save_library, load_library, save_symbol, load_symbol
 
 
@@ -306,6 +306,12 @@ class MainWindow(QMainWindow):
         self.format_combo.currentTextChanged.connect(self.set_sheet_format)
         tb.addWidget(self.format_combo)
 
+        tb.addWidget(QLabel('Origo:'))
+        self.origin_combo = QComboBox()
+        self.origin_combo.addItems([x.value for x in OriginMode])
+        self.origin_combo.currentTextChanged.connect(self.set_origin_mode)
+        tb.addWidget(self.origin_combo)
+
         zoom_btn = QPushButton('Zoom Fit')
         zoom_btn.clicked.connect(self.zoom_to_fit_symbol)
         tb.addWidget(zoom_btn)
@@ -393,6 +399,10 @@ class MainWindow(QMainWindow):
         self.grid_spin.blockSignals(True)
         self.grid_spin.setValue(self.symbol.grid_inch)
         self.grid_spin.blockSignals(False)
+        self.sync_font_points_to_grid()
+        self.origin_combo.blockSignals(True)
+        self.origin_combo.setCurrentText(getattr(self.symbol, 'origin', OriginMode.CENTER.value))
+        self.origin_combo.blockSignals(False)
         self.format_combo.blockSignals(True)
         self.format_combo.setCurrentText(getattr(self.symbol, 'sheet_format', SheetFormat.A3.value))
         self.format_combo.blockSignals(False)
@@ -509,10 +519,12 @@ class MainWindow(QMainWindow):
             return
         for u in self.symbol.units:
             body = u.body
-            body_tpl = data.get('body', {})
+            body_tpl = dict(data.get('body', {}) or {})
+            body_tpl.update(subdata.get('body', {}) or {})
             old_w, old_h = body.width, body.height
             body.width = float(body_tpl.get('width', body.width))
             body.height = float(body_tpl.get('height', body.height))
+            body.body_shape = str(body_tpl.get('shape', getattr(body, 'body_shape', 'rect')))
             body.x = -body.width / 2.0
             body.y = body.height / 2.0
             global_attrs = self.symbol_type_config.get('global_attributes', ['RefDes', 'Package', 'Order Code', 'Value'])
@@ -643,6 +655,9 @@ class MainWindow(QMainWindow):
         body_item = BodyItem(u.body, self)
         self.scene.addItem(body_item)
         self._restore_or_select_item(body_item, selected_ids)
+
+        origin_item = OriginItem(self.symbol, self)
+        self.scene.addItem(origin_item)
 
         self.add_attribute_text_items(u)
         for g in u.graphics:
@@ -895,6 +910,7 @@ class MainWindow(QMainWindow):
         body_form.addRow('Height [grid]', self._dbl(m.height, lambda v: self.set_body_dim(item, 'height', v), 1, 300, 1))
         body_form.addRow('Line style', self._combo([x.value for x in LineStyle], m.line_style, lambda v: self.set_and_refresh(m, 'line_style', v)))
         body_form.addRow('Line width [grid]', self._dbl(m.line_width, lambda v: self.set_and_refresh(m, 'line_width', v), .01, 1, .01))
+        body_form.addRow('Body shape', self._combo(['rect','resistor','capacitor','inductor','diode','battery','transformer','transistor','fuse','connector','opamp','circle'], getattr(m, 'body_shape', 'rect'), lambda v: self.set_and_refresh(m, 'body_shape', v)))
         body_form.addRow('Rotation [deg]', self.rotation_combo(getattr(m, 'rotation', 0), lambda v: self.set_and_refresh(m, 'rotation', float(v))))
         b = QPushButton('Body Line Color RGB')
         b.clicked.connect(lambda: self.color_model(m))
@@ -905,7 +921,7 @@ class MainWindow(QMainWindow):
         attr_outer = QVBoxLayout(attr_group)
         attr_font_row = QFormLayout()
         attr_font_row.addRow('Font family', self.font_family_combo(m.attribute_font.family, lambda v: self.set_font_attr(m.attribute_font, 'family', v, True)))
-        attr_font_row.addRow('Font size [pt]', self._dbl(getattr(m.attribute_font, 'size_pt', 7.2), lambda v: self.set_font_attr(m.attribute_font, 'size_pt', v, True), 1, 72, .5))
+        attr_font_row.addRow('Font size [grid]', self._dbl(getattr(m.attribute_font, 'size_grid', 0.9), lambda v: self.set_font_attr(m.attribute_font, 'size_grid', v, True), .1, 5, .1))
         fb = QPushButton('Font Color RGB')
         fb.clicked.connect(lambda: self.color_font(m.attribute_font, True))
         attr_font_row.addRow('Font color', fb)
@@ -941,6 +957,7 @@ class MainWindow(QMainWindow):
         for label, attr in [('Show Number', 'visible_number'), ('Show Name', 'visible_name'), ('Show Function', 'visible_function')]:
             cb = QCheckBox(); cb.setChecked(getattr(m, attr)); cb.toggled.connect(lambda v, a=attr: self.set_pin_attr(m, a, v)); self.form.addRow(label, cb)
         self.form.addRow('Length [grid]', self._dbl(m.length, lambda v: self.set_pin_length(m, v), 1, 100, 1))
+        self.form.addRow('Rotation [deg]', self.rotation_combo(getattr(m, 'rotation', 0), lambda v: self.set_pin_attr(m, 'rotation', float(v))))
         self.form.addRow('Line style', self._combo([x.value for x in LineStyle], m.line_style, lambda v: self.set_pin_attr(m, 'line_style', v)))
         self.form.addRow('Line width', self._dbl(m.line_width, lambda v: self.set_pin_attr(m, 'line_width', v), .01, 1, .01))
         self.font_props('Pin number font', m.number_font)
@@ -951,7 +968,7 @@ class MainWindow(QMainWindow):
         m = item.model
         self.form.addRow('Text', self._line(m.text, lambda v: self.set_text_attr(item, 'text', v)))
         self.form.addRow('Font', self.font_family_combo(m.font_family, lambda v: self.set_text_attr(item, 'font_family', v)))
-        self.form.addRow('Size [pt]', self._dbl(getattr(m, 'font_size_pt', 7.2), lambda v: self.set_text_attr(item, 'font_size_pt', v), 1, 72, .5))
+        self.form.addRow('Size [grid]', self._dbl(getattr(m, 'font_size_grid', 0.9), lambda v: self.set_text_attr(item, 'font_size_grid', v), .1, 5, .1))
         self.transform_props(m)
         b = QPushButton('Color RGB'); b.clicked.connect(lambda: self.color_model(m)); self.form.addRow('Color', b)
 
@@ -968,7 +985,7 @@ class MainWindow(QMainWindow):
     def font_props(self, title, f, refresh_attrs=False):
         self.form.addRow(QLabel(title))
         self.form.addRow('Family', self.font_family_combo(f.family, lambda v: self.set_font_attr(f, 'family', v, refresh_attrs)))
-        self.form.addRow('Size [pt]', self._dbl(getattr(f, 'size_pt', 7.2), lambda v: self.set_font_attr(f, 'size_pt', v, refresh_attrs), 1, 72, .5))
+        self.form.addRow('Size [grid]', self._dbl(getattr(f, 'size_grid', 0.9), lambda v: self.set_font_attr(f, 'size_grid', v, refresh_attrs), .1, 5, .1))
         b = QPushButton('Font Color RGB')
         b.clicked.connect(lambda: self.color_font(f, refresh_attrs))
         self.form.addRow('Font color', b)
@@ -993,7 +1010,7 @@ class MainWindow(QMainWindow):
         elif a == 'size_grid':
             v = float(v)
             f.size_grid = v
-            f.size_pt = round(v * 7.2, 2)
+            f.size_pt = self.grid_font_pt(v)
         else:
             setattr(f, a, v)
         if refresh_attrs:
@@ -1040,6 +1057,11 @@ class MainWindow(QMainWindow):
         self.rebuild_tree()
 
     def set_pin_attr(self, m, a, v):
+        if a == 'rotation':
+            try:
+                v = (round(float(v) / 90.0) * 90) % 360
+            except (TypeError, ValueError):
+                v = 0.0
         setattr(m, a, v)
         if a == 'name':
             self.ensure_unique_pin_names(self.symbol)
@@ -1053,8 +1075,6 @@ class MainWindow(QMainWindow):
     def set_pin_length(self, m, v):
         # Pin length is always an integer grid multiple.
         m.length = max(1.0, round(float(v)))
-        # Remove any rotation/scale from older project files or pasted data.
-        m.rotation = 0.0
         m.scale_x = 1.0
         m.scale_y = 1.0
         self.schedule_scene_refresh()
@@ -1069,7 +1089,7 @@ class MainWindow(QMainWindow):
         elif a == 'font_size_grid':
             v = float(v)
             item.model.font_size_grid = v
-            item.model.font_size_pt = round(v * 7.2, 2)
+            item.model.font_size_pt = self.grid_font_pt(v)
             from symbol_wizard.graphics.items import qfont_for
             item.setFont(qfont_for(item.model.font_family, item.model.font_size_pt))
         else:
@@ -1104,10 +1124,13 @@ class MainWindow(QMainWindow):
                 item.setRect(0, 0, model.width * g, model.height * g)
                 item.setPen(item.pen().__class__(QColor(*model.color), max(1, model.line_width * g)))
             elif kind == 'PIN':
-                model.rotation = 0.0
                 model.scale_x = 1.0
                 model.scale_y = 1.0
-                item.setRotation(0.0)
+                try:
+                    model.rotation = (round(float(getattr(model, 'rotation', 0.0) or 0.0) / 90.0) * 90) % 360
+                except (TypeError, ValueError):
+                    model.rotation = 0.0
+                item.setRotation(float(model.rotation))
                 item.setTransform(item.transform().__class__())
                 item.setPos(model.x * g, -model.y * g)
             elif kind == 'TEXT':
@@ -1777,8 +1800,54 @@ class MainWindow(QMainWindow):
         self.current_unit_index = len(self.symbol.units) - 1
         self.rebuild_canvas_tabs(); self.rebuild_unit_tabs(); self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
 
+
+    def grid_font_pt(self, size_grid=0.9):
+        try:
+            sg = float(size_grid)
+        except (TypeError, ValueError):
+            sg = 0.9
+        return round(float(self.symbol.grid_inch) * 72.0 * sg, 2)
+
+    def sync_font_points_to_grid(self):
+        def sync_font(f):
+            if not f:
+                return
+            if not getattr(f, 'size_grid', None):
+                f.size_grid = 0.9
+            f.size_pt = self.grid_font_pt(f.size_grid)
+        for sym in self.library.symbols:
+            old_symbol = getattr(self, '_sync_symbol_backup', None)
+            for u in sym.units:
+                sync_font(u.body.attribute_font)
+                sync_font(u.body.refdes_font)
+                for p in u.pins:
+                    sync_font(p.number_font)
+                    sync_font(p.label_font)
+                for t in u.texts:
+                    if not getattr(t, 'font_size_grid', None):
+                        t.font_size_grid = 0.9
+                    t.font_size_pt = round(float(sym.grid_inch) * 72.0 * float(t.font_size_grid), 2)
+
+    def set_origin_mode(self, mode: str):
+        self.symbol.origin = mode or OriginMode.CENTER.value
+        self.place_origin_by_mode(self.symbol.origin)
+        self.rebuild_scene()
+
+    def place_origin_by_mode(self, mode: str):
+        b = self.current_unit.body
+        positions = {
+            OriginMode.CENTER.value: (b.x + b.width/2, b.y - b.height/2),
+            OriginMode.BOTTOM_LEFT.value: (b.x, b.y - b.height),
+            OriginMode.BOTTOM_RIGHT.value: (b.x + b.width, b.y - b.height),
+            OriginMode.TOP_LEFT.value: (b.x, b.y),
+            OriginMode.TOP_RIGHT.value: (b.x + b.width, b.y),
+        }
+        if mode in positions:
+            self.symbol.origin_x, self.symbol.origin_y = positions[mode]
+
     def set_grid(self, v):
         self.symbol.grid_inch = v
+        self.sync_font_points_to_grid()
         self.rebuild_scene()
 
     def set_sheet_format(self, fmt):

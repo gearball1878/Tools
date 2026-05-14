@@ -54,10 +54,12 @@ class SymbolScene(QGraphicsScene):
         while y < rect.bottom():
             painter.drawLine(QPointF(rect.left(), y), QPointF(rect.right(), y))
             y += g
-        # Origin axes: symbol origin. New bodies are centered on this point by default.
+        # Origin axes: movable symbol origin.
+        ox = float(getattr(self.window.symbol, 'origin_x', 0.0)) * PX_PER_INCH * float(getattr(self.window.symbol, 'grid_inch', 0.1))
+        oy = -float(getattr(self.window.symbol, 'origin_y', 0.0)) * PX_PER_INCH * float(getattr(self.window.symbol, 'grid_inch', 0.1))
         painter.setPen(QPen(QColor(150, 150, 150), 0))
-        painter.drawLine(QPointF(rect.left(), 0), QPointF(rect.right(), 0))
-        painter.drawLine(QPointF(0, rect.top()), QPointF(0, rect.bottom()))
+        painter.drawLine(QPointF(rect.left(), oy), QPointF(rect.right(), oy))
+        painter.drawLine(QPointF(ox, rect.top()), QPointF(ox, rect.bottom()))
         painter.restore()
 
     def drawForeground(self, painter: QPainter, rect):
@@ -70,9 +72,11 @@ class SymbolScene(QGraphicsScene):
         painter.drawRect(full)
         painter.setPen(QPen(QColor(210, 120, 120), 0, Qt.DashDotLine))
         painter.drawRect(usable)
+        ox = float(getattr(self.window.symbol, 'origin_x', 0.0)) * PX_PER_INCH * float(getattr(self.window.symbol, 'grid_inch', 0.1))
+        oy = -float(getattr(self.window.symbol, 'origin_y', 0.0)) * PX_PER_INCH * float(getattr(self.window.symbol, 'grid_inch', 0.1))
         painter.setPen(QPen(QColor(120, 120, 120), 0))
-        painter.drawEllipse(QPointF(0, 0), 5, 5)
+        painter.drawEllipse(QPointF(ox, oy), 5, 5)
         painter.setFont(QFont('Arial', 10))
-        painter.drawText(full.adjusted(8, 8, -8, -8), Qt.AlignTop | Qt.AlignLeft, f'{fmt} preview - symbol origin / default body center')
+        painter.drawText(full.adjusted(8, 8, -8, -8), Qt.AlignTop | Qt.AlignLeft, f'{fmt} preview - movable symbol origin / default body center')
         painter.drawText(usable.adjusted(8, 8, -8, -8), Qt.AlignTop | Qt.AlignLeft, 'max symbol area: 40% W / 80% H')
         painter.restore()
