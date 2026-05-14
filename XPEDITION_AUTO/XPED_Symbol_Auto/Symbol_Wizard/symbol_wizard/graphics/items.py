@@ -2,7 +2,7 @@ from __future__ import annotations
 from PySide6.QtCore import QPointF, QRectF, Qt, QEvent
 from PySide6.QtGui import QColor, QFont, QPainter, QPen, QBrush, QTransform, QTextCursor
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem, QGraphicsTextItem
-from symbol_wizard.models.document import PinSide, LineStyle, HorizontalAlign, VerticalAlign
+from symbol_wizard.models.document import PinSide, LineStyle
 from symbol_wizard.rules.grid import snap
 
 
@@ -324,6 +324,7 @@ class TextItem(TransformMixin, QGraphicsTextItem):
         self.window = window
         super().__init__(model.text)
         g = window.grid_px
+        self.setPos(model.x * g, -model.y * g)
         self.setDefaultTextColor(rgb(model.color))
         self.setFont(QFont(model.font_family, max(6, int(g * model.font_size_grid * .45))))
         self.common_flags()
@@ -331,37 +332,6 @@ class TextItem(TransformMixin, QGraphicsTextItem):
         self.setTextInteractionFlags(Qt.NoTextInteraction)
         self.setData(0, 'TEXT')
         self.apply_transform_from_model()
-        self.apply_alignment_position()
-
-    def _alignment_offset_px(self):
-        rect = self.boundingRect()
-        w, h = rect.width(), rect.height()
-        h_align = getattr(self.model, 'horizontal_align', HorizontalAlign.LEFT.value)
-        v_align = getattr(self.model, 'vertical_align', VerticalAlign.UPPER.value)
-        dx = 0.0
-        dy = 0.0
-        if h_align == HorizontalAlign.CENTER.value:
-            dx = -w / 2.0
-        elif h_align == HorizontalAlign.RIGHT.value:
-            dx = -w
-        if v_align == VerticalAlign.CENTER.value:
-            dy = -h / 2.0
-        elif v_align == VerticalAlign.LOWER.value:
-            dy = -h
-        return dx, dy
-
-    def apply_alignment_position(self):
-        g = self.window.grid_px
-        dx, dy = self._alignment_offset_px()
-        self.setPos(self.model.x * g + dx, -self.model.y * g + dy)
-
-    def refresh_text_style(self):
-        g = self.window.grid_px
-        self.setPlainText(self.model.text)
-        self.setDefaultTextColor(rgb(self.model.color))
-        self.setFont(QFont(self.model.font_family, max(6, int(g * self.model.font_size_grid * .45))))
-        self.apply_alignment_position()
-        self.update()
 
     def mouseDoubleClickEvent(self, event):
         self.setTextInteractionFlags(Qt.TextEditorInteraction)
@@ -376,7 +346,6 @@ class TextItem(TransformMixin, QGraphicsTextItem):
             self.model.text = self.toPlainText()
             self.setTextInteractionFlags(Qt.NoTextInteraction)
             self.clearFocus()
-            self.apply_alignment_position()
             self.scene().window.live_refresh()
             event.accept()
             return
@@ -394,15 +363,13 @@ class TextItem(TransformMixin, QGraphicsTextItem):
         self.model.text = self.toPlainText()
         self.setTextInteractionFlags(Qt.NoTextInteraction)
         self.common_flags()
-        self.apply_alignment_position()
         self.scene().window.live_refresh()
         super().focusOutEvent(e)
 
     def update_model_pos(self):
         g = self.window.grid_px
-        dx, dy = self._alignment_offset_px()
-        self.model.x = (self.pos().x() - dx) / g
-        self.model.y = -(self.pos().y() - dy) / g
+        self.model.x = self.pos().x() / g
+        self.model.y = -self.pos().y() / g
         self.model.text = self.toPlainText()
 
 
@@ -438,7 +405,16 @@ class GraphicItem(TransformMixin, QGraphicsItem):
         return self._rect().adjusted(-.35 * g, -.35 * g, .35 * g, .35 * g)
 
     def _handles(self):
-        return _corner_handles(self._rect(), self.window.grid_px * self.handle_size_factor)
+        s = self.window.grid_px * self.handle_size_factor
+        if self.model.shape == 'line':
+            g = self.window.grid_px
+            start = QPointF(0, 0)
+            end = QPointF(self.model.w * g, self.model.h * g)
+            return {
+                'l': QRectF(start.x() - s / 2, start.y() - s / 2, s, s),
+                'r': QRectF(end.x() - s / 2, end.y() - s / 2, s, s),
+            }
+        return _corner_handles(self._rect(), s)
 
     def paint(self, painter, option, widget=None):
         g, m = self.window.grid_px, self.model
@@ -479,6 +455,29 @@ class GraphicItem(TransformMixin, QGraphicsItem):
             g = self.window.grid_px
             p = QPointF(snap(event.scenePos().x(), g), snap(event.scenePos().y(), g))
             st = self._resize_start
+
+            if self.model.shape == 'line':
+                start_scene = QPointF(st['x'] * g, -st['y'] * g)
+                end_scene = QPointF(start_scene.x() + st['w'] * g, start_scene.y() + st['h'] * g)
+                if self._resizing == 'r':
+                    # Move the right/end point freely on the grid; start stays fixed.
+                    self.model.w = round((p.x() - start_scene.x()) / g * 2) / 2
+                    self.model.h = round((p.y() - start_scene.y()) / g * 2) / 2
+                    self.setPos(start_scene)
+                    self.model.x = st['x']; self.model.y = st['y']
+                elif self._resizing == 'l':
+                    # Move the left/start point freely on the grid; end stays fixed.
+                    self.setPos(p)
+                    self.model.x = round(p.x() / g * 2) / 2
+                    self.model.y = round(-p.y() / g * 2) / 2
+                    self.model.w = round((end_scene.x() - p.x()) / g * 2) / 2
+                    self.model.h = round((end_scene.y() - p.y()) / g * 2) / 2
+                self.prepareGeometryChange()
+                self.window.live_refresh()
+                self.update()
+                event.accept()
+                return
+
             left = st['x'] * g
             top = -st['y'] * g
             right = left + st['w'] * g
@@ -494,29 +493,28 @@ class GraphicItem(TransformMixin, QGraphicsItem):
             if self._resizing in ('b', 'bl', 'br'):
                 bottom = p.y()
 
-            if self.model.shape != 'line':
-                min_size = g * .25
-                if right < left:
-                    left, right = right, left
-                if bottom < top:
-                    top, bottom = bottom, top
-                if right - left < min_size:
-                    if self._resizing in ('l', 'tl', 'bl'):
-                        left = right - min_size
-                    else:
-                        right = left + min_size
-                if bottom - top < min_size:
-                    if self._resizing in ('t', 'tl', 'tr'):
-                        top = bottom - min_size
-                    else:
-                        bottom = top + min_size
+            min_size = g * .25
+            if right < left:
+                left, right = right, left
+            if bottom < top:
+                top, bottom = bottom, top
+            if right - left < min_size:
+                if self._resizing in ('l', 'tl', 'bl'):
+                    left = right - min_size
+                else:
+                    right = left + min_size
+            if bottom - top < min_size:
+                if self._resizing in ('t', 'tl', 'tr'):
+                    top = bottom - min_size
+                else:
+                    bottom = top + min_size
 
             self.prepareGeometryChange()
             self.setPos(left, top)
-            self.model.x = left / g
-            self.model.y = -top / g
-            self.model.w = (right - left) / g
-            self.model.h = (bottom - top) / g
+            self.model.x = round(left / g * 2) / 2
+            self.model.y = round(-top / g * 2) / 2
+            self.model.w = round((right - left) / g * 2) / 2
+            self.model.h = round((bottom - top) / g * 2) / 2
             self.window.live_refresh()
             self.update()
             event.accept()
