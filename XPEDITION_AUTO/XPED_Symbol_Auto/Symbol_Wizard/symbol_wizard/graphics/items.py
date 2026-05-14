@@ -1,7 +1,7 @@
 from __future__ import annotations
 import math
 from PySide6.QtCore import QPointF, QRectF, Qt, QEvent
-from PySide6.QtGui import QColor, QFont, QPainter, QPen, QBrush, QTransform, QTextCursor, QCursor, QPainterPath, QTextOption
+from PySide6.QtGui import QColor, QFont, QPainter, QPen, QBrush, QTransform, QTextCursor, QCursor, QPainterPath, QTextOption, QFontMetricsF
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem, QGraphicsTextItem
 from symbol_wizard.models.document import PinSide, LineStyle
 from symbol_wizard.rules.grid import snap
@@ -411,22 +411,27 @@ class TextItem(TransformMixin, QGraphicsTextItem):
         self._rotating = False
         self.apply_text_from_model()
 
-    def _text_anchor_offset(self):
-        """Return the local bounding-box point that must sit on model.x/model.y.
+    def _visual_text_rect(self):
+        """Tight local text rectangle used for grid anchoring.
 
-        The model coordinate is the grid anchor.  For text and generated
-        attribute text alike, alignment is defined against the *actual item
-        bounding box*: left/center/right select the left edge, horizontal
-        centre or right edge; upper/center/lower select the top edge, vertical
-        centre or bottom edge.  This intentionally does not use the font
-        baseline, because lower/upper must be visually edge-aligned to the
-        grid line.
+        QGraphicsTextItem/document sizes contain layout slack, especially on
+        the right edge.  Using font metrics for the actual lines makes
+        right-aligned text end exactly at the selected grid line and makes
+        lower alignment use the visual bottom instead of the item top.
         """
         try:
-            size = self.document().size()
-            br = QRectF(0, 0, self.document().idealWidth(), size.height())
+            fm = QFontMetricsF(self.font())
+            text = str(getattr(self.model, 'text', '') or '')
+            lines = text.split('\n') or ['']
+            width = max((fm.horizontalAdvance(line) for line in lines), default=0.0)
+            height = max(fm.height(), fm.lineSpacing() * len(lines))
+            return QRectF(0, 0, width, height)
         except Exception:
-            br = self.boundingRect()
+            return self.boundingRect()
+
+    def _text_anchor_offset(self):
+        """Return the local visual point that must sit on model.x/model.y."""
+        br = self._visual_text_rect()
         h = getattr(self.model, 'h_align', 'left')
         v = getattr(self.model, 'v_align', 'upper')
         if h == 'center':
@@ -480,6 +485,14 @@ class TextItem(TransformMixin, QGraphicsTextItem):
             painter.save()
             painter.setPen(QPen(QColor(80, 80, 80), 1, Qt.DashLine))
             painter.drawRect(self.boundingRect())
+            # Small green grid-anchor point: this is the exact visual text
+            # anchor used for horizontal (left/center/right) and vertical
+            # (upper/center/lower) grid alignment. It is not a resize handle.
+            anchor = self._text_anchor_offset()
+            size = 4.0
+            painter.setPen(QPen(QColor(0, 120, 0), 1))
+            painter.setBrush(QBrush(QColor(0, 190, 80)))
+            painter.drawRect(QRectF(anchor.x() - size / 2, anchor.y() - size / 2, size, size))
             painter.restore()
 
     def mouseDoubleClickEvent(self, event):

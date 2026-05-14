@@ -367,7 +367,7 @@ class TemplateEditorDialog(QDialog):
             self.form.addRow('Rotation [deg]', self._dbl(getattr(m, 'rotation', 0), lambda v, item=item: self._set_text_item_attr(item, 'rotation', v), -360, 360, 15))
             self.form.addRow('Color', self._color_button_row('Color RGB', getattr(m, 'color', (0, 0, 0)), lambda _checked=False, item=item: self.color_text_item(item)))
         elif kind == 'GRAPHIC':
-            self.form.addRow('Shape', self._combo(['line','rect','ellipse'], m.shape, lambda v: self._set(m, 'shape', v)))
+            self.form.addRow('Shape', self._combo(['line','rect','ellipse'], m.shape, lambda v, model=m: self._set_graphic_shape_and_refresh(model, v)))
             self.form.addRow('X', self._dbl(m.x, lambda v: self._set(m, 'x', round(float(v))), -500, 500, 1))
             self.form.addRow('Y', self._dbl(m.y, lambda v: self._set(m, 'y', round(float(v))), -500, 500, 1))
             self.form.addRow('Width', self._dbl(m.w, lambda v: self._set(m, 'w', round(float(v))), -500, 500, 1))
@@ -517,6 +517,8 @@ class TemplateEditorDialog(QDialog):
         if attr == 'rotation':
             value = (round(float(value) / 15.0) * 15.0) % 360
         setattr(item.model, attr, value)
+        if attr in ('h_align', 'v_align') and hasattr(self, '_snap_text_grid_anchor'):
+            self._snap_text_grid_anchor(item, snap_x=(attr == 'h_align'), snap_y=(attr == 'v_align'))
         if hasattr(item, 'apply_text_from_model'):
             item.apply_text_from_model()
         elif attr == 'text':
@@ -533,6 +535,8 @@ class TemplateEditorDialog(QDialog):
         self._selection_restore_ids = {id(m) for m in models}
         for item in items:
             setattr(item.model, attr, value)
+            if attr in ('h_align', 'v_align') and hasattr(self, '_snap_text_grid_anchor'):
+                self._snap_text_grid_anchor(item, snap_x=(attr == 'h_align'), snap_y=(attr == 'v_align'))
             if hasattr(item, 'apply_text_from_model'):
                 item.apply_text_from_model()
         self.update_current_unit_canvas_positions()
@@ -541,6 +545,15 @@ class TemplateEditorDialog(QDialog):
         if a == 'rotation':
             v = (round(float(v) / 15.0) * 15.0) % 360
         setattr(m, a, v); self.rebuild_scene()
+
+    def _set_graphic_shape_and_refresh(self, m, v):
+        # Shape-specific controls (e.g. curve radius for lines) must appear
+        # immediately after the dropdown changes, not only after reselection.
+        self._set(m, 'shape', v)
+        try:
+            self.refresh_properties()
+        except Exception:
+            pass
     def _set_pin_side(self, m, v):
         self.push_undo_state(); self._selection_restore_ids={id(m)}; m.side=v; self.dock_pins_to_body(self.unit); self.rebuild_scene()
     def _apply_multi_pin_visibility_choice(self, pin_items, attr, index):
@@ -673,27 +686,53 @@ class TemplateEditorDialog(QDialog):
     def add_attribute_text_items(self, u):
         """Create selectable, transformable text items for body attributes in the template editor.
 
-        The text content itself is generated from the owning body attributes, so it is
-        locked in the text editor.  Geometry/font/alignment changes are allowed and
-        follow the same interaction rules as in the main Symbol Wizard.
+        Attribute text content is generated from the body attributes, but position,
+        font, color and grid-anchor alignment are persistent per attribute.  This
+        makes attributes behave like normal Plain Text for moving, aligning and
+        distributing, instead of being recreated at the default body position after
+        every refresh.
         """
         b = u.body
-        row = 1
+        if not hasattr(b, 'attribute_texts') or b.attribute_texts is None:
+            b.attribute_texts = {}
+
+        def attr_model(key: str, label: str, default_x: float, default_y: float, font, default_h='left', default_v='upper'):
+            tm = b.attribute_texts.get(key)
+            if tm is None:
+                tm = TextModel(text=label, x=default_x, y=default_y,
+                               font_family=font.family, font_size_grid=font.size_grid, color=font.color)
+                tm.h_align = default_h
+                tm.v_align = default_v
+                b.attribute_texts[key] = tm
+            tm.text = label
+            if not getattr(tm, 'font_family', ''):
+                tm.font_family = font.family
+            if not getattr(tm, 'font_size_grid', 0):
+                tm.font_size_grid = font.size_grid
+            if not getattr(tm, 'color', None):
+                tm.color = font.color
+            if not getattr(tm, 'h_align', None):
+                tm.h_align = default_h
+            if not getattr(tm, 'v_align', None):
+                tm.v_align = default_v
+            tm._is_attribute_text = True
+            tm._attribute_key = key
+            return tm
+
         ref = b.attributes.get('RefDes', '')
         if b.visible_attributes.get('RefDes', False):
             label = ref if str(ref).strip() else 'RefDes'
-            tm = TextModel(text=label, x=b.x, y=b.y + 1, font_family=b.refdes_font.family, font_size_grid=b.refdes_font.size_grid, color=b.refdes_font.color)
-            tm._is_attribute_text = True
+            tm = attr_model('RefDes', label, b.x, b.y + 1, b.refdes_font, getattr(b, 'refdes_align', 'left'), 'lower')
             txt = TextItem(tm, self)
             txt.setData(0, 'ATTR_REF_DES')
             self.apply_item_selectability(txt)
             self.scene.addItem(txt)
+        row = 1
         for k, v in b.attributes.items():
             if k == 'RefDes' or not b.visible_attributes.get(k, False):
                 continue
             label = f'{k}: {v}' if str(v).strip() else str(k)
-            tm = TextModel(text=label, x=b.x, y=b.y - b.height - row, font_family=b.attribute_font.family, font_size_grid=b.attribute_font.size_grid, color=b.attribute_font.color)
-            tm._is_attribute_text = True
+            tm = attr_model(str(k), label, b.x, b.y - b.height - row, b.attribute_font, getattr(b, 'body_attr_align', 'left'), 'upper')
             txt = TextItem(tm, self)
             txt.setData(0, 'ATTR_BODY')
             self.apply_item_selectability(txt)
@@ -868,35 +907,119 @@ class TemplateEditorDialog(QDialog):
     def _text_items_only(self, items):
         return [i for i in items if i.data(0) in ('TEXT', 'ATTR_REF_DES', 'ATTR_BODY') and getattr(i, 'model', None) is not None]
 
+    def _text_rect_grid(self, item):
+        g = self.grid_px
+        r = item.sceneBoundingRect()
+        return {
+            'left': r.left() / g,
+            'right': r.right() / g,
+            'top': -r.top() / g,
+            'bottom': -r.bottom() / g,
+            'width': max(0.0, r.width() / g),
+            'height': max(0.0, r.height() / g),
+        }
+
+    def _snap_text_grid_anchor(self, item, snap_x=True, snap_y=True):
+        if getattr(item, 'model', None) is None:
+            return
+        if snap_x:
+            item.model.x = round(float(getattr(item.model, 'x', 0.0)))
+        if snap_y:
+            item.model.y = round(float(getattr(item.model, 'y', 0.0)))
+
+    def _grid_line_for_text_align(self, rects, mode):
+        # Alignment must use the visible text edge/center and then choose a real
+        # grid line.  Left/lower move toward the next lower grid line,
+        # right/upper toward the next upper grid line; center uses the nearest
+        # grid line through the text anchor.
+        import math
+        if mode == 'left':
+            return math.floor(min(r['left'] for r in rects.values()))
+        if mode == 'right':
+            return math.ceil(max(r['right'] for r in rects.values()))
+        if mode == 'upper':
+            return math.ceil(max(r['top'] for r in rects.values()))
+        if mode == 'lower':
+            return math.floor(min(r['bottom'] for r in rects.values()))
+        return 0
+
+    def _place_text_left(self, item, left):
+        item.model.h_align = 'left'
+        item.model.x = left
+
+    def _place_text_right(self, item, right):
+        item.model.h_align = 'right'
+        item.model.x = right
+
+    def _place_text_upper(self, item, top):
+        item.model.v_align = 'upper'
+        item.model.y = top
+
+    def _place_text_lower(self, item, bottom):
+        item.model.v_align = 'lower'
+        item.model.y = bottom
+
+    def _place_text_left_preserve_anchor(self, item, left):
+        w = self._text_rect_grid(item)['width']
+        h = getattr(item.model, 'h_align', 'left')
+        item.model.x = left + (w / 2 if h == 'center' else w if h == 'right' else 0)
+        self._snap_text_grid_anchor(item, snap_y=False)
+
+    def _place_text_top_preserve_anchor(self, item, top):
+        hgt = self._text_rect_grid(item)['height']
+        v = getattr(item.model, 'v_align', 'upper')
+        item.model.y = top - (hgt / 2 if v == 'center' else hgt if v == 'lower' else 0)
+        self._snap_text_grid_anchor(item, snap_x=False)
+
     def align_text_objects(self, items, mode):
         txt = self._text_items_only(items)
-        if len(txt) < 2: return
+        if len(txt) < 2:
+            try:
+                self.statusBar().showMessage('Select at least two text/attribute objects.', 3000)
+            except Exception:
+                pass
+            return
         self.push_undo_state()
-        if mode in ('left','right'):
-            x = min(i.model.x for i in txt) if mode == 'left' else max(i.model.x for i in txt)
-            for i in txt:
-                i.model.x = x
-                i.model.h_align = mode
-                i.apply_text_from_model()
-        elif mode in ('upper','lower'):
-            y = max(i.model.y for i in txt) if mode == 'upper' else min(i.model.y for i in txt)
-            for i in txt:
-                i.model.y = y
-                i.model.v_align = mode
-                i.apply_text_from_model()
-        self.update_current_unit_canvas_positions(); self.refresh_properties()
+        rects = {i: self._text_rect_grid(i) for i in txt}
+        target = self._grid_line_for_text_align(rects, mode)
+        for i in txt:
+            if mode == 'left':
+                self._place_text_left(i, target)
+            elif mode == 'right':
+                self._place_text_right(i, target)
+            elif mode == 'upper':
+                self._place_text_upper(i, target)
+            elif mode == 'lower':
+                self._place_text_lower(i, target)
+            self._snap_text_grid_anchor(i)
+            i.apply_text_from_model()
+        self._selection_restore_ids = {id(i.model) for i in txt}
+        try:
+            self.schedule_scene_refresh(visual_only=True)
+        except AttributeError:
+            self.update_current_unit_canvas_positions(); self.refresh_properties()
 
     def distribute_text_objects(self, items, axis):
-        txt = sorted(self._text_items_only(items), key=lambda i: i.model.x if axis == 'h' else i.model.y)
+        txt = self._text_items_only(items)
         if len(txt) < 3: return
         self.push_undo_state()
-        vals = [i.model.x if axis == 'h' else i.model.y for i in txt]
-        start, end = vals[0], vals[-1]
-        step = (end - start) / (len(txt) - 1)
-        for idx, i in enumerate(txt):
-            if axis == 'h': i.model.x = start + step * idx
-            else: i.model.y = start + step * idx
-            i.apply_text_from_model()
+        rects = {i: self._text_rect_grid(i) for i in txt}
+        if axis == 'h':
+            txt = sorted(txt, key=lambda i: rects[i]['left'])
+            start = rects[txt[0]]['left']; end = rects[txt[-1]]['right']
+            gap = (end - start - sum(rects[i]['width'] for i in txt)) / (len(txt) - 1)
+            cursor = start
+            for i in txt:
+                self._place_text_left_preserve_anchor(i, cursor); i.apply_text_from_model()
+                cursor += rects[i]['width'] + gap
+        else:
+            txt = sorted(txt, key=lambda i: rects[i]['top'], reverse=True)
+            start = rects[txt[0]]['top']; end = rects[txt[-1]]['bottom']
+            gap = (start - end - sum(rects[i]['height'] for i in txt)) / (len(txt) - 1)
+            cursor = start
+            for i in txt:
+                self._place_text_top_preserve_anchor(i, cursor); i.apply_text_from_model()
+                cursor -= rects[i]['height'] + gap
         self.update_current_unit_canvas_positions(); self.refresh_properties()
 
     def rebuild_tree(self): pass
@@ -2197,6 +2320,8 @@ class MainWindow(QMainWindow):
         if a == 'rotation':
             v = (round(float(v) / 15.0) * 15.0) % 360
         setattr(item.model, a, v)
+        if a in ('h_align', 'v_align'):
+            self._snap_text_grid_anchor(item, snap_x=(a == 'h_align'), snap_y=(a == 'v_align'))
         if a in ('font_family', 'font_size_grid', 'color'):
             self._sync_body_font_from_attribute_text(item)
         if hasattr(item, 'apply_text_from_model'):
@@ -2217,6 +2342,8 @@ class MainWindow(QMainWindow):
         selected_ids = {id(m) for m in models}
         for item in items:
             setattr(item.model, attr, value)
+            if attr in ('h_align', 'v_align'):
+                self._snap_text_grid_anchor(item, snap_x=(attr == 'h_align'), snap_y=(attr == 'v_align'))
             if attr in ('font_family', 'font_size_grid', 'color'):
                 self._sync_body_font_from_attribute_text(item)
             if hasattr(item, 'apply_text_from_model'):
@@ -2611,38 +2738,120 @@ class MainWindow(QMainWindow):
     def _text_items_only(self, items):
         return [i for i in items if i.data(0) in ('TEXT', 'ATTR_REF_DES', 'ATTR_BODY') and getattr(i, 'model', None) is not None]
 
+    def _text_rect_grid(self, item):
+        g = self.grid_px
+        r = item.sceneBoundingRect()
+        return {
+            'left': r.left() / g,
+            'right': r.right() / g,
+            'top': -r.top() / g,
+            'bottom': -r.bottom() / g,
+            'width': max(0.0, r.width() / g),
+            'height': max(0.0, r.height() / g),
+        }
+
+    def _snap_text_grid_anchor(self, item, snap_x=True, snap_y=True):
+        if getattr(item, 'model', None) is None:
+            return
+        if snap_x:
+            item.model.x = round(float(getattr(item.model, 'x', 0.0)))
+        if snap_y:
+            item.model.y = round(float(getattr(item.model, 'y', 0.0)))
+
+    def _grid_line_for_text_align(self, rects, mode):
+        # Alignment must use the visible text edge/center and then choose a real
+        # grid line.  Left/lower move toward the next lower grid line,
+        # right/upper toward the next upper grid line; center uses the nearest
+        # grid line through the text anchor.
+        import math
+        if mode == 'left':
+            return math.floor(min(r['left'] for r in rects.values()))
+        if mode == 'right':
+            return math.ceil(max(r['right'] for r in rects.values()))
+        if mode == 'upper':
+            return math.ceil(max(r['top'] for r in rects.values()))
+        if mode == 'lower':
+            return math.floor(min(r['bottom'] for r in rects.values()))
+        return 0
+
+    def _place_text_left(self, item, left):
+        item.model.h_align = 'left'
+        item.model.x = left
+
+    def _place_text_right(self, item, right):
+        item.model.h_align = 'right'
+        item.model.x = right
+
+    def _place_text_upper(self, item, top):
+        item.model.v_align = 'upper'
+        item.model.y = top
+
+    def _place_text_lower(self, item, bottom):
+        item.model.v_align = 'lower'
+        item.model.y = bottom
+
+    def _place_text_left_preserve_anchor(self, item, left):
+        w = self._text_rect_grid(item)['width']
+        h = getattr(item.model, 'h_align', 'left')
+        item.model.x = left + (w / 2 if h == 'center' else w if h == 'right' else 0)
+        self._snap_text_grid_anchor(item, snap_y=False)
+
+    def _place_text_top_preserve_anchor(self, item, top):
+        hgt = self._text_rect_grid(item)['height']
+        v = getattr(item.model, 'v_align', 'upper')
+        item.model.y = top - (hgt / 2 if v == 'center' else hgt if v == 'lower' else 0)
+        self._snap_text_grid_anchor(item, snap_x=False)
+
     def align_text_objects(self, items, mode):
         txt = self._text_items_only(items)
         if len(txt) < 2:
-            self.statusBar().showMessage('Select at least two text/attribute objects.', 3000); return
+            try:
+                self.statusBar().showMessage('Select at least two text/attribute objects.', 3000)
+            except Exception:
+                pass
+            return
         self.push_undo_state()
-        if mode in ('left','right'):
-            x = min(i.model.x for i in txt) if mode == 'left' else max(i.model.x for i in txt)
-            for i in txt:
-                i.model.x = x
-                i.model.h_align = mode
-                i.apply_text_from_model()
-        elif mode in ('upper','lower'):
-            y = max(i.model.y for i in txt) if mode == 'upper' else min(i.model.y for i in txt)
-            for i in txt:
-                i.model.y = y
-                i.model.v_align = mode
-                i.apply_text_from_model()
+        rects = {i: self._text_rect_grid(i) for i in txt}
+        target = self._grid_line_for_text_align(rects, mode)
+        for i in txt:
+            if mode == 'left':
+                self._place_text_left(i, target)
+            elif mode == 'right':
+                self._place_text_right(i, target)
+            elif mode == 'upper':
+                self._place_text_upper(i, target)
+            elif mode == 'lower':
+                self._place_text_lower(i, target)
+            self._snap_text_grid_anchor(i)
+            i.apply_text_from_model()
         self._selection_restore_ids = {id(i.model) for i in txt}
-        self.schedule_scene_refresh(visual_only=True)
+        try:
+            self.schedule_scene_refresh(visual_only=True)
+        except AttributeError:
+            self.update_current_unit_canvas_positions(); self.refresh_properties()
 
     def distribute_text_objects(self, items, axis):
-        txt = sorted(self._text_items_only(items), key=lambda i: i.model.x if axis == 'h' else i.model.y)
+        txt = self._text_items_only(items)
         if len(txt) < 3:
             self.statusBar().showMessage('Select at least three text/attribute objects to distribute.', 3000); return
         self.push_undo_state()
-        vals = [i.model.x if axis == 'h' else i.model.y for i in txt]
-        start, end = vals[0], vals[-1]
-        step = (end - start) / (len(txt) - 1)
-        for idx, i in enumerate(txt):
-            if axis == 'h': i.model.x = start + step * idx
-            else: i.model.y = start + step * idx
-            i.apply_text_from_model()
+        rects = {i: self._text_rect_grid(i) for i in txt}
+        if axis == 'h':
+            txt = sorted(txt, key=lambda i: rects[i]['left'])
+            start = rects[txt[0]]['left']; end = rects[txt[-1]]['right']
+            gap = (end - start - sum(rects[i]['width'] for i in txt)) / (len(txt) - 1)
+            cursor = start
+            for i in txt:
+                self._place_text_left_preserve_anchor(i, cursor); i.apply_text_from_model()
+                cursor += rects[i]['width'] + gap
+        else:
+            txt = sorted(txt, key=lambda i: rects[i]['top'], reverse=True)
+            start = rects[txt[0]]['top']; end = rects[txt[-1]]['bottom']
+            gap = (start - end - sum(rects[i]['height'] for i in txt)) / (len(txt) - 1)
+            cursor = start
+            for i in txt:
+                self._place_text_top_preserve_anchor(i, cursor); i.apply_text_from_model()
+                cursor -= rects[i]['height'] + gap
         self._selection_restore_ids = {id(i.model) for i in txt}
         self.schedule_scene_refresh(visual_only=True)
 
