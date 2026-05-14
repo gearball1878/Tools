@@ -61,6 +61,8 @@ class SymbolView(QGraphicsView):
         if focus_item is not None and hasattr(focus_item, 'textInteractionFlags') and focus_item.textInteractionFlags() != Qt.NoTextInteraction:
             super().keyPressEvent(event)
             return
+        if event.key() == Qt.Key_Delete:
+            self.window.delete_selected(); event.accept(); return
         if event.modifiers() & Qt.ControlModifier:
             if event.key() == Qt.Key_A:
                 self.window.select_all_canvas(); event.accept(); return

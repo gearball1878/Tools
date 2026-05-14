@@ -110,7 +110,7 @@ class TemplateEditorDialog(QDialog):
             b = QPushButton(label); b.setCheckable(True); b.clicked.connect(lambda _, t=tool.value: self.set_tool(t))
             tools.addWidget(b); self.tool_buttons[tool.value] = b
         self.tool_buttons[self.draw_tool].setChecked(True)
-        for label, fn in [('Body löschen', self.delete_body), ('Body neu', self.new_body), ('Alles markieren', self.select_all_canvas), ('Kopieren', self.copy_selected), ('Einfügen', self.paste_selected), ('Löschen', self.delete_selected), ('Undo', self.undo), ('Redo', self.redo)]:
+        for label, fn in [('Alles markieren', self.select_all_canvas), ('Undo', self.undo), ('Redo', self.redo)]:
             b = QPushButton(label); b.clicked.connect(fn); tools.addWidget(b)
         tools.addStretch(); layout.addLayout(tools)
         splitter = QSplitter()
@@ -147,11 +147,15 @@ class TemplateEditorDialog(QDialog):
     def save_template(self):
         name = self.rename_edit.text().strip() or self.template_combo.currentText() or 'Template'
         self.templates[name] = copy.deepcopy(self.unit)
+        if hasattr(self.main, 'merge_save_template_to_file'):
+            self.main.merge_save_template_to_file(name, self.unit)
+            self.main.symbol_templates.clear()
         if hasattr(self.main, 'apply_template_style_to_matching_symbols'):
             self.main.apply_template_style_to_matching_symbols(name, self.unit)
         if self.template_combo.findText(name) < 0:
             self.template_combo.addItem(name)
         self.template_combo.setCurrentText(name)
+        self.main.rebuild_all()
         QMessageBox.information(self, 'Template', f'Template "{name}" gespeichert.')
 
     def rebuild_scene(self):
@@ -285,6 +289,7 @@ class MainWindow(QMainWindow):
         self.resize(1600, 980)
         self._build_ui()
         self.rebuild_all()
+        QTimer.singleShot(0, self.zoom_to_fit_symbol)
 
     @property
     def symbol(self) -> SymbolModel:
@@ -427,7 +432,6 @@ class MainWindow(QMainWindow):
         table.clearContents()
         table.setRowCount(0)
         table.setRowCount(len(rows))
-        table.blockSignals(False)
         for r, (si, ui, pi, pin) in enumerate(rows):
             values = [pin.number, pin.name, pin.function, pin.pin_type, pin.side, 'yes' if pin.inverted else 'no']
             for c, v in enumerate(values):
@@ -440,6 +444,7 @@ class MainWindow(QMainWindow):
             self._install_pin_table_combo(table, r, 4, [x.value for x in PinSide], pin.side)
             self._install_pin_table_combo(table, r, 5, ['yes', 'no'], 'yes' if pin.inverted else 'no')
         self._autosize_table(table)
+        table.blockSignals(False)
         table.viewport().update()
 
     def _install_pin_table_combo(self, table: QTableWidget, row: int, col: int, values: list[str], current: str):
@@ -454,8 +459,11 @@ class MainWindow(QMainWindow):
         if not it:
             return
         if table.item(r, c):
+            old = table.blockSignals(True)
             table.item(r, c).setText(value)
-        self.pin_table_changed(r, c)
+            table.item(r, c).setData(Qt.EditRole, value)
+            table.blockSignals(old)
+        self._commit_pin_table_value(table, r, c)
 
     def _menu(self):
         mb = self.menuBar()
@@ -547,11 +555,8 @@ class MainWindow(QMainWindow):
         # --- Symbol setup -----------------------------------------------
         self.addToolBarBreak()
         setup_tb = make_bar('Symbol Setup')
-        setup_tb.addWidget(QLabel('Symbol Name:'))
-        self.symbol_name_edit = QLineEdit()
-        self.symbol_name_edit.setMinimumWidth(180)
-        self.symbol_name_edit.editingFinished.connect(self.apply_symbol_name_from_edit)
-        setup_tb.addWidget(self.symbol_name_edit)
+        # Symbol names are assigned when the symbol is created and can be changed via Edit/RMT on the symbol tab.
+        self.symbol_name_edit = None
         setup_tb.addWidget(QLabel('Unit/Part:'))
         self.unit_name_edit = QLineEdit()
         self.unit_name_edit.setMinimumWidth(140)
@@ -580,6 +585,7 @@ class MainWindow(QMainWindow):
         self.origin_combo = QComboBox()
         self.origin_combo.addItems([x.value for x in OriginMode])
         self.origin_combo.setCurrentText(self.symbol.origin)
+        self.origin_combo.currentTextChanged.connect(self.origin_mode_changed)
         setup_tb.addWidget(self.origin_combo)
         origin_btn = QPushButton('Origo Reset')
         origin_btn.clicked.connect(self.reset_origin_to_selected_anchor)
@@ -708,7 +714,7 @@ class MainWindow(QMainWindow):
         self.canvas_tabs.blockSignals(False)
 
     def update_name_editors(self):
-        if hasattr(self, 'symbol_name_edit'):
+        if getattr(self, 'symbol_name_edit', None) is not None:
             self.symbol_name_edit.blockSignals(True)
             self.symbol_name_edit.setText(self.symbol.name)
             self.symbol_name_edit.blockSignals(False)
@@ -820,9 +826,10 @@ class MainWindow(QMainWindow):
             self.scene.addItem(txt)
         row = 1
         for k, v in b.attributes.items():
-            if k == 'RefDes' or not b.visible_attributes.get(k, False) or not v:
+            if k == 'RefDes' or not b.visible_attributes.get(k, False):
                 continue
-            txt = TextItem(TextModel(text=f'{k}: {v}', x=b.x, y=b.y - b.height - row, font_family=b.attribute_font.family, font_size_grid=b.attribute_font.size_grid, color=b.attribute_font.color), self)
+            label = f'{k}: {v}' if str(v).strip() else str(k)
+            txt = TextItem(TextModel(text=label, x=b.x, y=b.y - b.height - row, font_family=b.attribute_font.family, font_size_grid=b.attribute_font.size_grid, color=b.attribute_font.color), self)
             txt.setFlag(QGraphicsItem.ItemIsMovable, False)
             txt.setData(0, 'ATTR_BODY')
             self.scene.addItem(txt)
@@ -1520,6 +1527,9 @@ class MainWindow(QMainWindow):
         table = self.sender()
         if self.suspend or not isinstance(table, QTableWidget):
             return
+        self._commit_pin_table_value(table, r, c)
+
+    def _commit_pin_table_value(self, table: QTableWidget, r: int, c: int):
         it = table.item(r, c)
         if not it:
             return
@@ -1531,6 +1541,7 @@ class MainWindow(QMainWindow):
             return
         p = sym.units[ui].pins[pi]
         val = it.text().strip()
+        self.push_undo_state()
         if col == 0:
             p.number = val
         elif col == 1:
@@ -1545,7 +1556,7 @@ class MainWindow(QMainWindow):
             p.inverted = val.lower() in ('1', 'true', 'yes', 'ja', 'x')
         self.validate_pins(silent=True)
         if si == self.library.current_symbol_index:
-            self.rebuild_scene(); self.rebuild_tree()
+            self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
 
     def pin_table_clicked(self, r, c):
         table = self.sender()
@@ -1838,11 +1849,20 @@ class MainWindow(QMainWindow):
         }
         return mapping.get(mode, mapping[OriginMode.CENTER.value])
 
+    def origin_mode_changed(self, mode: str):
+        # Changing the anchor selection immediately re-aligns the current canvas.
+        self.reset_origin_to_selected_anchor(mode)
+
     def reset_origin_to_selected_anchor(self, mode: str | None = None):
-        self.push_undo_state()
         mode = mode or (self.origin_combo.currentText() if hasattr(self, 'origin_combo') else OriginMode.CENTER.value)
-        self.symbol.origin = mode
+        old_mode = getattr(self.symbol, 'origin', OriginMode.CENTER.value)
         ax, ay = self.body_anchor_point(self.current_unit.body, mode)
+        # Even if the mode is unchanged, the same command is useful after the body was moved accidentally:
+        # it pulls the chosen body anchor back to the canvas origin.
+        if abs(ax) < 1e-9 and abs(ay) < 1e-9 and old_mode == mode:
+            return
+        self.push_undo_state()
+        self.symbol.origin = mode
         for unit in self.symbol.units:
             unit.body.x -= ax
             unit.body.y -= ay
@@ -1852,6 +1872,10 @@ class MainWindow(QMainWindow):
                 t.x -= ax; t.y -= ay
             for g in unit.graphics:
                 g.x -= ax; g.y -= ay
+        if hasattr(self, 'origin_combo'):
+            self.origin_combo.blockSignals(True)
+            self.origin_combo.setCurrentText(mode)
+            self.origin_combo.blockSignals(False)
         self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
         self.statusBar().showMessage(f'Origo auf {mode} nachgezogen.', 3000)
 
@@ -1975,6 +1999,7 @@ class MainWindow(QMainWindow):
             self.push_undo_state()
             tmpl = unit_from_dialog()
             self.symbol_templates[name.currentText()] = copy.deepcopy(tmpl)
+            self.merge_save_template_to_file(name.currentText(), tmpl)
             cur = self.current_unit
             if apply_body.isChecked():
                 old_body = cur.body
@@ -2016,7 +2041,14 @@ class MainWindow(QMainWindow):
         body_def.update(sub_def.get('body') or {})
         w = float(body_def.get('width', type_def.get('body', {}).get('width', 16)))
         h = float(body_def.get('height', type_def.get('body', {}).get('height', 24)))
-        body = SymbolBodyModel(x=-w/2, y=h/2, width=w, height=h)
+        body = SymbolBodyModel(x=float(body_def.get('x', -w/2)), y=float(body_def.get('y', h/2)), width=w, height=h)
+        for attr in ('color', 'line_width', 'line_style', 'refdes_align', 'body_attr_align', 'rotation', 'scale_x', 'scale_y'):
+            if attr in body_def:
+                setattr(body, attr, body_def[attr])
+        if isinstance(body_def.get('attribute_font'), dict):
+            body.attribute_font = FontModel(**body_def['attribute_font'])
+        if isinstance(body_def.get('refdes_font'), dict):
+            body.refdes_font = FontModel(**body_def['refdes_font'])
         attrs = []
         for a in data.get('global_attributes', []):
             if a not in attrs: attrs.append(a)
@@ -2024,33 +2056,55 @@ class MainWindow(QMainWindow):
             if a not in attrs: attrs.append(a)
         for a in sub_def.get('attributes', []):
             if a not in attrs: attrs.append(a)
+        if isinstance(body_def.get('attributes'), dict):
+            for a in body_def['attributes'].keys():
+                if a not in attrs: attrs.append(a)
         prefix = sub_def.get('prefix', type_def.get('prefix', '?'))
         body.attributes = {a: '' for a in attrs}
-        body.attributes['RefDes'] = f'{prefix}?'
+        body.attributes.update(copy.deepcopy(body_def.get('attributes') or {}))
+        body.attributes.setdefault('RefDes', f'{prefix}?')
+        if not body.attributes.get('RefDes'):
+            body.attributes['RefDes'] = f'{prefix}?'
         body.visible_attributes = {a: a in ('RefDes', 'Value', 'Package') for a in attrs}
+        body.visible_attributes.update(copy.deepcopy(body_def.get('visible_attributes') or {}))
         body.visible_attributes['RefDes'] = True
         pins = []
-        for idx, pd in enumerate(type_def.get('default_pins', []) or [], start=1):
+        pin_defs = sub_def.get('default_pins') or type_def.get('default_pins', []) or []
+        for idx, pd in enumerate(pin_defs, start=1):
+            d = copy.deepcopy(pd)
             pin = PinModel(
-                number=str(pd.get('number', idx)), name=str(pd.get('name', 'PIN')),
-                function=str(pd.get('function', pd.get('name', ''))),
-                pin_type=str(pd.get('type', PinType.BIDI.value)), side=str(pd.get('side', PinSide.LEFT.value)),
-                inverted=bool(pd.get('inverted', False)),
+                number=str(d.get('number', idx)), name=str(d.get('name', 'PIN')),
+                function=str(d.get('function', d.get('name', ''))),
+                pin_type=str(d.get('pin_type', d.get('type', PinType.BIDI.value))), side=str(d.get('side', PinSide.LEFT.value)),
+                inverted=bool(d.get('inverted', False)),
+                x=float(d.get('x', 0.0)), y=float(d.get('y', 0.0)), length=float(d.get('length', 2.0)),
             )
+            for attr in ('color', 'visible_number', 'visible_name', 'visible_function', 'line_width', 'line_style', 'rotation', 'scale_x', 'scale_y'):
+                if attr in d:
+                    setattr(pin, attr, d[attr])
             pins.append(pin)
         count = int(sub_def.get('pins', 0) or 0)
         if count and len(pins) < count:
             for i in range(len(pins) + 1, count + 1):
-                pins.append(PinModel(number=str(i), name=f'PIN{i}', function='', pin_type=PinType.PASSIVE.value if hasattr(PinType, 'PASSIVE') else PinType.BIDI.value, side=PinSide.LEFT.value if i % 2 else PinSide.RIGHT.value))
+                pins.append(PinModel(number=str(i), name=f'PIN{i}', function='', pin_type=PinType.PASSIVE.value, side=PinSide.LEFT.value if i % 2 else PinSide.RIGHT.value))
         u = SymbolUnitModel(name=(subtype_name or type_name), body=body, pins=pins)
-        # Distribute default pins on body edges.
-        left = [p for p in u.pins if p.side == PinSide.LEFT.value]
-        right = [p for p in u.pins if p.side == PinSide.RIGHT.value]
-        for group, side in ((left, PinSide.LEFT.value), (right, PinSide.RIGHT.value)):
-            n = max(1, len(group))
-            for i, pin in enumerate(group, start=1):
-                pin.x = body.x if side == PinSide.LEFT.value else body.x + body.width
-                pin.y = body.y - (body.height * i / (n + 1))
+        # Restore optional template graphics/texts saved by the canvas template editor.
+        for gd in sub_def.get('graphics', type_def.get('graphics', [])) or []:
+            style = gd.get('style') if isinstance(gd, dict) else None
+            g = GraphicModel(**{k: v for k, v in dict(gd).items() if k != 'style'})
+            if isinstance(style, dict): g.style = StyleModel(**style)
+            u.graphics.append(g)
+        for td in sub_def.get('texts', type_def.get('texts', [])) or []:
+            u.texts.append(TextModel(**dict(td)))
+        # Distribute pins only when the template did not store explicit coordinates.
+        if not any(abs(getattr(p, 'x', 0.0)) > 1e-9 or abs(getattr(p, 'y', 0.0)) > 1e-9 for p in u.pins):
+            left = [p for p in u.pins if p.side == PinSide.LEFT.value]
+            right = [p for p in u.pins if p.side == PinSide.RIGHT.value]
+            for group, side in ((left, PinSide.LEFT.value), (right, PinSide.RIGHT.value)):
+                n = max(1, len(group))
+                for i, pin in enumerate(group, start=1):
+                    pin.x = body.x if side == PinSide.LEFT.value else body.x + body.width
+                    pin.y = body.y - (body.height * i / (n + 1))
         return u
 
     def load_symbol_type_templates(self) -> dict[str, SymbolUnitModel]:
@@ -2061,8 +2115,10 @@ class MainWindow(QMainWindow):
         try:
             data = json.loads(path.read_text(encoding='utf-8'))
             for type_name, type_def in (data.get('types') or {}).items():
-                templates[type_name] = self.unit_from_template_def(type_name, None, data)
-                for subtype_name in (type_def.get('subtypes') or {}).keys():
+                subtypes = type_def.get('subtypes') or {}
+                if not subtypes:
+                    templates[type_name] = self.unit_from_template_def(type_name, None, data)
+                for subtype_name in subtypes.keys():
                     templates[f'{type_name} / {subtype_name}'] = self.unit_from_template_def(type_name, subtype_name, data)
         except Exception as exc:
             self.statusBar().showMessage(f'symbol_types.json konnte nicht geladen werden: {exc}', 6000)
@@ -2105,16 +2161,58 @@ class MainWindow(QMainWindow):
         dlg = QDialog(self)
         dlg.setWindowTitle('Neues Symbol')
         layout = QFormLayout(dlg)
-        name = QLineEdit('Split Symbol' if kind == SymbolKind.SPLIT.value else 'Symbol')
         combo = QComboBox(); combo.addItems(sorted(templates.keys()))
-        layout.addRow('Symbolname', name)
         layout.addRow('Template', combo)
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         layout.addRow(buttons)
         buttons.accepted.connect(dlg.accept); buttons.rejected.connect(dlg.reject)
         if dlg.exec() == QDialog.Accepted:
-            return name.text().strip() or 'Symbol', combo.currentText()
+            tmpl = combo.currentText()
+            base = 'Split Symbol' if kind == SymbolKind.SPLIT.value else 'Symbol'
+            if tmpl:
+                base = tmpl.split('/')[-1].strip().replace(' ', '_')
+            return base, tmpl
         return None
+
+
+    def unit_to_template_payload(self, unit: SymbolUnitModel) -> dict:
+        body = copy.deepcopy(asdict(unit.body))
+        attrs = list(unit.body.attributes.keys())
+        body['attributes'] = copy.deepcopy(unit.body.attributes)
+        body['visible_attributes'] = copy.deepcopy(unit.body.visible_attributes)
+        return {
+            'attributes': attrs,
+            'body': body,
+            'default_pins': [copy.deepcopy(asdict(p)) for p in unit.pins],
+            'graphics': [copy.deepcopy(asdict(g)) for g in unit.graphics],
+            'texts': [copy.deepcopy(asdict(t)) for t in unit.texts],
+        }
+
+    def merge_save_template_to_file(self, template_name: str, unit: SymbolUnitModel):
+        path = self.symbol_types_path()
+        if not path:
+            return
+        try:
+            data = json.loads(path.read_text(encoding='utf-8'))
+        except Exception:
+            data = {'global_attributes': [], 'types': {}}
+        data.setdefault('types', {})
+        payload = self.unit_to_template_payload(unit)
+        if ' / ' in template_name:
+            type_name, subtype_name = [x.strip() for x in template_name.split(' / ', 1)]
+            t = data['types'].setdefault(type_name, {'prefix': '?', 'subtypes': {}})
+            t.setdefault('subtypes', {})
+            sub = t['subtypes'].setdefault(subtype_name, {})
+            # Merge-save: only the currently edited template fields are overwritten; all other metadata stays intact.
+            sub.update({k: copy.deepcopy(v) for k, v in payload.items() if k != 'default_pins'})
+            sub['default_pins'] = payload['default_pins']
+            if 'body' not in t and 'body' in payload:
+                t['body'] = copy.deepcopy(payload['body'])
+        else:
+            t = data['types'].setdefault(template_name, {'prefix': '?', 'subtypes': {}})
+            t.update(copy.deepcopy(payload))
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
+        self.symbol_templates.clear()
 
     # ------------------------------------------------------------------ File IO
     def save_current_symbol(self):
