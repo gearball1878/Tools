@@ -107,7 +107,7 @@ class SymbolView(QGraphicsView):
                 self.window.select_model_after_rebuild(m)
                 self.window.rebuild_scene()
                 self.window.rebuild_tree()
-            elif tool in (DrawTool.LINE.value, DrawTool.CURVE.value, DrawTool.RECT.value, DrawTool.ELLIPSE.value):
+            elif tool in (DrawTool.LINE.value, DrawTool.RECT.value, DrawTool.ELLIPSE.value):
                 self.window.add_graphic(tool, gx, gy)
             event.accept()
             return

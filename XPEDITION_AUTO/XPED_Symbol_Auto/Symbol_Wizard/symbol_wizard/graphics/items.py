@@ -1,6 +1,6 @@
 from __future__ import annotations
 from PySide6.QtCore import QPointF, QRectF, Qt, QEvent
-from PySide6.QtGui import QColor, QFont, QPainter, QPen, QBrush, QTransform, QTextCursor, QPainterPath
+from PySide6.QtGui import QColor, QFont, QPainter, QPen, QBrush, QTransform, QTextCursor
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem, QGraphicsTextItem
 from symbol_wizard.models.document import PinSide, LineStyle
 from symbol_wizard.rules.grid import snap
@@ -19,37 +19,6 @@ def pen_for(color, width_grid, style, grid_px):
         LineStyle.DASH_DOT.value: Qt.DashDotLine,
     }.get(style, Qt.SolidLine))
     return p
-
-
-def qfont_for(family, size_px):
-    """Create a canvas font from an already grid-derived pixel height."""
-    try:
-        px = float(size_px)
-    except (TypeError, ValueError):
-        px = 12.0
-    font = QFont(family or 'Arial')
-    font.setPixelSize(max(1, int(round(px))))
-    return font
-
-
-def qfont_from_grid(font_model, grid_px):
-    """Return a font whose visible size follows the active grid.
-
-    font_model.size_grid is authoritative: 0.9 means about 90% of one
-    grid pitch, independent of OS DPI/point-size settings. size_pt is kept
-    synchronized as a compatibility/export field but is not used for canvas
-    sizing.
-    """
-    try:
-        sg = float(getattr(font_model, 'size_grid', 0.9) or 0.9)
-    except (TypeError, ValueError):
-        sg = 0.9
-    px = float(grid_px) * sg * 1.28
-    try:
-        font_model.size_pt = round(px, 2)
-    except Exception:
-        pass
-    return qfont_for(getattr(font_model, 'family', 'Arial'), px)
 
 
 class TransformMixin:
@@ -98,10 +67,10 @@ class TransformMixin:
         self.update()
 
     def scale_selected(self, factor):
-        if hasattr(self.model, 'font_size_pt'):
-            self.model.font_size_pt = max(1.0, self.model.font_size_pt * factor)
-            self.model.font_size_grid = round(self.model.font_size_pt / 7.2, 3)
-            self.setFont(qfont_for(self.model.font_family, self.model.font_size_pt))
+        if hasattr(self.model, 'font_size_grid'):
+            self.model.font_size_grid = max(.1, self.model.font_size_grid * factor)
+            g = self.scene().grid_px
+            self.setFont(QFont(self.model.font_family, max(6, int(g * self.model.font_size_grid * .45))))
         elif hasattr(self.model, 'length'):
             self.model.length = max(.1, self.model.length * factor)
         self.update()
@@ -160,53 +129,7 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
         return _corner_handles(self.rect(), self.window.grid_px * self.handle_size_factor)
 
     def paint(self, painter, option, widget=None):
-        painter.save()
-        painter.setPen(pen_for(self.model.color, self.model.line_width, self.model.line_style, self.window.grid_px))
-        painter.setBrush(QBrush(Qt.NoBrush))
-        rect = self.rect()
-        shape = getattr(self.model, 'body_shape', 'rect') or 'rect'
-        if shape == 'resistor':
-            y = rect.center().y(); w = rect.width(); h = rect.height(); x0 = rect.left(); step = w / 8.0
-            pts = [QPointF(x0, y), QPointF(x0+step, rect.top()), QPointF(x0+2*step, rect.bottom()), QPointF(x0+3*step, rect.top()), QPointF(x0+4*step, rect.bottom()), QPointF(x0+5*step, rect.top()), QPointF(x0+6*step, rect.bottom()), QPointF(x0+7*step, rect.top()), QPointF(rect.right(), y)]
-            for a, b in zip(pts, pts[1:]): painter.drawLine(a, b)
-        elif shape == 'capacitor':
-            cx = rect.center().x(); gap = rect.width() * .12
-            painter.drawLine(QPointF(cx-gap, rect.top()), QPointF(cx-gap, rect.bottom()))
-            painter.drawLine(QPointF(cx+gap, rect.top()), QPointF(cx+gap, rect.bottom()))
-        elif shape == 'inductor':
-            n = 4; seg = rect.width()/n
-            for i in range(n):
-                painter.drawArc(QRectF(rect.left()+i*seg, rect.top(), seg, rect.height()), 0, 180*16)
-        elif shape == 'diode':
-            path = QPainterPath(); path.moveTo(rect.left(), rect.bottom()); path.lineTo(rect.left(), rect.top()); path.lineTo(rect.right()*0.75+rect.left()*0.25, rect.center().y()); path.closeSubpath(); painter.drawPath(path)
-            x = rect.right()*0.75+rect.left()*0.25; painter.drawLine(QPointF(x, rect.top()), QPointF(x, rect.bottom()))
-        elif shape == 'battery':
-            cx = rect.center().x(); painter.drawLine(QPointF(cx-rect.width()*.18, rect.top()), QPointF(cx-rect.width()*.18, rect.bottom()))
-            painter.drawLine(QPointF(cx+rect.width()*.18, rect.top()+rect.height()*.2), QPointF(cx+rect.width()*.18, rect.bottom()-rect.height()*.2))
-        elif shape == 'transformer':
-            painter.drawLine(QPointF(rect.center().x()-rect.width()*.06, rect.top()), QPointF(rect.center().x()-rect.width()*.06, rect.bottom()))
-            painter.drawLine(QPointF(rect.center().x()+rect.width()*.06, rect.top()), QPointF(rect.center().x()+rect.width()*.06, rect.bottom()))
-            for side in (-1, 1):
-                x0 = rect.center().x() + side*rect.width()*.15
-                for i in range(4):
-                    painter.drawArc(QRectF(x0 + side*i*rect.width()*.08 - rect.width()*.04, rect.top()+i*rect.height()/4, rect.width()*.08, rect.height()/4), 90*16 if side<0 else -90*16, 180*16)
-        elif shape == 'transistor':
-            painter.drawEllipse(rect); painter.drawLine(rect.center(), QPointF(rect.right(), rect.top()+rect.height()*.25)); painter.drawLine(rect.center(), QPointF(rect.right(), rect.bottom()-rect.height()*.25)); painter.drawLine(QPointF(rect.left(), rect.center().y()), rect.center())
-        elif shape == 'fuse':
-            painter.drawLine(QPointF(rect.left(), rect.center().y()), QPointF(rect.right(), rect.center().y()))
-            painter.drawRoundedRect(rect.adjusted(rect.width()*.2, 0, -rect.width()*.2, 0), rect.height()*.25, rect.height()*.25)
-        elif shape == 'connector':
-            painter.drawRect(rect); r = min(rect.width(), rect.height())*.08
-            count = max(2, int(rect.height() / max(1, self.window.grid_px*2)))
-            for i in range(count):
-                y = rect.top() + (i+1)*rect.height()/(count+1); painter.drawEllipse(QPointF(rect.center().x(), y), r, r)
-        elif shape == 'opamp':
-            path = QPainterPath(); path.moveTo(rect.left(), rect.top()); path.lineTo(rect.left(), rect.bottom()); path.lineTo(rect.right(), rect.center().y()); path.closeSubpath(); painter.drawPath(path)
-        elif shape == 'circle':
-            painter.drawEllipse(rect)
-        else:
-            painter.drawRect(rect)
-        painter.restore()
+        super().paint(painter, option, widget)
         if self.isSelected():
             painter.save()
             painter.setPen(QPen(QColor(40, 40, 40), 1))
@@ -330,7 +253,12 @@ class PinItem(TransformMixin, QGraphicsItem):
         self.setPos(model.x * g, -model.y * g)
         self.common_flags()
         self.setData(0, 'PIN')
-        self.apply_transform_from_model()
+        # Pins are controlled only by their side (left/right) and length.
+        # Rotation is intentionally disabled for EDA symbols.
+        self.model.rotation = 0.0
+        self.model.scale_x = 1.0
+        self.model.scale_y = 1.0
+        self.setRotation(0.0)
 
     def boundingRect(self):
         g = self.window.grid_px
@@ -347,7 +275,7 @@ class PinItem(TransformMixin, QGraphicsItem):
             r = .18 * g
             painter.drawEllipse(QPointF((-r if m.side == PinSide.LEFT.value else r), 0), r, r)
         painter.setPen(pen_for(m.number_font.color, m.line_width, m.line_style, g))
-        painter.setFont(qfont_from_grid(m.number_font, g))
+        painter.setFont(QFont(m.number_font.family, max(6, int(g * m.number_font.size_grid * .45))))
         if m.visible_number:
             painter.drawText(QRectF(min(x1, x2), -.85 * g, abs(x2 - x1), .5 * g), Qt.AlignCenter, m.number)
         # Display rule: if a dedicated function exists, show function; otherwise show pin name.
@@ -361,7 +289,7 @@ class PinItem(TransformMixin, QGraphicsItem):
         label = ' / '.join([x for x in parts if x])
         if label:
             painter.setPen(pen_for(m.label_font.color, m.line_width, m.line_style, g))
-            painter.setFont(qfont_from_grid(m.label_font, g))
+            painter.setFont(QFont(m.label_font.family, max(8, int(g * m.label_font.size_grid * .45))))
             if m.side == PinSide.LEFT.value:
                 painter.drawText(QRectF(.25 * g, -.35 * g, 6 * g, .7 * g), Qt.AlignVCenter | Qt.AlignLeft, label)
             else:
@@ -376,15 +304,11 @@ class PinItem(TransformMixin, QGraphicsItem):
         self.model.y = -self.pos().y() / g
 
     def rotate_by(self, deg):
-        # Pins rotate only in 90° steps. Side still defines left/right docking.
-        try:
-            cur = float(getattr(self.model, 'rotation', 0.0) or 0.0)
-        except (TypeError, ValueError):
-            cur = 0.0
-        self.model.rotation = (round((cur + float(deg)) / 90.0) * 90) % 360
+        # Pin rotation is disabled. Use the Side property (left/right) instead.
+        self.model.rotation = 0.0
         self.model.scale_x = 1.0
         self.model.scale_y = 1.0
-        self.setRotation(float(self.model.rotation))
+        self.setRotation(0.0)
         self.setTransform(QTransform())
         self.update()
 
@@ -402,13 +326,7 @@ class TextItem(TransformMixin, QGraphicsTextItem):
         g = window.grid_px
         self.setPos(model.x * g, -model.y * g)
         self.setDefaultTextColor(rgb(model.color))
-        
-        try:
-            sg = float(getattr(model, 'font_size_grid', 0.5) or 0.5)
-        except (TypeError, ValueError):
-            sg = 0.5
-        model.font_size_pt = round(g * sg * 1.28, 2)
-        self.setFont(qfont_for(model.font_family, model.font_size_pt))
+        self.setFont(QFont(model.font_family, max(6, int(g * model.font_size_grid * .45))))
         self.common_flags()
         # Text remains movable/selectable in edit mode. Text editing starts only on double click.
         self.setTextInteractionFlags(Qt.NoTextInteraction)
@@ -439,9 +357,13 @@ class TextItem(TransformMixin, QGraphicsTextItem):
         super().keyPressEvent(event)
 
     def focusOutEvent(self, e):
-        # Commit current text and return to movable/selectable canvas mode.
+        # When the user clicks out of a canvas text item, commit the text and
+        # immediately return the item to normal canvas-object mode so it can be
+        # selected, moved, copied and transformed again.
         self.model.text = self.toPlainText()
         self.setTextInteractionFlags(Qt.NoTextInteraction)
+        self.common_flags()
+        self.scene().window.live_refresh()
         super().focusOutEvent(e)
 
     def update_model_pos(self):
@@ -491,10 +413,6 @@ class GraphicItem(TransformMixin, QGraphicsItem):
         painter.setBrush(QBrush(rgb(m.style.fill)) if m.style.fill else QBrush(Qt.NoBrush))
         if m.shape == 'line':
             painter.drawLine(QPointF(0, 0), QPointF(m.w * g, m.h * g))
-        elif m.shape == 'curve':
-            path = QPainterPath(QPointF(0, 0))
-            path.quadTo(QPointF((m.w * g) / 2.0, -abs(m.h * g)), QPointF(m.w * g, 0))
-            painter.drawPath(path)
         elif m.shape == 'rect':
             painter.drawRect(QRectF(0, 0, m.w * g, m.h * g))
         elif m.shape == 'ellipse':
@@ -592,40 +510,3 @@ class GraphicItem(TransformMixin, QGraphicsItem):
         self.prepareGeometryChange()
         self.update()
 
-
-class OriginItem(QGraphicsItem):
-    """Movable symbol origin marker. Coordinates are stored in grid units on SymbolModel."""
-    def __init__(self, symbol, window):
-        super().__init__()
-        self.symbol = symbol
-        self.window = window
-        g = window.grid_px
-        self.setPos(float(getattr(symbol, 'origin_x', 0.0)) * g, -float(getattr(symbol, 'origin_y', 0.0)) * g)
-        self.setZValue(10000)
-        self.setAcceptHoverEvents(True)
-        self.setFlags(QGraphicsItem.ItemIsMovable | QGraphicsItem.ItemIsSelectable | QGraphicsItem.ItemSendsGeometryChanges)
-        self.setData(0, 'ORIGIN')
-
-    def boundingRect(self):
-        return QRectF(-12, -12, 24, 24)
-
-    def paint(self, painter, option, widget=None):
-        painter.save()
-        painter.setPen(QPen(QColor(20, 120, 220), 2))
-        painter.setBrush(QBrush(QColor(20, 120, 220, 60)))
-        painter.drawLine(QPointF(-10, 0), QPointF(10, 0))
-        painter.drawLine(QPointF(0, -10), QPointF(0, 10))
-        painter.drawEllipse(QPointF(0, 0), 5, 5)
-        painter.restore()
-
-    def itemChange(self, change, value):
-        if change == QGraphicsItem.ItemPositionChange and self.scene():
-            g = self.scene().grid_px
-            return QPointF(snap(value.x(), g), snap(value.y(), g))
-        if change == QGraphicsItem.ItemPositionHasChanged and self.scene():
-            g = self.scene().grid_px
-            self.symbol.origin_x = self.pos().x() / g
-            self.symbol.origin_y = -self.pos().y() / g
-            self.symbol.origin = 'custom'
-            self.scene().window.scene.update()
-        return super().itemChange(change, value)
