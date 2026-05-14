@@ -2,6 +2,7 @@ from __future__ import annotations
 import copy
 import csv
 import json
+from pathlib import Path
 from dataclasses import asdict
 from PySide6.QtCore import Qt, QTimer, QRectF
 from PySide6.QtGui import QAction, QColor, QKeySequence
@@ -58,6 +59,202 @@ class PinComboDelegate(QStyledItemDelegate):
         style = widget.style() if widget else QApplication.style()
         style.drawComplexControl(QStyle.CC_ComboBox, opt, painter, widget)
         style.drawControl(QStyle.CE_ComboBoxLabel, opt, painter, widget)
+
+
+class TemplateEditorDialog(QDialog):
+    """Independent canvas-based editor for reusable symbol templates."""
+    def __init__(self, parent: 'MainWindow'):
+        super().__init__(parent)
+        self.main = parent
+        self.templates = parent.available_templates()
+        self.unit = copy.deepcopy(next(iter(self.templates.values()), SymbolUnitModel()))
+        self.draw_tool = DrawTool.SELECT.value
+        self.default_color = (0, 0, 0)
+        self.symbol = SymbolModel(name='Template Editor', units=[self.unit])
+        self.current_unit_index = 0
+        self.scene = SymbolScene(self)
+        self.view = SymbolView(self.scene, self)
+        self.clipboard = []
+        self.undo_stack = []
+        self.redo_stack = []
+        self.max_history = 10
+        self.setWindowTitle('Symbol Templates editieren')
+        self.resize(1200, 800)
+        self._build_ui()
+        self.load_selected_template()
+
+    @property
+    def current_unit(self):
+        return self.unit
+
+    @property
+    def grid_px(self):
+        return self.symbol.grid_inch * PX_PER_INCH
+
+    def scene_to_grid_x(self, x): return round(x / self.grid_px)
+    def scene_to_grid_y(self, y): return round(-y / self.grid_px)
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        top = QHBoxLayout()
+        self.template_combo = QComboBox(); self.template_combo.addItems(sorted(self.templates.keys()))
+        self.template_combo.currentTextChanged.connect(self.load_selected_template)
+        top.addWidget(QLabel('Template:')); top.addWidget(self.template_combo, 1)
+        self.rename_edit = QLineEdit(); top.addWidget(QLabel('Name/Speichern als:')); top.addWidget(self.rename_edit, 1)
+        save_btn = QPushButton('Template speichern'); save_btn.clicked.connect(self.save_template)
+        top.addWidget(save_btn)
+        layout.addLayout(top)
+        tools = QHBoxLayout()
+        self.tool_buttons = {}
+        for tool, label in [(DrawTool.SELECT, 'Select/Edit'), (DrawTool.PIN_LEFT, 'Pin L'), (DrawTool.PIN_RIGHT, 'Pin R'), (DrawTool.TEXT, 'Text'), (DrawTool.LINE, 'Line'), (DrawTool.RECT, 'Rect'), (DrawTool.ELLIPSE, 'Ellipse')]:
+            b = QPushButton(label); b.setCheckable(True); b.clicked.connect(lambda _, t=tool.value: self.set_tool(t))
+            tools.addWidget(b); self.tool_buttons[tool.value] = b
+        self.tool_buttons[self.draw_tool].setChecked(True)
+        for label, fn in [('Body löschen', self.delete_body), ('Body neu', self.new_body), ('Alles markieren', self.select_all_canvas), ('Kopieren', self.copy_selected), ('Einfügen', self.paste_selected), ('Löschen', self.delete_selected), ('Undo', self.undo), ('Redo', self.redo)]:
+            b = QPushButton(label); b.clicked.connect(fn); tools.addWidget(b)
+        tools.addStretch(); layout.addLayout(tools)
+        splitter = QSplitter()
+        splitter.addWidget(self.view)
+        side = QWidget(); self.form = QFormLayout(side); splitter.addWidget(side); splitter.setSizes([850, 300])
+        layout.addWidget(splitter, 1)
+        buttons = QDialogButtonBox(QDialogButtonBox.Close); buttons.rejected.connect(self.reject); layout.addWidget(buttons)
+        self.scene.selectionChanged.connect(self.refresh_properties)
+
+    def set_tool(self, t):
+        self.draw_tool = t
+        for k, b in self.tool_buttons.items(): b.setChecked(k == t)
+        self.view.setDragMode(QGraphicsView.RubberBandDrag if t == DrawTool.SELECT.value else QGraphicsView.NoDrag)
+
+    def push_undo_state(self):
+        self.undo_stack.append(copy.deepcopy(self.unit))
+        if len(self.undo_stack) > self.max_history: self.undo_stack.pop(0)
+        self.redo_stack.clear()
+
+    def undo(self):
+        if not self.undo_stack: return
+        self.redo_stack.append(copy.deepcopy(self.unit)); self.unit = self.undo_stack.pop(); self.symbol.units=[self.unit]; self.rebuild_scene()
+    def redo(self):
+        if not self.redo_stack: return
+        self.undo_stack.append(copy.deepcopy(self.unit)); self.unit = self.redo_stack.pop(); self.symbol.units=[self.unit]; self.rebuild_scene()
+
+    def load_selected_template(self):
+        name = self.template_combo.currentText()
+        if not name: return
+        self.unit = copy.deepcopy(self.templates[name]); self.symbol.units=[self.unit]
+        self.rename_edit.setText(name)
+        self.rebuild_scene()
+
+    def save_template(self):
+        name = self.rename_edit.text().strip() or self.template_combo.currentText() or 'Template'
+        self.templates[name] = copy.deepcopy(self.unit)
+        if hasattr(self.main, 'apply_template_style_to_matching_symbols'):
+            self.main.apply_template_style_to_matching_symbols(name, self.unit)
+        if self.template_combo.findText(name) < 0:
+            self.template_combo.addItem(name)
+        self.template_combo.setCurrentText(name)
+        QMessageBox.information(self, 'Template', f'Template "{name}" gespeichert.')
+
+    def rebuild_scene(self):
+        self.scene.blockSignals(True); self.scene.clear()
+        if self.unit.body and self.unit.body.width > 0 and self.unit.body.height > 0:
+            self.scene.addItem(BodyItem(self.unit.body, self))
+        for g in self.unit.graphics: self.scene.addItem(GraphicItem(g, self))
+        for p in self.unit.pins: self.scene.addItem(PinItem(p, self))
+        for t in self.unit.texts: self.scene.addItem(TextItem(t, self))
+        self.scene.blockSignals(False); self.scene.update(); self.refresh_properties()
+
+    def refresh_properties(self):
+        while self.form.rowCount(): self.form.removeRow(0)
+        sel = self.scene.selectedItems()
+        if not sel:
+            self.form.addRow(QLabel('Keine Auswahl. Template-Canvas ist unabhängig vom Symbol Wizard.'))
+            return
+        item = sel[0]; kind = item.data(0); m = item.model
+        self.form.addRow(QLabel(f'<b>{kind}</b>'))
+        if kind == 'BODY':
+            self.form.addRow('X', self._dbl(m.x, lambda v: self._set(m, 'x', v)))
+            self.form.addRow('Y', self._dbl(m.y, lambda v: self._set(m, 'y', v)))
+            self.form.addRow('Width', self._dbl(m.width, lambda v: self._set(m, 'width', max(0.01, v)), 0.01, 500))
+            self.form.addRow('Height', self._dbl(m.height, lambda v: self._set(m, 'height', max(0.01, v)), 0.01, 500))
+            self.form.addRow(QLabel('<b>Dargestellte Attribute</b>'))
+            for k in list(m.attributes.keys()):
+                row=QWidget(); l=QHBoxLayout(row); l.setContentsMargins(0,0,0,0)
+                cb=QCheckBox('sichtbar'); cb.setChecked(m.visible_attributes.get(k, False)); ed=QLineEdit(m.attributes.get(k,''))
+                cb.toggled.connect(lambda v, key=k: self._set_attr_vis(key, v)); ed.returnPressed.connect(lambda key=k, e=ed: self._set_attr_val(key, e.text()))
+                l.addWidget(cb); l.addWidget(ed); self.form.addRow(k, row)
+        elif kind == 'PIN':
+            for lab, attr in [('Nr', 'number'), ('Name', 'name'), ('Function', 'function')]: self.form.addRow(lab, self._line(getattr(m, attr), lambda v, a=attr: self._set(m, a, v)))
+            self.form.addRow('Pin Type', self._combo([x.value for x in PinType], m.pin_type, lambda v: self._set(m, 'pin_type', v)))
+            self.form.addRow('Side', self._combo([x.value for x in PinSide], m.side, lambda v: self._set_pin_side(m, v)))
+            inv=QCheckBox(); inv.setChecked(m.inverted); inv.toggled.connect(lambda v: self._set(m, 'inverted', v)); self.form.addRow('Inverted', inv)
+            self.form.addRow('Length', self._dbl(m.length, lambda v: self._set(m, 'length', v), 0.5, 100))
+        elif kind == 'TEXT':
+            self.form.addRow('Text', self._line(m.text, lambda v: self._set(m, 'text', v)))
+            self.form.addRow('Size', self._dbl(m.font_size_grid, lambda v: self._set(m, 'font_size_grid', v), .1, 10))
+        elif kind == 'GRAPHIC':
+            self.form.addRow('Shape', self._combo(['line','rect','ellipse'], m.shape, lambda v: self._set(m, 'shape', v)))
+            self.form.addRow('X', self._dbl(m.x, lambda v: self._set(m, 'x', v)))
+            self.form.addRow('Y', self._dbl(m.y, lambda v: self._set(m, 'y', v)))
+            self.form.addRow('W', self._dbl(m.w, lambda v: self._set(m, 'w', v), -500, 500))
+            self.form.addRow('H', self._dbl(m.h, lambda v: self._set(m, 'h', v), -500, 500))
+
+    def _line(self, value, fn):
+        w=QLineEdit(str(value)); w.returnPressed.connect(lambda widget=w: fn(widget.text())); return w
+    def _dbl(self, value, fn, lo=-999, hi=999, step=.1):
+        w=QDoubleSpinBox(); w.setRange(lo, hi); w.setDecimals(3); w.setSingleStep(step); w.setValue(float(value)); w.valueChanged.connect(fn); return w
+    def _combo(self, items, val, fn):
+        w=QComboBox(); w.addItems(items); w.setCurrentText(str(val)); w.currentTextChanged.connect(fn); return w
+    def _set(self, m, a, v):
+        self.push_undo_state(); setattr(m, a, v); self.rebuild_scene()
+    def _set_pin_side(self, m, v):
+        self.push_undo_state(); m.side=v; self.dock_pins_to_body(self.unit); self.rebuild_scene()
+    def _set_attr_vis(self, key, val): self.unit.body.visible_attributes.__setitem__(key, val); self.rebuild_scene()
+    def _set_attr_val(self, key, val): self.unit.body.attributes.__setitem__(key, val); self.rebuild_scene()
+
+    def add_pin(self, side, x=None, y=None):
+        self.push_undo_state(); p=PinModel(number=str(len(self.unit.pins)+1), side=side, name='PIN', function='')
+        p.x = x if x is not None else (self.unit.body.x if side == PinSide.LEFT.value else self.unit.body.x + self.unit.body.width)
+        p.y = y if y is not None else self.unit.body.y - 1 - len(self.unit.pins)
+        self.unit.pins.append(p); self.dock_pins_to_body(self.unit); self.rebuild_scene()
+    def add_graphic(self, tool, x, y):
+        self.push_undo_state(); shape={DrawTool.LINE.value:'line',DrawTool.RECT.value:'rect',DrawTool.ELLIPSE.value:'ellipse'}[tool]
+        self.unit.graphics.append(GraphicModel(shape=shape, x=x, y=y, w=2, h=0 if shape=='line' else 2)); self.rebuild_scene()
+    def select_model_after_rebuild(self, model): pass
+    def new_body(self): self.push_undo_state(); self.unit.body=SymbolBodyModel(); self.rebuild_scene()
+    def delete_body(self): self.push_undo_state(); self.unit.body.width=0.01; self.unit.body.height=0.01; self.rebuild_scene()
+    def select_all_canvas(self):
+        for item in self.scene.items(): item.setSelected(True)
+    def copy_selected(self): self.clipboard=[(i.data(0), copy.deepcopy(i.model)) for i in self.scene.selectedItems()]
+    def paste_selected(self):
+        self.push_undo_state()
+        for kind, m in self.clipboard:
+            if hasattr(m,'x'): m.x += 1
+            if hasattr(m,'y'): m.y -= 1
+            if kind=='PIN': self.unit.pins.append(m)
+            elif kind=='TEXT': self.unit.texts.append(m)
+            elif kind=='GRAPHIC': self.unit.graphics.append(m)
+            elif kind=='BODY': self.unit.body=m
+        self.rebuild_scene()
+    def delete_selected(self):
+        self.push_undo_state()
+        for it in list(self.scene.selectedItems()):
+            if it.data(0)=='PIN': self.unit.pins=[p for p in self.unit.pins if p is not it.model]
+            elif it.data(0)=='TEXT': self.unit.texts=[t for t in self.unit.texts if t is not it.model]
+            elif it.data(0)=='GRAPHIC': self.unit.graphics=[g for g in self.unit.graphics if g is not it.model]
+            elif it.data(0)=='BODY': self.unit.body.width=0.01; self.unit.body.height=0.01
+        self.rebuild_scene()
+    def live_refresh(self): self.refresh_properties()
+    def dock_pins_to_body(self, u):
+        b=u.body
+        for p in u.pins: p.x = b.x if p.side == PinSide.LEFT.value else b.x + b.width
+    def scale_current_unit_children_from_body_resize(self, st, body):
+        # Template editor keeps pins docked; detailed proportional scaling is available in the main canvas.
+        self.dock_pins_to_body(self.unit)
+    def update_current_unit_canvas_positions(self): pass
+    def update_attribute_items_for_unit(self): pass
+    def enforce_symbol_size_limit(self, silent=False): return True
+    def rebuild_tree(self): pass
+    def rebuild_pin_table(self): pass
 
 
 class MainWindow(QMainWindow):
@@ -117,8 +314,12 @@ class MainWindow(QMainWindow):
 
         self.single_tabs = QTabWidget()
         self.single_tabs.currentChanged.connect(lambda i: self.change_symbol_from_tab(SymbolKind.SINGLE.value, i))
+        self.single_tabs.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.single_tabs.customContextMenuRequested.connect(lambda pos: self.symbol_tab_context_menu(SymbolKind.SINGLE.value, self.single_tabs, pos))
         self.split_tabs = QTabWidget()
         self.split_tabs.currentChanged.connect(lambda i: self.change_symbol_from_tab(SymbolKind.SPLIT.value, i))
+        self.split_tabs.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.split_tabs.customContextMenuRequested.connect(lambda pos: self.symbol_tab_context_menu(SymbolKind.SPLIT.value, self.split_tabs, pos))
 
         # Pin overview for the Symbols workspace. The complete object hierarchy stays
         # in the lower Object Tree; the upper area is now a compact pin table.
@@ -226,6 +427,7 @@ class MainWindow(QMainWindow):
         table.clearContents()
         table.setRowCount(0)
         table.setRowCount(len(rows))
+        table.blockSignals(False)
         for r, (si, ui, pi, pin) in enumerate(rows):
             values = [pin.number, pin.name, pin.function, pin.pin_type, pin.side, 'yes' if pin.inverted else 'no']
             for c, v in enumerate(values):
@@ -234,9 +436,26 @@ class MainWindow(QMainWindow):
                 it.setData(Qt.EditRole, str(v))
                 it.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
                 table.setItem(r, c, it)
-        table.blockSignals(False)
+            self._install_pin_table_combo(table, r, 3, [x.value for x in PinType], pin.pin_type)
+            self._install_pin_table_combo(table, r, 4, [x.value for x in PinSide], pin.side)
+            self._install_pin_table_combo(table, r, 5, ['yes', 'no'], 'yes' if pin.inverted else 'no')
         self._autosize_table(table)
         table.viewport().update()
+
+    def _install_pin_table_combo(self, table: QTableWidget, row: int, col: int, values: list[str], current: str):
+        combo = QComboBox(table)
+        combo.addItems(values)
+        combo.setCurrentText(str(current))
+        combo.currentTextChanged.connect(lambda v, t=table, r=row, c=col: self.pin_table_widget_changed(t, r, c, v))
+        table.setCellWidget(row, col, combo)
+
+    def pin_table_widget_changed(self, table: QTableWidget, r: int, c: int, value: str):
+        it = table.item(r, c) or table.item(r, 0)
+        if not it:
+            return
+        if table.item(r, c):
+            table.item(r, c).setText(value)
+        self.pin_table_changed(r, c)
 
     def _menu(self):
         mb = self.menuBar()
@@ -357,8 +576,13 @@ class MainWindow(QMainWindow):
         zoom_btn = QPushButton('Zoom Fit')
         zoom_btn.clicked.connect(self.zoom_to_fit_symbol)
         setup_tb.addWidget(zoom_btn)
+        setup_tb.addWidget(QLabel('Origo:'))
+        self.origin_combo = QComboBox()
+        self.origin_combo.addItems([x.value for x in OriginMode])
+        self.origin_combo.setCurrentText(self.symbol.origin)
+        setup_tb.addWidget(self.origin_combo)
         origin_btn = QPushButton('Origo Reset')
-        origin_btn.clicked.connect(self.reset_origin_to_body_center)
+        origin_btn.clicked.connect(self.reset_origin_to_selected_anchor)
         setup_tb.addWidget(origin_btn)
 
         # --- Style controls ---------------------------------------------
@@ -421,6 +645,10 @@ class MainWindow(QMainWindow):
         self.format_combo.blockSignals(True)
         self.format_combo.setCurrentText(getattr(self.symbol, 'sheet_format', SheetFormat.A3.value))
         self.format_combo.blockSignals(False)
+        if hasattr(self, 'origin_combo'):
+            self.origin_combo.blockSignals(True)
+            self.origin_combo.setCurrentText(getattr(self.symbol, 'origin', OriginMode.CENTER.value))
+            self.origin_combo.blockSignals(False)
         self.update_name_editors()
         self.left_tabs.setCurrentIndex(1 if self.symbol.kind == SymbolKind.SPLIT.value else 0)
 
@@ -1428,15 +1656,32 @@ class MainWindow(QMainWindow):
         self.rebuild_canvas_tabs(); self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table(); self.update_name_editors()
 
     def new_single_symbol(self):
+        spec = self.ask_new_symbol_template(SymbolKind.SINGLE.value)
+        if spec is None:
+            return
+        name, template_name = spec
         self.push_undo_state()
-        self.library.add_symbol('Symbol', SymbolKind.SINGLE.value)
+        s = self.library.add_symbol(name or 'Symbol', SymbolKind.SINGLE.value)
+        s.name = self.library.unique_import_name(name or s.name)
+        s.template_name = template_name
+        s.units = [copy.deepcopy(self.available_templates().get(template_name, SymbolUnitModel()))]
+        s.units[0].name = 'Unit A'
         self.current_unit_index = 0
         self.rebuild_all()
 
     def new_split_symbol(self):
+        spec = self.ask_new_symbol_template(SymbolKind.SPLIT.value)
+        if spec is None:
+            return
+        name, template_name = spec
         self.push_undo_state()
-        s = self.library.add_symbol('Split Symbol', SymbolKind.SPLIT.value)
-        s.units = [SymbolUnitModel(name=f'{s.name}_1'), SymbolUnitModel(name=f'{s.name}_2')]
+        s = self.library.add_symbol(name or 'Split Symbol', SymbolKind.SPLIT.value)
+        s.name = self.library.unique_import_name(name or s.name)
+        s.template_name = template_name
+        base = copy.deepcopy(self.available_templates(split_only=True).get(template_name, SymbolUnitModel()))
+        s.units = [copy.deepcopy(base), copy.deepcopy(base)]
+        for i, u in enumerate(s.units, start=1):
+            u.name = f'{s.name}_{i}'
         self.current_unit_index = 0
         self.rebuild_all()
 
@@ -1581,24 +1826,62 @@ class MainWindow(QMainWindow):
         self.refresh_properties()
 
     def reset_origin_to_body_center(self):
+        self.reset_origin_to_selected_anchor(OriginMode.CENTER.value)
+
+    def body_anchor_point(self, body: SymbolBodyModel, mode: str):
+        mapping = {
+            OriginMode.TOP_LEFT.value: (body.x, body.y),
+            OriginMode.TOP_RIGHT.value: (body.x + body.width, body.y),
+            OriginMode.BOTTOM_LEFT.value: (body.x, body.y - body.height),
+            OriginMode.BOTTOM_RIGHT.value: (body.x + body.width, body.y - body.height),
+            OriginMode.CENTER.value: (body.x + body.width / 2, body.y - body.height / 2),
+        }
+        return mapping.get(mode, mapping[OriginMode.CENTER.value])
+
+    def reset_origin_to_selected_anchor(self, mode: str | None = None):
         self.push_undo_state()
-        u = self.current_unit
-        b = u.body
-        cx = b.x + b.width / 2
-        cy = b.y - b.height / 2
+        mode = mode or (self.origin_combo.currentText() if hasattr(self, 'origin_combo') else OriginMode.CENTER.value)
+        self.symbol.origin = mode
+        ax, ay = self.body_anchor_point(self.current_unit.body, mode)
         for unit in self.symbol.units:
-            unit.body.x -= cx
-            unit.body.y -= cy
+            unit.body.x -= ax
+            unit.body.y -= ay
             for p in unit.pins:
-                p.x -= cx; p.y -= cy
+                p.x -= ax; p.y -= ay
             for t in unit.texts:
-                t.x -= cx; t.y -= cy
+                t.x -= ax; t.y -= ay
             for g in unit.graphics:
-                g.x -= cx; g.y -= cy
+                g.x -= ax; g.y -= ay
         self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
-        self.statusBar().showMessage('Origo auf Body-Mitte nachgezogen.', 3000)
+        self.statusBar().showMessage(f'Origo auf {mode} nachgezogen.', 3000)
+
+    def symbol_tab_context_menu(self, kind: str, tabs: QTabWidget, pos):
+        tab = tabs.tabBar().tabAt(pos)
+        if tab < 0:
+            return
+        menu = QMenu(tabs)
+        menu.addAction('Symbol umbenennen', lambda: self.rename_symbol_from_tab(kind, tab))
+        menu.exec(tabs.mapToGlobal(pos))
+
+    def rename_symbol_from_tab(self, kind: str, tab_index: int):
+        indices = self._symbol_indices(kind)
+        if tab_index < 0 or tab_index >= len(indices):
+            return
+        si = indices[tab_index]
+        old = self.library.symbols[si].name
+        name, ok = QInputDialog.getText(self, 'Symbol umbenennen', 'Neuer Symbolname:', text=old)
+        if ok and name.strip():
+            self.library.current_symbol_index = si
+            self.rename_current_symbol(name.strip())
 
     def edit_symbol_templates(self):
+        dlg = TemplateEditorDialog(self)
+        dlg.exec()
+        self.symbol_templates.update(dlg.templates)
+        self.rebuild_all()
+        return
+
+    def edit_symbol_templates_legacy(self):
         dlg = QDialog(self)
         dlg.setWindowTitle('Symbol Templates editieren')
         dlg.resize(780, 620)
@@ -1712,6 +1995,126 @@ class MainWindow(QMainWindow):
         buttons.accepted.connect(lambda: apply_template(True))
         buttons.rejected.connect(dlg.reject)
         dlg.exec()
+
+
+    # ------------------------------------------------------------------ Template handling
+    def symbol_types_path(self):
+        candidates = [
+            Path(__file__).resolve().parents[2] / 'symbol_types.json',
+            Path.cwd() / 'symbol_types.json',
+            Path('/mnt/data/symbol_types.json'),
+        ]
+        for c in candidates:
+            if c.exists():
+                return c
+        return None
+
+    def unit_from_template_def(self, type_name: str, subtype_name: str | None, data: dict) -> SymbolUnitModel:
+        type_def = data['types'][type_name]
+        sub_def = (type_def.get('subtypes') or {}).get(subtype_name or '', {}) if subtype_name else {}
+        body_def = copy.deepcopy(type_def.get('body') or {})
+        body_def.update(sub_def.get('body') or {})
+        w = float(body_def.get('width', type_def.get('body', {}).get('width', 16)))
+        h = float(body_def.get('height', type_def.get('body', {}).get('height', 24)))
+        body = SymbolBodyModel(x=-w/2, y=h/2, width=w, height=h)
+        attrs = []
+        for a in data.get('global_attributes', []):
+            if a not in attrs: attrs.append(a)
+        for a in type_def.get('attributes', []):
+            if a not in attrs: attrs.append(a)
+        for a in sub_def.get('attributes', []):
+            if a not in attrs: attrs.append(a)
+        prefix = sub_def.get('prefix', type_def.get('prefix', '?'))
+        body.attributes = {a: '' for a in attrs}
+        body.attributes['RefDes'] = f'{prefix}?'
+        body.visible_attributes = {a: a in ('RefDes', 'Value', 'Package') for a in attrs}
+        body.visible_attributes['RefDes'] = True
+        pins = []
+        for idx, pd in enumerate(type_def.get('default_pins', []) or [], start=1):
+            pin = PinModel(
+                number=str(pd.get('number', idx)), name=str(pd.get('name', 'PIN')),
+                function=str(pd.get('function', pd.get('name', ''))),
+                pin_type=str(pd.get('type', PinType.BIDI.value)), side=str(pd.get('side', PinSide.LEFT.value)),
+                inverted=bool(pd.get('inverted', False)),
+            )
+            pins.append(pin)
+        count = int(sub_def.get('pins', 0) or 0)
+        if count and len(pins) < count:
+            for i in range(len(pins) + 1, count + 1):
+                pins.append(PinModel(number=str(i), name=f'PIN{i}', function='', pin_type=PinType.PASSIVE.value if hasattr(PinType, 'PASSIVE') else PinType.BIDI.value, side=PinSide.LEFT.value if i % 2 else PinSide.RIGHT.value))
+        u = SymbolUnitModel(name=(subtype_name or type_name), body=body, pins=pins)
+        # Distribute default pins on body edges.
+        left = [p for p in u.pins if p.side == PinSide.LEFT.value]
+        right = [p for p in u.pins if p.side == PinSide.RIGHT.value]
+        for group, side in ((left, PinSide.LEFT.value), (right, PinSide.RIGHT.value)):
+            n = max(1, len(group))
+            for i, pin in enumerate(group, start=1):
+                pin.x = body.x if side == PinSide.LEFT.value else body.x + body.width
+                pin.y = body.y - (body.height * i / (n + 1))
+        return u
+
+    def load_symbol_type_templates(self) -> dict[str, SymbolUnitModel]:
+        path = self.symbol_types_path()
+        templates = {}
+        if not path:
+            return templates
+        try:
+            data = json.loads(path.read_text(encoding='utf-8'))
+            for type_name, type_def in (data.get('types') or {}).items():
+                templates[type_name] = self.unit_from_template_def(type_name, None, data)
+                for subtype_name in (type_def.get('subtypes') or {}).keys():
+                    templates[f'{type_name} / {subtype_name}'] = self.unit_from_template_def(type_name, subtype_name, data)
+        except Exception as exc:
+            self.statusBar().showMessage(f'symbol_types.json konnte nicht geladen werden: {exc}', 6000)
+        return templates
+
+    def available_templates(self, split_only: bool = False) -> dict[str, SymbolUnitModel]:
+        templates = self.load_symbol_type_templates()
+        templates.update(copy.deepcopy(self.symbol_templates))
+        if split_only:
+            return {k: v for k, v in templates.items() if k == 'IC' or k.startswith('IC /')}
+        return templates
+
+
+    def apply_template_style_to_matching_symbols(self, template_name: str, tmpl: SymbolUnitModel):
+        """Update style/attribute definitions for symbols created from a template.
+
+        Geometry and existing pins stay untouched, as requested. Only non-destructive
+        style fields and the attribute catalogue/visibility are refreshed.
+        """
+        changed = False
+        for sym in self.library.symbols:
+            if getattr(sym, 'template_name', '') != template_name:
+                continue
+            for u in sym.units:
+                u.body.color = tmpl.body.color
+                u.body.line_width = tmpl.body.line_width
+                u.body.line_style = tmpl.body.line_style
+                u.body.attribute_font = copy.deepcopy(tmpl.body.attribute_font)
+                u.body.refdes_font = copy.deepcopy(tmpl.body.refdes_font)
+                for key, val in tmpl.body.attributes.items():
+                    u.body.attributes.setdefault(key, val)
+                for key, val in tmpl.body.visible_attributes.items():
+                    u.body.visible_attributes[key] = val
+            changed = True
+        if changed:
+            self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
+
+    def ask_new_symbol_template(self, kind: str):
+        templates = self.available_templates(split_only=(kind == SymbolKind.SPLIT.value))
+        dlg = QDialog(self)
+        dlg.setWindowTitle('Neues Symbol')
+        layout = QFormLayout(dlg)
+        name = QLineEdit('Split Symbol' if kind == SymbolKind.SPLIT.value else 'Symbol')
+        combo = QComboBox(); combo.addItems(sorted(templates.keys()))
+        layout.addRow('Symbolname', name)
+        layout.addRow('Template', combo)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        layout.addRow(buttons)
+        buttons.accepted.connect(dlg.accept); buttons.rejected.connect(dlg.reject)
+        if dlg.exec() == QDialog.Accepted:
+            return name.text().strip() or 'Symbol', combo.currentText()
+        return None
 
     # ------------------------------------------------------------------ File IO
     def save_current_symbol(self):

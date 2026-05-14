@@ -4,7 +4,7 @@ from enum import Enum
 from typing import Dict, List, Tuple
 
 class PinType(str, Enum):
-    IN='IN'; OUT='OUT'; BIDI='BIDI'; POWER='POWER'; GROUND='GROUND'; ANALOG='ANALOG'
+    IN='IN'; OUT='OUT'; BIDI='BIDI'; PASSIVE='PASSIVE'; POWER='POWER'; GROUND='GROUND'; ANALOG='ANALOG'
 class PinSide(str, Enum):
     LEFT='left'; RIGHT='right'
 class OriginMode(str, Enum):
@@ -89,6 +89,7 @@ class SymbolModel:
     grid_inch: float=0.100
     sheet_format: str=SheetFormat.A3.value
     origin: str=OriginMode.CENTER.value
+    template_name: str=''
     units: List[SymbolUnitModel]=field(default_factory=lambda:[SymbolUnitModel()])
 
 @dataclass
