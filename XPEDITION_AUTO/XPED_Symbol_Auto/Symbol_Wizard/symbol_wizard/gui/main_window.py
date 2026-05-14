@@ -409,8 +409,6 @@ class TemplateEditorDialog(QDialog):
 
     def on_scene_selection_changed(self):
         try:
-            self.scene.invalidate(self.scene.sceneRect())
-            self.scene.update(self.scene.sceneRect())
             self.view.viewport().update()
         except Exception:
             pass
@@ -1026,11 +1024,26 @@ class TemplateEditorDialog(QDialog):
             elif it.data(0)=='BODY': self.unit.body.width=0.01; self.unit.body.height=0.01
         self.rebuild_scene()
     def live_refresh(self):
-        self.scene.invalidate(self.scene.sceneRect())
-        self.scene.update(self.scene.sceneRect())
-        self.view.viewport().update()
-        self.refresh_properties()
+        """Lightweight canvas refresh used during dragging/resizing.
 
+        This intentionally avoids rebuilding the tree, pin table or property
+        panel on every mouse-move.  The split part is still logically grouped
+        through the model, but the canvas items stay flat in the scene for
+        much better edit performance with large split symbols.
+        """
+        if getattr(self, '_live_refresh_pending', False):
+            return
+        self._live_refresh_pending = True
+        def _do():
+            self._live_refresh_pending = False
+            try:
+                if hasattr(self, 'view'):
+                    self.view.viewport().update()
+                elif hasattr(self, 'scene'):
+                    self.scene.update()
+            except Exception:
+                pass
+        QTimer.singleShot(0, _do)
     def dock_pins_to_body(self, u):
         b=u.body
         for p in u.pins: p.x = b.x if p.side == PinSide.LEFT.value else b.x + b.width
@@ -1091,8 +1104,7 @@ class TemplateEditorDialog(QDialog):
                     if hasattr(item, 'apply_transform_from_model'):
                         item.apply_transform_from_model()
             item.update()
-        self.scene.invalidate(self.scene.sceneRect())
-        self.scene.update(self.scene.sceneRect())
+        self.scene.update()
         self.view.viewport().update()
 
     def update_attribute_items_for_unit(self):
@@ -1105,8 +1117,7 @@ class TemplateEditorDialog(QDialog):
             model = getattr(item, 'model', None)
             if model is not None and id(model) in selected_ids:
                 item.setSelected(True)
-        self.scene.invalidate(self.scene.sceneRect())
-        self.scene.update(self.scene.sceneRect())
+        self.scene.update()
         self.view.viewport().update()
 
     def enforce_symbol_size_limit(self, silent=False): return True
@@ -2885,14 +2896,26 @@ Use **File > Import PINMUX CSV** to import pin information from a CSV file. Afte
             self.schedule_scene_refresh()
 
     def live_refresh(self):
-        self.scene.invalidate(self.scene.sceneRect())
-        self.scene.update(self.scene.sceneRect())
-        self.view.viewport().update()
-        self.rebuild_tree()
-        self.rebuild_pin_table()
-        if not self._property_editor_has_focus():
-            self.refresh_properties()
+        """Lightweight canvas refresh used during dragging/resizing.
 
+        This intentionally avoids rebuilding the tree, pin table or property
+        panel on every mouse-move.  The split part is still logically grouped
+        through the model, but the canvas items stay flat in the scene for
+        much better edit performance with large split symbols.
+        """
+        if getattr(self, '_live_refresh_pending', False):
+            return
+        self._live_refresh_pending = True
+        def _do():
+            self._live_refresh_pending = False
+            try:
+                if hasattr(self, 'view'):
+                    self.view.viewport().update()
+                elif hasattr(self, 'scene'):
+                    self.scene.update()
+            except Exception:
+                pass
+        QTimer.singleShot(0, _do)
     def update_current_unit_canvas_positions(self):
         """Update existing QGraphicsItems from their models without rebuilding the scene."""
         g = self.grid_px
@@ -2921,8 +2944,7 @@ Use **File > Import PINMUX CSV** to import pin information from a CSV file. Afte
                 if hasattr(item, 'apply_transform_from_model'):
                     item.apply_transform_from_model()
             item.update()
-        self.scene.invalidate(self.scene.sceneRect())
-        self.scene.update(self.scene.sceneRect())
+        self.scene.update()
         self.view.viewport().update()
 
     def update_attribute_items_for_unit(self):
@@ -2936,8 +2958,7 @@ Use **File > Import PINMUX CSV** to import pin information from a CSV file. Afte
             model = getattr(item, 'model', None)
             if model is not None and id(model) in selected_ids:
                 item.setSelected(True)
-        self.scene.invalidate(self.scene.sceneRect())
-        self.scene.update(self.scene.sceneRect())
+        self.scene.update()
         self.view.viewport().update()
 
     def scale_current_unit_children_from_body_resize(self, start_state: dict, body: SymbolBodyModel):
@@ -2984,8 +3005,6 @@ Use **File > Import PINMUX CSV** to import pin information from a CSV file. Afte
         if self._refresh_visual_only:
             self.update_current_unit_canvas_positions()
             self.update_attribute_items_for_unit()
-            self.rebuild_tree()
-            self.rebuild_pin_table()
             if not self._property_editor_has_focus():
                 self.refresh_properties()
         else:

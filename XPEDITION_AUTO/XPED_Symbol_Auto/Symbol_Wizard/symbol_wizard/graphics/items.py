@@ -163,7 +163,6 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
         if abs(dx) > 1e-9 or abs(dy) > 1e-9:
             self.window.move_current_unit_group(dx, dy, source_body=self.model)
             self.window.update_current_unit_canvas_positions()
-            self.window.update_attribute_items_for_unit()
         self._last_model_pos = (self.model.x, self.model.y)
 
     def _handles(self):
@@ -282,7 +281,6 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
 
             self.window.scale_current_unit_children_from_body_resize(st, self.model)
             self.window.update_current_unit_canvas_positions()
-            self.window.update_attribute_items_for_unit()
             self.window.live_refresh()
             self.update()
             event.accept()
