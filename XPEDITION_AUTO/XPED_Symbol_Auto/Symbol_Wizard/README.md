@@ -1,49 +1,35 @@
 # Symbol_Wizard
 
-PySide6 MVP for an automated schematic symbol editor.
+PySide6 MVP für einen modellgetriebenen Symboleditor.
 
-## Run
+## Start
 
 ```bash
 pip install -r requirements.txt
 python main.py
 ```
 
-## Current MVP features
+## Enthalten
 
-- Grid-based 2D editor with 0.100 inch default grid and 0.050 inch minimum grid
-- Symbol body with editable body attributes
-- Per-attribute visibility checkboxes for symbol body attributes
-- Visible body attributes rendered in the drawing canvas
-- Pins left/right, pin attributes, visibility flags and inverted pin marker
-- Text objects with font and RGB color
-- Additional drawing objects: line, rectangle, ellipse/circle
-- Insert panel for adding drawing objects later
-- Dedicated pin tab/table
-- Unit/SplitSymbol tabs
-- Object tree per unit: Body, Attributes, Pins, Text and Graphics
-- Copy/Paste/Delete for selected canvas objects
-- Extendable main menu bar
-- JSON open/save as initial exchange format
+- Mehrere Symbole, jedes Symbol hat einen eigenen Reiter
+- `New Symbol` legt ein neues Symbol an, ohne bestehende Symbole zu überschreiben
+- Defaultnamen: `Symbol 1`, `Symbol 2`, ...
+- Importierte Symbole mit gleichem Namen erhalten `_2`, `_3`, ...
+- Single- und Split-Symbol-Ansicht
+- Units/Split-Symbols je Symbol
+- Objektbaum: Body, Attribute, Pins, Text, Graphics
+- Pin-Tabelle
+- Verbot doppelter Pinnummern pro Symbol, auch über Split-Units hinweg
+- Automatische Pin-Nummern-Inkrementierung
+- Zeichenflächen-Editing mit Draw-Ribbon
+- Copy/Paste/Delete ausgewählter Zeichenobjekte
+- Linienart und Linienstärke für Body, Pins und Graphics
+- RGB-Farben
+- Sichtbare Symbolbody-Attribute werden im Zeichenfeld gerendert
+- Visibility-Checkbox je Symbolbody-Attribut
+- JSON Export: einzelnes Symbol oder komplette Symbolbibliothek
 
-## Project structure
+## JSON
 
-```text
-symbol_wizard/
-  app.py
-  config.py
-  gui/
-    main_window.py
-    properties_panel.py
-  graphics/
-    scene.py
-    view.py
-    items.py
-  io/
-    json_store.py
-  models/
-    document.py
-  rules/
-    grid.py
-    placement.py
-```
+- `Save Current Symbol JSON`: speichert nur das aktuell gewählte Symbol
+- `Save All Symbols JSON`: speichert alle Symbole als Library

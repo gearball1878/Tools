@@ -1,31 +1,27 @@
 import json
-from dataclasses import asdict
 from pathlib import Path
-from typing import Any
+from symbol_wizard.models.document import *
 
-from symbol_wizard.models.document import GraphicObjectModel, OriginMode, PinModel, SymbolBodyModel, SymbolDocumentModel, SymbolUnitModel, TextModel
+def _style(d): return StyleModel(**d) if isinstance(d, dict) else StyleModel()
+def _graphic(d):
+    d=dict(d); d['style']=_style(d.get('style',{})); return GraphicModel(**d)
+def _pin(d): return PinModel(**d)
+def _text(d): return TextModel(**d)
+def _body(d): return SymbolBodyModel(**d)
+def _unit(d):
+    return SymbolUnitModel(name=d.get('name','Unit'), body=_body(d.get('body',{})), pins=[_pin(x) for x in d.get('pins',[])], texts=[_text(x) for x in d.get('texts',[])], graphics=[_graphic(x) for x in d.get('graphics',[])])
+def _symbol(d):
+    return SymbolModel(name=d.get('name','Symbol'), is_split=d.get('is_split',False), grid_inch=d.get('grid_inch',0.1), origin=d.get('origin','bottom_left'), units=[_unit(x) for x in d.get('units',[]) ] or [SymbolUnitModel()])
 
+def save_library(path, library: LibraryModel):
+    Path(path).write_text(json.dumps(to_dict(library), indent=2), encoding='utf-8')
 
-def document_to_dict(document: SymbolDocumentModel) -> dict[str, Any]:
-    return asdict(document)
+def load_library(path) -> LibraryModel:
+    d=json.loads(Path(path).read_text(encoding='utf-8'))
+    return LibraryModel(symbols=[_symbol(x) for x in d.get('symbols',[]) ] or [SymbolModel()], current_symbol_index=d.get('current_symbol_index',0))
 
+def save_symbol(path, symbol: SymbolModel):
+    Path(path).write_text(json.dumps(to_dict(symbol), indent=2), encoding='utf-8')
 
-def document_from_dict(data: dict[str, Any]) -> SymbolDocumentModel:
-    doc = SymbolDocumentModel(name=data.get("name", "NewSymbol"), grid_inch=data.get("grid_inch", 0.100), origin=data.get("origin", OriginMode.BOTTOM_LEFT.value), units=[])
-    for unit_data in data.get("units", []):
-        body = SymbolBodyModel(**unit_data.get("body", {}))
-        pins = [PinModel(**p) for p in unit_data.get("pins", [])]
-        texts = [TextModel(**t) for t in unit_data.get("texts", [])]
-        graphics = [GraphicObjectModel(**g) for g in unit_data.get("graphics", [])]
-        doc.units.append(SymbolUnitModel(name=unit_data.get("name", "Unit"), body=body, pins=pins, texts=texts, graphics=graphics))
-    if not doc.units:
-        doc.units.append(SymbolUnitModel())
-    return doc
-
-
-def save_document(path: str | Path, document: SymbolDocumentModel) -> None:
-    Path(path).write_text(json.dumps(document_to_dict(document), indent=2), encoding="utf-8")
-
-
-def load_document(path: str | Path) -> SymbolDocumentModel:
-    return document_from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
+def load_symbol(path) -> SymbolModel:
+    return _symbol(json.loads(Path(path).read_text(encoding='utf-8')))

@@ -1,4 +1,2 @@
-from symbol_wizard.app import run
-
-if __name__ == "__main__":
-    run()
+from symbol_wizard.app import main
+if __name__ == '__main__': main()
