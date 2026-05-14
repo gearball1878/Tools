@@ -101,6 +101,14 @@ class SymbolModel:
     sheet_format: str=SheetFormat.A3.value
     origin: str=OriginMode.CENTER.value
     template_name: str=''
+    # Semantic palette used by Mentor/Xpedition import. Native Mentor ASCII does
+    # not store object RGB values; this palette keeps the Wizard colors stable
+    # and lets export stay native without writing non-standard color records.
+    pin_palette: Dict[str, Tuple[int,int,int]]=field(default_factory=lambda:{
+        'IN': (0,84,170), 'OUT': (214,96,0), 'BIDI': (128,0,160),
+        'PASSIVE': (0,0,0), 'POWER': (200,0,0), 'GROUND': (0,140,0),
+        'ANALOG': (0,140,160),
+    })
     units: List[SymbolUnitModel]=field(default_factory=lambda:[SymbolUnitModel()])
 
 @dataclass

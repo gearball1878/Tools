@@ -133,6 +133,7 @@ def import_mentor_symbol_bundle(path: str | Path) -> SymbolModel:
             grid_inch=grid,
             sheet_format=sheet,
             origin=origin,
+            pin_palette=dict(MENTOR_PIN_PALETTE),
             units=units,
         )
 
@@ -324,7 +325,7 @@ def _export_xpedition_ascii_part(symbol: SymbolModel, unit: SymbolUnitModel, par
     def pin_y_from_model(pin: PinModel, index: int, side_count: int) -> int:
         # Imported symbols often have exact y values.  Use them when they produce
         # sane in-body coordinates; otherwise row-pack top-down in 20-unit pitch.
-        y = margin + 20 + ((float(pin.y) - min_y) / span_y) * max(20.0, raw_h - 100.0)
+        y = raw_h - margin - 20 - ((float(pin.y) - min_y) / span_y) * max(20.0, raw_h - 100.0)
         if not (margin + 10 <= y <= raw_h - margin - 10) or side_count > 1 and span_y < 0.01:
             y = raw_h - margin - 20 - index * 20
         return int(round(y / 10.0) * 10)
@@ -387,7 +388,7 @@ def _export_xpedition_ascii_part(symbol: SymbolModel, unit: SymbolUnitModel, par
         if not str(text.text).strip():
             continue
         x = raw_w/2 + float(text.x) * raw_per_grid
-        y = raw_h/2 + float(text.y) * raw_per_grid
+        y = raw_h/2 - float(text.y) * raw_per_grid
         if abs(x - raw_w/2) < 8 and abs(y - (raw_h-28)) < 25 and str(text.text) == str(title):
             continue
         size = _mentor_font_size_grid_to_ascii(text.font_size_grid, 10)
@@ -401,9 +402,9 @@ def _export_xpedition_ascii_part(symbol: SymbolModel, unit: SymbolUnitModel, par
             continue
         shape = (graphic.shape or 'line').lower()
         x1 = raw_w/2 + float(graphic.x) * raw_per_grid
-        y1 = raw_h/2 + float(graphic.y) * raw_per_grid
+        y1 = raw_h/2 - float(graphic.y) * raw_per_grid
         x2 = x1 + float(graphic.w) * raw_per_grid
-        y2 = y1 - float(graphic.h) * raw_per_grid
+        y2 = y1 + float(graphic.h) * raw_per_grid
         if shape == 'rect':
             lines.append(f'b {_fmt_num(min(x1,x2))} {_fmt_num(min(y1,y2))} {_fmt_num(max(x1,x2))} {_fmt_num(max(y1,y2))}')
         else:
@@ -547,6 +548,36 @@ def _normalize_pin_type(value: str) -> str:
     v = mapping.get(v, v)
     allowed = {x.value for x in PinType}
     return v if v in allowed else PinType.BIDI.value
+
+
+MENTOR_PIN_PALETTE: dict[str, tuple[int, int, int]] = {
+    PinType.IN.value: (0, 84, 170),
+    PinType.OUT.value: (214, 96, 0),
+    PinType.BIDI.value: (128, 0, 160),
+    PinType.PASSIVE.value: (0, 0, 0),
+    PinType.POWER.value: (200, 0, 0),
+    PinType.GROUND.value: (0, 140, 0),
+    PinType.ANALOG.value: (0, 140, 160),
+}
+
+
+def _mentor_pin_color(pin_type: str) -> tuple[int, int, int]:
+    return MENTOR_PIN_PALETTE.get(_normalize_pin_type(pin_type), (0, 0, 0))
+
+
+def _snap_grid(value: float, step: float = 0.5) -> float:
+    # 0.5 Wizard grid == 50 mil. This keeps Mentor 30/20 raw-unit geometry
+    # visually aligned to the user's 0.100 inch grid without producing odd
+    # decimals. Use step=1.0 when a strict 100 mil body frame is required.
+    try:
+        v = round(float(value) / step) * step
+        return 0.0 if abs(v) < 1e-9 else v
+    except Exception:
+        return 0.0
+
+
+def _snap_body_grid(value: float) -> float:
+    return _snap_grid(value, 1.0)
 
 
 def _import_best_effort_ascii(text: str, path: Path) -> SymbolModel:
@@ -796,10 +827,18 @@ def _import_xpedition_ascii(text: str, path: Path) -> SymbolModel:
         return (x - min_x) * scale - width_grid / 2.0
 
     def ty(y: float) -> float:
-        return (y - min_y) * scale - height_grid / 2.0
+        # Mentor/DxDesigner ASCII has its Y axis mirrored relative to the
+        # Wizard's cartesian symbol model.  Reflect every imported object at
+        # the symbol center so origin, pin rows and labels round-trip.
+        return height_grid / 2.0 - (y - min_y) * scale
 
     unit = SymbolUnitModel(name=Path(path).name)
-    unit.body = SymbolBodyModel(x=-width_grid/2.0, y=height_grid/2.0, width=width_grid, height=height_grid)
+    unit.body = SymbolBodyModel(
+        x=_snap_body_grid(-width_grid/2.0),
+        y=_snap_body_grid(height_grid/2.0),
+        width=max(1.0, _snap_body_grid(width_grid)),
+        height=max(1.0, _snap_body_grid(height_grid)),
+    )
     unit.body.attributes.clear(); unit.body.visible_attributes.clear()
     unit.body.attributes.update({
         'RefDes': attrs.pop('RefDes', 'U?'),
@@ -814,8 +853,8 @@ def _import_xpedition_ascii(text: str, path: Path) -> SymbolModel:
     for x, y, size, rot, align, txt in texts_raw:
         unit.texts.append(TextModel(
             text=txt,
-            x=tx(x),
-            y=ty(y),
+            x=_snap_grid(tx(x)),
+            y=_snap_grid(ty(y)),
             rotation=rot,
             font_family='Arial',
             font_size_grid=max(0.35, size * scale * 0.45),
@@ -825,9 +864,9 @@ def _import_xpedition_ascii(text: str, path: Path) -> SymbolModel:
         ))
 
     for rx1, ry1, rx2, ry2 in rects:
-        x1, x2 = sorted((tx(rx1), tx(rx2)))
-        y1, y2 = sorted((ty(ry1), ty(ry2)), reverse=True)
-        unit.graphics.append(GraphicModel(shape='rect', x=x1, y=y1, w=(x2-x1), h=abs(y1-y2), style=StyleModel(stroke=(0,0,0))))
+        x1, x2 = sorted((_snap_grid(tx(rx1)), _snap_grid(tx(rx2))))
+        y_top, y_bottom = max(_snap_grid(ty(ry1)), _snap_grid(ty(ry2))), min(_snap_grid(ty(ry1)), _snap_grid(ty(ry2)))
+        unit.graphics.append(GraphicModel(shape='rect', x=x1, y=y_top, w=_snap_grid(x2-x1), h=abs(_snap_grid(y_top-y_bottom)), style=StyleModel(stroke=(0,0,0))))
 
     for pr in sorted(pins_raw.values(), key=lambda p: int(p['id']) if str(p['id']).isdigit() else 0):
         side = pr['side']
@@ -840,10 +879,10 @@ def _import_xpedition_ascii(text: str, path: Path) -> SymbolModel:
             function=str(pr.get('name') or ''),
             pin_type=_normalize_pin_type(str(pr.get('pin_type') or 'BIDI')),
             side=side,
-            x=tx(sx),
-            y=ty(sy),
-            length=length,
-            color=(0, 0, 0),
+            x=_snap_grid(tx(sx)),
+            y=_snap_grid(ty(sy)),
+            length=_snap_grid(length),
+            color=_mentor_pin_color(str(pr.get('pin_type') or 'BIDI')),
             visible_number=True,
             visible_name=True,
             visible_function=False,
@@ -856,6 +895,7 @@ def _import_xpedition_ascii(text: str, path: Path) -> SymbolModel:
         is_split=False,
         grid_inch=0.1,
         origin='center',
+        pin_palette=dict(MENTOR_PIN_PALETTE),
         units=[unit],
     )
     return symbol
