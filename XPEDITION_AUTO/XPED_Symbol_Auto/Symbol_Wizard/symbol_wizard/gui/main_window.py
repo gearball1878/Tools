@@ -284,13 +284,20 @@ class TemplateEditorDialog(QDialog):
                 for label, attr in [('Show Number', 'visible_number'), ('Show Name', 'visible_name'), ('Show Function', 'visible_function')]:
                     cb = self._multi_pin_visibility_checkbox(pins, attr)
                     self.form.addRow(label, cb)
+                self.form.addRow('Pin Length [grid]', self._dbl(float(self._common_pin_value(pins, 'length', 1.0) or 1.0), lambda v, items=pins: self._set_selected_pins_attr(items, 'length', max(1.0, round(float(v)))), 1, 100, 1))
+                self.form.addRow('Pin Style', self._combo([''] + [x.value for x in LineStyle], self._common_pin_value(pins, 'line_style', ''), lambda v, items=pins: v and self._set_selected_pins_attr(items, 'line_style', v)))
+                self.form.addRow('Pin Width', self._dbl(float(self._common_pin_value(pins, 'line_width', 0.03) or 0.03), lambda v, items=pins: self._set_selected_pins_attr(items, 'line_width', float(v)), .01, 1, .01))
             else:
                 text_like = [i for i in sel if i.data(0) in ('TEXT', 'ATTR_REF_DES', 'ATTR_BODY')]
+                graphics = [i for i in sel if i.data(0) == 'GRAPHIC']
                 if len(text_like) == len(sel):
                     self.form.addRow(QLabel(f'<b>Multi-Edit: {len(text_like)} text objects</b>'))
                     self._template_multi_text_props(text_like)
+                elif len(graphics) == len(sel):
+                    self.form.addRow(QLabel(f'<b>Multi-Edit: {len(graphics)} graphic objects</b>'))
+                    self.form.addRow('Line width', self._dbl(float(self._common_graphic_value(graphics, 'line_width', 0.03) or 0.03), lambda v, items=graphics: self._set_selected_graphics_style(items, 'line_width', float(v)), .01, 1, .01))
                 else:
-                    self.form.addRow(QLabel('Multi-edit is only available for PIN-only or TEXT/ATTRIBUTE-only selections.'))
+                    self.form.addRow(QLabel('Multi-edit is only available for PIN-only, TEXT/ATTRIBUTE-only or GRAPHIC-only selections.'))
             return
         if not sel:
             self.form.addRow(QLabel('No selection. Template canvas is independent from the Symbol Wizard.'))
@@ -335,8 +342,8 @@ class TemplateEditorDialog(QDialog):
             self.form.addRow('Text', line)
             self.form.addRow('Font', self._font_combo(m.font_family, lambda v, item=item: self._set_text_item_attr(item, 'font_family', v)))
             self.form.addRow('Size', self._dbl(m.font_size_grid, lambda v, item=item: self._set_text_item_attr(item, 'font_size_grid', v), .1, 10))
-            self.form.addRow('Horizontal align', self._combo(['left','center','right'], getattr(m, 'h_align', 'left'), lambda v, item=item: self._set_text_item_attr(item, 'h_align', v)))
-            self.form.addRow('Vertical align', self._combo(['upper','center','lower'], getattr(m, 'v_align', 'upper'), lambda v, item=item: self._set_text_item_attr(item, 'v_align', v)))
+            self.form.addRow('Horizontal grid anchor', self._combo(['left','center','right'], getattr(m, 'h_align', 'left'), lambda v, item=item: self._set_text_item_attr(item, 'h_align', v)))
+            self.form.addRow('Vertical grid anchor', self._combo(['upper','center','lower'], getattr(m, 'v_align', 'upper'), lambda v, item=item: self._set_text_item_attr(item, 'v_align', v)))
             self.form.addRow('Rotation [deg]', self._dbl(getattr(m, 'rotation', 0), lambda v, item=item: self._set_text_item_attr(item, 'rotation', v), -360, 360, 15))
         elif kind == 'GRAPHIC':
             self.form.addRow('Shape', self._combo(['line','rect','ellipse'], m.shape, lambda v: self._set(m, 'shape', v)))
@@ -375,12 +382,44 @@ class TemplateEditorDialog(QDialog):
         first = vals[0]
         return first if all(v == first for v in vals) else default
 
+
+
+    def _common_pin_value(self, items, attr, default=''):
+        vals = [getattr(getattr(i, 'model', None), attr, default) for i in items if getattr(i, 'model', None) is not None and i.data(0) == 'PIN']
+        if not vals:
+            return default
+        first = vals[0]
+        return first if all(v == first for v in vals) else default
+
+    def _common_graphic_value(self, items, attr, default=''):
+        vals = []
+        for i in items:
+            m = getattr(i, 'model', None)
+            if m is None or i.data(0) != 'GRAPHIC':
+                continue
+            if attr in ('line_style', 'line_width'):
+                vals.append(getattr(m.style, attr, default))
+            else:
+                vals.append(getattr(m, attr, default))
+        if not vals:
+            return default
+        first = vals[0]
+        return first if all(v == first for v in vals) else default
+
     def _template_multi_text_props(self, items):
         self.form.addRow('Font', self._font_combo(self._common_model_value(items, 'font_family', ''), lambda v, its=items: self._set_selected_text_attr(its, 'font_family', v)))
         self.form.addRow('Size grid', self._dbl(float(self._common_model_value(items, 'font_size_grid', 1.0) or 1.0), lambda v, its=items: self._set_selected_text_attr(its, 'font_size_grid', v), .1, 10, .1))
-        self.form.addRow('Horizontal align', self._combo(['', 'left','center','right'], self._common_model_value(items, 'h_align', ''), lambda v, its=items: v and self._set_selected_text_attr(its, 'h_align', v)))
-        self.form.addRow('Vertical align', self._combo(['', 'upper','center','lower'], self._common_model_value(items, 'v_align', ''), lambda v, its=items: v and self._set_selected_text_attr(its, 'v_align', v)))
+        self.form.addRow('Horizontal grid anchor', self._combo(['', 'left','center','right'], self._common_model_value(items, 'h_align', ''), lambda v, its=items: v and self._set_selected_text_attr(its, 'h_align', v)))
+        self.form.addRow('Vertical grid anchor', self._combo(['', 'upper','center','lower'], self._common_model_value(items, 'v_align', ''), lambda v, its=items: v and self._set_selected_text_attr(its, 'v_align', v)))
         self.form.addRow('Rotation [deg]', self._dbl(float(self._common_model_value(items, 'rotation', 0) or 0), lambda v, its=items: self._set_selected_text_attr(its, 'rotation', v), -360, 360, 15))
+        row = QWidget(); lay = QHBoxLayout(row); lay.setContentsMargins(0,0,0,0)
+        for label, fn in [('Align L', lambda its=items: self.align_text_objects(its, 'left')), ('Align R', lambda its=items: self.align_text_objects(its, 'right')), ('Align Top', lambda its=items: self.align_text_objects(its, 'upper')), ('Align Bottom', lambda its=items: self.align_text_objects(its, 'lower'))]:
+            b=QPushButton(label); b.clicked.connect(fn); lay.addWidget(b)
+        self.form.addRow('Arrange', row)
+        row2 = QWidget(); lay2 = QHBoxLayout(row2); lay2.setContentsMargins(0,0,0,0)
+        for label, fn in [('Distribute H', lambda its=items: self.distribute_text_objects(its, 'h')), ('Distribute V', lambda its=items: self.distribute_text_objects(its, 'v'))]:
+            b=QPushButton(label); b.clicked.connect(fn); lay2.addWidget(b)
+        self.form.addRow('Distribute', row2)
 
     def _set_text_item_attr(self, item, attr, value):
         if item.data(0) in ('ATTR_REF_DES', 'ATTR_BODY') and attr == 'text':
@@ -395,7 +434,6 @@ class TemplateEditorDialog(QDialog):
         elif attr == 'text':
             item.setPlainText(value)
         self.update_current_unit_canvas_positions()
-        self.refresh_properties()
 
     def _set_selected_text_attr(self, items, attr, value):
         models = [getattr(i, 'model', None) for i in items if i.data(0) in ('TEXT', 'ATTR_REF_DES', 'ATTR_BODY')]
@@ -410,7 +448,6 @@ class TemplateEditorDialog(QDialog):
             if hasattr(item, 'apply_text_from_model'):
                 item.apply_text_from_model()
         self.update_current_unit_canvas_positions()
-        self.refresh_properties()
     def _set(self, m, a, v):
         self.push_undo_state(); self._selection_restore_ids={id(m)}
         if a == 'rotation':
@@ -435,10 +472,21 @@ class TemplateEditorDialog(QDialog):
     def _set_selected_pins_attr(self, pin_items, attr, value):
         pins = [getattr(i, 'model', None) for i in pin_items if getattr(i, 'model', None) is not None and i.data(0) == 'PIN']
         if not pins or len(pins) != len(pin_items): return
-        if attr not in ('function', 'visible_number', 'visible_name', 'visible_function'): return
+        if attr not in ('function', 'visible_number', 'visible_name', 'visible_function', 'length', 'line_style', 'line_width'): return
         self.push_undo_state(); self._selection_restore_ids={id(p) for p in pins}
         for p in pins: setattr(p, attr, value)
         self.rebuild_scene()
+
+    def _set_selected_graphics_style(self, graphic_items, attr, value):
+        graphics = [getattr(i, 'model', None) for i in graphic_items if getattr(i, 'model', None) is not None and i.data(0) == 'GRAPHIC']
+        if not graphics or len(graphics) != len(graphic_items) or attr not in ('line_width', 'line_style'):
+            return
+        self.push_undo_state(); self._selection_restore_ids = {id(g) for g in graphics}
+        for g in graphics:
+            setattr(g.style, attr, value)
+        self.update_current_unit_canvas_positions()
+        self.refresh_properties()
+
     def _set_attr_vis(self, key, val):
         self.push_undo_state()
         self._selection_restore_ids = self._capture_selection_ids()
@@ -681,6 +729,50 @@ class TemplateEditorDialog(QDialog):
             item.setSelected(False)
         z = {'BODY': 0, 'GRAPHIC': 1, 'TEXT': 2, 'ATTR_REF_DES': 2, 'ATTR_BODY': 2, 'PIN': 3}.get(kind, -1)
         item.setZValue(z)
+
+
+    def move_current_unit_group(self, dx: float, dy: float, source_body=None):
+        # Template canvas mirrors the Wizard: moving the body moves all template-owned objects with it.
+        for p in self.unit.pins:
+            p.x += dx; p.y += dy
+        for t in self.unit.texts:
+            t.x += dx; t.y += dy
+        for g in self.unit.graphics:
+            g.x += dx; g.y += dy
+
+    def _text_items_only(self, items):
+        return [i for i in items if i.data(0) in ('TEXT', 'ATTR_REF_DES', 'ATTR_BODY') and getattr(i, 'model', None) is not None]
+
+    def align_text_objects(self, items, mode):
+        txt = self._text_items_only(items)
+        if len(txt) < 2: return
+        self.push_undo_state()
+        if mode in ('left','right'):
+            x = min(i.model.x for i in txt) if mode == 'left' else max(i.model.x for i in txt)
+            for i in txt:
+                i.model.x = x
+                i.model.h_align = mode
+                i.apply_text_from_model()
+        elif mode in ('upper','lower'):
+            y = max(i.model.y for i in txt) if mode == 'upper' else min(i.model.y for i in txt)
+            for i in txt:
+                i.model.y = y
+                i.model.v_align = mode
+                i.apply_text_from_model()
+        self.update_current_unit_canvas_positions(); self.refresh_properties()
+
+    def distribute_text_objects(self, items, axis):
+        txt = sorted(self._text_items_only(items), key=lambda i: i.model.x if axis == 'h' else i.model.y)
+        if len(txt) < 3: return
+        self.push_undo_state()
+        vals = [i.model.x if axis == 'h' else i.model.y for i in txt]
+        start, end = vals[0], vals[-1]
+        step = (end - start) / (len(txt) - 1)
+        for idx, i in enumerate(txt):
+            if axis == 'h': i.model.x = start + step * idx
+            else: i.model.y = start + step * idx
+            i.apply_text_from_model()
+        self.update_current_unit_canvas_positions(); self.refresh_properties()
 
     def rebuild_tree(self): pass
     def rebuild_pin_table(self): pass
@@ -1601,11 +1693,18 @@ class MainWindow(QMainWindow):
                 for label, attr in [('Show Number', 'visible_number'), ('Show Name', 'visible_name'), ('Show Function', 'visible_function')]:
                     cb = self._multi_pin_visibility_checkbox(pins, attr)
                     self.form.addRow(label, cb)
+                self.form.addRow('Pin Length [grid]', self._dbl(float(self._common_pin_value(pins, 'length', 1.0) or 1.0), lambda v, items=pins: self.set_selected_pins_attr(items, 'length', max(1.0, round(float(v)))), 1, 100, 1))
+                self.form.addRow('Pin Style', self._combo([''] + [x.value for x in LineStyle], self._common_pin_value(pins, 'line_style', ''), lambda v, items=pins: v and self.set_selected_pins_attr(items, 'line_style', v)))
+                self.form.addRow('Pin Width', self._dbl(float(self._common_pin_value(pins, 'line_width', 0.03) or 0.03), lambda v, items=pins: self.set_selected_pins_attr(items, 'line_width', float(v)), .01, 1, .01))
             elif len(text_like) == len(selected):
                 self.form.addRow(QLabel(f'<b>Multi-Edit: {len(text_like)} text objects</b>'))
                 self.multi_text_props(text_like)
+            elif len([i for i in selected if i.data(0) == 'GRAPHIC']) == len(selected):
+                graphics = [i for i in selected if i.data(0) == 'GRAPHIC']
+                self.form.addRow(QLabel(f'<b>Multi-Edit: {len(graphics)} graphic objects</b>'))
+                self.form.addRow('Line width', self._dbl(float(self._common_graphic_value(graphics, 'line_width', 0.03) or 0.03), lambda v, items=graphics: self.set_selected_graphics_style(items, 'line_width', float(v)), .01, 1, .01))
             else:
-                self.form.addRow(QLabel('Multi-edit is only available for PIN-only or TEXT/ATTRIBUTE-only selections.'))
+                self.form.addRow(QLabel('Multi-edit is only available for PIN-only, TEXT/ATTRIBUTE-only or GRAPHIC-only selections.'))
             return
         item = selected[0]
         kind = item.data(0)
@@ -1708,8 +1807,8 @@ class MainWindow(QMainWindow):
         self.form.addRow('Text', line)
         self.form.addRow('Font', self._font_combo(m.font_family, lambda v: self.set_text_attr(item, 'font_family', v)))
         self.form.addRow('Size grid', self._dbl(m.font_size_grid, lambda v: self.set_text_attr(item, 'font_size_grid', v), .1, 5, .1))
-        self.form.addRow('Horizontal align', self._combo(['left','center','right'], getattr(m, 'h_align', 'left'), lambda v: self.set_text_attr(item, 'h_align', v)))
-        self.form.addRow('Vertical align', self._combo(['upper','center','lower'], getattr(m, 'v_align', 'upper'), lambda v: self.set_text_attr(item, 'v_align', v)))
+        self.form.addRow('Horizontal grid anchor', self._combo(['left','center','right'], getattr(m, 'h_align', 'left'), lambda v: self.set_text_attr(item, 'h_align', v)))
+        self.form.addRow('Vertical grid anchor', self._combo(['upper','center','lower'], getattr(m, 'v_align', 'upper'), lambda v: self.set_text_attr(item, 'v_align', v)))
         self.form.addRow('Rotation [deg]', self._dbl(getattr(m, 'rotation', 0), lambda v: self.set_text_attr(item, 'rotation', v), -360, 360, 15))
         b = QPushButton('Color RGB'); b.clicked.connect(lambda: self.color_text_item(item)); self.form.addRow('Color', b)
 
@@ -1720,12 +1819,44 @@ class MainWindow(QMainWindow):
         first = vals[0]
         return first if all(v == first for v in vals) else default
 
+
+
+    def _common_pin_value(self, items, attr, default=''):
+        vals = [getattr(getattr(i, 'model', None), attr, default) for i in items if getattr(i, 'model', None) is not None and i.data(0) == 'PIN']
+        if not vals:
+            return default
+        first = vals[0]
+        return first if all(v == first for v in vals) else default
+
+    def _common_graphic_value(self, items, attr, default=''):
+        vals = []
+        for i in items:
+            m = getattr(i, 'model', None)
+            if m is None or i.data(0) != 'GRAPHIC':
+                continue
+            if attr in ('line_style', 'line_width'):
+                vals.append(getattr(m.style, attr, default))
+            else:
+                vals.append(getattr(m, attr, default))
+        if not vals:
+            return default
+        first = vals[0]
+        return first if all(v == first for v in vals) else default
+
     def multi_text_props(self, items):
         self.form.addRow('Font', self._font_combo(self._common_model_value(items, 'font_family', ''), lambda v, its=items: self.set_selected_text_attr(its, 'font_family', v)))
         self.form.addRow('Size grid', self._dbl(float(self._common_model_value(items, 'font_size_grid', 1.0) or 1.0), lambda v, its=items: self.set_selected_text_attr(its, 'font_size_grid', v), .1, 5, .1))
-        self.form.addRow('Horizontal align', self._combo(['', 'left','center','right'], self._common_model_value(items, 'h_align', ''), lambda v, its=items: v and self.set_selected_text_attr(its, 'h_align', v)))
-        self.form.addRow('Vertical align', self._combo(['', 'upper','center','lower'], self._common_model_value(items, 'v_align', ''), lambda v, its=items: v and self.set_selected_text_attr(its, 'v_align', v)))
+        self.form.addRow('Horizontal grid anchor', self._combo(['', 'left','center','right'], self._common_model_value(items, 'h_align', ''), lambda v, its=items: v and self.set_selected_text_attr(its, 'h_align', v)))
+        self.form.addRow('Vertical grid anchor', self._combo(['', 'upper','center','lower'], self._common_model_value(items, 'v_align', ''), lambda v, its=items: v and self.set_selected_text_attr(its, 'v_align', v)))
         self.form.addRow('Rotation [deg]', self._dbl(float(self._common_model_value(items, 'rotation', 0) or 0), lambda v, its=items: self.set_selected_text_attr(its, 'rotation', v), -360, 360, 15))
+        row = QWidget(); lay = QHBoxLayout(row); lay.setContentsMargins(0,0,0,0)
+        for label, fn in [('Align L', lambda its=items: self.align_text_objects(its, 'left')), ('Align R', lambda its=items: self.align_text_objects(its, 'right')), ('Align Top', lambda its=items: self.align_text_objects(its, 'upper')), ('Align Bottom', lambda its=items: self.align_text_objects(its, 'lower'))]:
+            b=QPushButton(label); b.clicked.connect(fn); lay.addWidget(b)
+        self.form.addRow('Arrange', row)
+        row2 = QWidget(); lay2 = QHBoxLayout(row2); lay2.setContentsMargins(0,0,0,0)
+        for label, fn in [('Distribute H', lambda its=items: self.distribute_text_objects(its, 'h')), ('Distribute V', lambda its=items: self.distribute_text_objects(its, 'v'))]:
+            b=QPushButton(label); b.clicked.connect(fn); lay2.addWidget(b)
+        self.form.addRow('Distribute', row2)
         b = QPushButton('Color RGB'); b.clicked.connect(lambda its=items: self.color_selected_text(its)); self.form.addRow('Color', b)
 
     def graphic_props(self, item):
@@ -1826,7 +1957,7 @@ class MainWindow(QMainWindow):
         pins = [getattr(i, 'model', None) for i in pin_items if getattr(i, 'model', None) is not None and i.data(0) == 'PIN']
         if not pins or len(pins) != len(pin_items):
             return
-        if attr not in ('function', 'visible_number', 'visible_name', 'visible_function'):
+        if attr not in ('function', 'visible_number', 'visible_name', 'visible_function', 'length', 'line_style', 'line_width'):
             return
         self.push_undo_state()
         selected_ids = {id(p) for p in pins}
@@ -1834,6 +1965,18 @@ class MainWindow(QMainWindow):
             setattr(p, attr, value)
         self._selection_restore_ids = selected_ids
         self.schedule_scene_refresh()
+
+
+    def set_selected_graphics_style(self, graphic_items, attr, value):
+        graphics = [getattr(i, 'model', None) for i in graphic_items if getattr(i, 'model', None) is not None and i.data(0) == 'GRAPHIC']
+        if not graphics or len(graphics) != len(graphic_items) or attr not in ('line_width', 'line_style'):
+            return
+        self.push_undo_state()
+        self._selection_restore_ids = {id(g) for g in graphics}
+        for g in graphics:
+            setattr(g.style, attr, value)
+        self.update_current_unit_canvas_positions()
+        self.schedule_scene_refresh(visual_only=True)
 
     def set_pin_attr(self, m, a, v):
         self.push_undo_state()
@@ -2265,6 +2408,45 @@ class MainWindow(QMainWindow):
             it.model.x = body.x if side == PinSide.LEFT.value else body.x + body.width
         self._selection_restore_ids = {id(it.model) for it in pins}
         self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
+
+
+    def _text_items_only(self, items):
+        return [i for i in items if i.data(0) in ('TEXT', 'ATTR_REF_DES', 'ATTR_BODY') and getattr(i, 'model', None) is not None]
+
+    def align_text_objects(self, items, mode):
+        txt = self._text_items_only(items)
+        if len(txt) < 2:
+            self.statusBar().showMessage('Select at least two text/attribute objects.', 3000); return
+        self.push_undo_state()
+        if mode in ('left','right'):
+            x = min(i.model.x for i in txt) if mode == 'left' else max(i.model.x for i in txt)
+            for i in txt:
+                i.model.x = x
+                i.model.h_align = mode
+                i.apply_text_from_model()
+        elif mode in ('upper','lower'):
+            y = max(i.model.y for i in txt) if mode == 'upper' else min(i.model.y for i in txt)
+            for i in txt:
+                i.model.y = y
+                i.model.v_align = mode
+                i.apply_text_from_model()
+        self._selection_restore_ids = {id(i.model) for i in txt}
+        self.schedule_scene_refresh(visual_only=True)
+
+    def distribute_text_objects(self, items, axis):
+        txt = sorted(self._text_items_only(items), key=lambda i: i.model.x if axis == 'h' else i.model.y)
+        if len(txt) < 3:
+            self.statusBar().showMessage('Select at least three text/attribute objects to distribute.', 3000); return
+        self.push_undo_state()
+        vals = [i.model.x if axis == 'h' else i.model.y for i in txt]
+        start, end = vals[0], vals[-1]
+        step = (end - start) / (len(txt) - 1)
+        for idx, i in enumerate(txt):
+            if axis == 'h': i.model.x = start + step * idx
+            else: i.model.y = start + step * idx
+            i.apply_text_from_model()
+        self._selection_restore_ids = {id(i.model) for i in txt}
+        self.schedule_scene_refresh(visual_only=True)
 
     def distribute_selected_pins_vertical(self):
         pins = self.selected_pin_items()

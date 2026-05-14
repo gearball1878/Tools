@@ -397,6 +397,10 @@ class TextItem(TransformMixin, QGraphicsTextItem):
         self.model = model
         self.window = window
         super().__init__(model.text)
+        try:
+            self.document().setDocumentMargin(0)
+        except Exception:
+            pass
         self.common_flags()
         # Text remains movable/selectable in edit mode. Text editing starts only on double click.
         self.setTextInteractionFlags(Qt.NoTextInteraction)
@@ -404,50 +408,58 @@ class TextItem(TransformMixin, QGraphicsTextItem):
         self._rotating = False
         self.apply_text_from_model()
 
-    def _aligned_scene_pos(self):
-        g = self.window.grid_px
+    def _text_anchor_offset(self):
+        """Return the local bounding-box point that must sit on model.x/model.y.
+
+        The model coordinate is the grid anchor.  For text and generated
+        attribute text alike, alignment is defined against the *actual item
+        bounding box*: left/center/right select the left edge, horizontal
+        centre or right edge; upper/center/lower select the top edge, vertical
+        centre or bottom edge.  This intentionally does not use the font
+        baseline, because lower/upper must be visually edge-aligned to the
+        grid line.
+        """
         br = self.boundingRect()
-        x = self.model.x * g
-        y = -self.model.y * g
         h = getattr(self.model, 'h_align', 'left')
         v = getattr(self.model, 'v_align', 'upper')
         if h == 'center':
-            x -= br.width() / 2
+            ox = br.center().x()
         elif h == 'right':
-            x -= br.width()
+            ox = br.right()
+        else:
+            ox = br.left()
         if v == 'center':
-            y -= br.height() / 2
+            oy = br.center().y()
         elif v == 'lower':
-            y -= br.height()
-        return QPointF(x, y)
+            oy = br.bottom()
+        else:
+            oy = br.top()
+        return QPointF(ox, oy)
+
+    def _aligned_scene_pos(self):
+        g = self.window.grid_px
+        anchor = QPointF(self.model.x * g, -self.model.y * g)
+        return anchor - self._text_anchor_offset()
 
     def apply_text_from_model(self):
         g = self.window.grid_px
         self.setPlainText(str(getattr(self.model, 'text', '')))
         self.setDefaultTextColor(rgb(self.model.color))
         self.setFont(QFont(self.model.font_family, max(6, int(g * self.model.font_size_grid * .45))))
+        try:
+            self.document().setDocumentMargin(0)
+            self.adjustSize()
+        except Exception:
+            pass
         self.setPos(self._aligned_scene_pos())
         self.apply_transform_from_model()
         self.update()
 
     def _model_pos_from_item_pos(self):
         g = self.window.grid_px
-        br = self.boundingRect()
-        p = self.pos()
-        x = p.x()
-        y = p.y()
-        h = getattr(self.model, 'h_align', 'left')
-        v = getattr(self.model, 'v_align', 'upper')
-        if h == 'center':
-            x += br.width() / 2
-        elif h == 'right':
-            x += br.width()
-        if v == 'center':
-            y += br.height() / 2
-        elif v == 'lower':
-            y += br.height()
-        self.model.x = x / g
-        self.model.y = -y / g
+        anchor = self.pos() + self._text_anchor_offset()
+        self.model.x = anchor.x() / g
+        self.model.y = -anchor.y() / g
 
     def paint(self, painter, option, widget=None):
         super().paint(painter, option, widget)
