@@ -79,9 +79,10 @@ class TemplateEditorDialog(QDialog):
         self.undo_stack = []
         self.redo_stack = []
         self.max_history = 10
+        self.dirty = False
         self.selection_enabled = {'BODY': True, 'PIN': True, 'TEXT': True, 'GRAPHIC': True}
         self._selection_restore_ids: set[int] = set()
-        self.setWindowTitle('Symbol Templates editieren')
+        self.setWindowTitle('Edit Symbol Templates')
         self.resize(1200, 800)
         self._build_ui()
         self.load_selected_template()
@@ -126,8 +127,8 @@ class TemplateEditorDialog(QDialog):
         self.template_combo = QComboBox(); self.template_combo.addItems(sorted(self.templates.keys()))
         self.template_combo.currentTextChanged.connect(self.load_selected_template)
         top.addWidget(QLabel('Template:')); top.addWidget(self.template_combo, 1)
-        self.rename_edit = QLineEdit(); top.addWidget(QLabel('Name/Speichern als:')); top.addWidget(self.rename_edit, 1)
-        save_btn = QPushButton('Template speichern'); save_btn.clicked.connect(self.save_template)
+        self.rename_edit = QLineEdit(); top.addWidget(QLabel('Name / Save as:')); top.addWidget(self.rename_edit, 1)
+        save_btn = QPushButton('Save Template'); save_btn.clicked.connect(self.save_template)
         top.addWidget(save_btn)
         layout.addLayout(top)
         tools = QHBoxLayout()
@@ -136,9 +137,9 @@ class TemplateEditorDialog(QDialog):
             b = QPushButton(label); b.setCheckable(True); b.clicked.connect(lambda _, t=tool.value: self.set_tool(t))
             tools.addWidget(b); self.tool_buttons[tool.value] = b
         self.tool_buttons[self.draw_tool].setChecked(True)
-        for label, fn in [('Alles markieren', self.select_all_canvas), ('Undo', self.undo), ('Redo', self.redo)]:
+        for label, fn in [('Select All', self.select_all_canvas), ('Undo', self.undo), ('Redo', self.redo), ('⟲ 15°', lambda: self.rotate_selected(-15)), ('⟳ 15°', lambda: self.rotate_selected(15)), ('Flip H', self.flip_selected_horizontal), ('Flip V', self.flip_selected_vertical)]:
             b = QPushButton(label); b.clicked.connect(fn); tools.addWidget(b)
-        tools.addWidget(QLabel('Markierbar:'))
+        tools.addWidget(QLabel('Selectable:'))
         self.selection_mode_combo = QComboBox()
         self.selection_mode_combo.addItems(['ALL', 'BODY', 'PIN', 'TEXT', 'GRAPHIC', 'Custom'])
         self.selection_mode_combo.currentTextChanged.connect(self.set_selection_mode)
@@ -165,6 +166,7 @@ class TemplateEditorDialog(QDialog):
         self.view.setDragMode(QGraphicsView.RubberBandDrag if t == DrawTool.SELECT.value else QGraphicsView.NoDrag)
 
     def push_undo_state(self):
+        self.dirty = True
         self.undo_stack.append(copy.deepcopy(self.unit))
         if len(self.undo_stack) > self.max_history: self.undo_stack.pop(0)
         self.redo_stack.clear()
@@ -179,6 +181,27 @@ class TemplateEditorDialog(QDialog):
         if not self.redo_stack: return
         self.set_tool(DrawTool.SELECT.value)
         self.undo_stack.append(copy.deepcopy(self.unit)); self.unit = self.redo_stack.pop(); self.symbol.units=[self.unit]; self.rebuild_scene()
+
+    def rotate_selected(self, deg):
+        self.push_undo_state()
+        for it in self.scene.selectedItems():
+            if hasattr(it, 'rotate_by'):
+                it.rotate_by(deg)
+        self.live_refresh()
+
+    def flip_selected_horizontal(self):
+        self.push_undo_state()
+        for it in self.scene.selectedItems():
+            if hasattr(it, 'flip_horizontal'):
+                it.flip_horizontal()
+        self.live_refresh()
+
+    def flip_selected_vertical(self):
+        self.push_undo_state()
+        for it in self.scene.selectedItems():
+            if hasattr(it, 'flip_vertical'):
+                it.flip_vertical()
+        self.live_refresh()
 
     def load_selected_template(self):
         name = self.template_combo.currentText()
@@ -198,8 +221,27 @@ class TemplateEditorDialog(QDialog):
         if self.template_combo.findText(name) < 0:
             self.template_combo.addItem(name)
         self.template_combo.setCurrentText(name)
+        self.dirty = False
         self.main.rebuild_all()
-        QMessageBox.information(self, 'Template', f'Template "{name}" gespeichert.')
+        QMessageBox.information(self, 'Template', f'Template "{name}" saved.')
+
+    def closeEvent(self, event):
+        if getattr(self, 'dirty', False):
+            ans = QMessageBox.question(self, 'Save Changes?', 'Save Changes?', QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel, QMessageBox.Yes)
+            if ans == QMessageBox.Cancel:
+                event.ignore(); return
+            if ans == QMessageBox.Yes:
+                self.save_template()
+        event.accept()
+
+    def reject(self):
+        if getattr(self, 'dirty', False):
+            ans = QMessageBox.question(self, 'Save Changes?', 'Save Changes?', QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel, QMessageBox.Yes)
+            if ans == QMessageBox.Cancel:
+                return
+            if ans == QMessageBox.Yes:
+                self.save_template()
+        super().reject()
 
     def rebuild_scene(self):
         selected_ids = self._selection_restore_ids or self._capture_selection_ids()
@@ -222,26 +264,26 @@ class TemplateEditorDialog(QDialog):
         while self.form.rowCount(): self.form.removeRow(0)
         sel = self.scene.selectedItems()
         if len(sel) > 1:
-            self.form.addRow(QLabel(f'{len(sel)} Objekte ausgewählt'))
+            self.form.addRow(QLabel(f'{len(sel)} objects selected'))
             pins = [i for i in sel if i.data(0) == 'PIN']
             if len(pins) == len(sel):
                 self.form.addRow(QLabel(f'<b>Multi-Edit: {len(pins)} PINs</b>'))
                 fn = QLineEdit('')
-                fn.setPlaceholderText('Pin Function für alle ausgewählten Pins setzen')
+                fn.setPlaceholderText('Set Pin Function for all selected pins')
                 fn.returnPressed.connect(lambda editor=fn, items=pins: self._set_selected_pins_attr(items, 'function', editor.text()))
                 self.form.addRow('Pin Function', fn)
                 for label, attr in [('Show Number', 'visible_number'), ('Show Name', 'visible_name'), ('Show Function', 'visible_function')]:
                     cb = self._multi_pin_visibility_checkbox(pins, attr)
                     self.form.addRow(label, cb)
             else:
-                self.form.addRow(QLabel('Multi-Edit ist nur möglich, wenn ausschließlich PINs ausgewählt sind.'))
+                self.form.addRow(QLabel('Multi-edit is only available when only PINs are selected.'))
             return
         if not sel:
-            self.form.addRow(QLabel('Keine Auswahl. Template-Canvas ist unabhängig vom Symbol Wizard.'))
-            self.form.addRow(QLabel('<b>Attribut-Visibility des Templates</b>'))
+            self.form.addRow(QLabel('No selection. Template canvas is independent from the Symbol Wizard.'))
+            self.form.addRow(QLabel('<b>Template Attribute Visibility</b>'))
             for k in list(self.unit.body.attributes.keys()):
                 row=QWidget(); l=QHBoxLayout(row); l.setContentsMargins(0,0,0,0)
-                cb=QCheckBox('sichtbar'); cb.setChecked(self.unit.body.visible_attributes.get(k, False))
+                cb=QCheckBox('visible'); cb.setChecked(self.unit.body.visible_attributes.get(k, False))
                 preview=QLabel(f'{k}: {self.unit.body.attributes.get(k, '')}' if str(self.unit.body.attributes.get(k, '')).strip() else k)
                 cb.toggled.connect(lambda v, key=k: self._set_attr_vis(key, v))
                 l.addWidget(cb); l.addWidget(preview); self.form.addRow(k, row)
@@ -253,18 +295,18 @@ class TemplateEditorDialog(QDialog):
             self.form.addRow('Y', self._dbl(m.y, lambda v: self._set(m, 'y', v)))
             self.form.addRow('Width', self._dbl(m.width, lambda v: self._set(m, 'width', max(0.01, v)), 0.01, 500))
             self.form.addRow('Height', self._dbl(m.height, lambda v: self._set(m, 'height', max(0.01, v)), 0.01, 500))
-            self.form.addRow(QLabel('<b>Dargestellte Attribute</b>'))
+            self.form.addRow(QLabel('<b>Displayed Attributes</b>'))
             for k in list(m.attributes.keys()):
                 row=QWidget(); l=QHBoxLayout(row); l.setContentsMargins(0,0,0,0)
-                cb=QCheckBox('sichtbar'); cb.setChecked(m.visible_attributes.get(k, False)); ed=QLineEdit(m.attributes.get(k,''))
+                cb=QCheckBox('visible'); cb.setChecked(m.visible_attributes.get(k, False)); ed=QLineEdit(m.attributes.get(k,''))
                 cb.toggled.connect(lambda v, key=k: self._set_attr_vis(key, v)); ed.returnPressed.connect(lambda key=k, e=ed: self._set_attr_val(key, e.text()))
                 l.addWidget(cb); l.addWidget(ed); self.form.addRow(k, row)
         elif kind == 'PIN':
-            for lab, attr in [('Nr', 'number'), ('Name', 'name'), ('Function', 'function')]: self.form.addRow(lab, self._line(getattr(m, attr), lambda v, a=attr: self._set(m, a, v)))
+            for lab, attr in [('Number', 'number'), ('Name', 'name'), ('Function', 'function')]: self.form.addRow(lab, self._line(getattr(m, attr), lambda v, a=attr: self._set(m, a, v)))
             self.form.addRow('Pin Type', self._combo([x.value for x in PinType], m.pin_type, lambda v: self._set(m, 'pin_type', v)))
             self.form.addRow('Side', self._combo([x.value for x in PinSide], m.side, lambda v: self._set_pin_side(m, v)))
             inv=QCheckBox(); inv.setChecked(m.inverted); inv.toggled.connect(lambda v: self._set(m, 'inverted', v)); self.form.addRow('Inverted', inv)
-            self.form.addRow(QLabel('<b>PIN-Attribute</b>'))
+            self.form.addRow(QLabel('<b>PIN Attributes</b>'))
             for label, attr in [('Show Number', 'visible_number'), ('Show Name', 'visible_name'), ('Show Function', 'visible_function')]:
                 cb = QCheckBox(); cb.setChecked(getattr(m, attr)); cb.toggled.connect(lambda v, a=attr: self._set(m, a, v)); self.form.addRow(label, cb)
             self.form.addRow('Length', self._dbl(m.length, lambda v: self._set(m, 'length', v), 0.5, 100))
@@ -775,7 +817,7 @@ class MainWindow(QMainWindow):
             edit_menu.addAction(a)
 
         tools_menu = mb.addMenu('&Tools')
-        a = QAction('Symbol Templates editieren', self)
+        a = QAction('Edit Symbol Templates', self)
         a.triggered.connect(self.edit_symbol_templates)
         tools_menu.addAction(a)
 
@@ -825,7 +867,7 @@ class MainWindow(QMainWindow):
             self.tool_buttons[tool.value] = a
         self.tool_buttons[self.draw_tool].setChecked(True)
         draw_tb.addSeparator()
-        draw_tb.addWidget(QLabel('Markierbar:'))
+        draw_tb.addWidget(QLabel('Selectable:'))
         self.selection_mode_combo = QComboBox()
         self.selection_mode_combo.addItems(['ALL', 'BODY', 'PIN', 'TEXT', 'GRAPHIC', 'Custom'])
         self.selection_mode_combo.currentTextChanged.connect(self.set_selection_mode)
@@ -873,13 +915,13 @@ class MainWindow(QMainWindow):
         zoom_btn = QPushButton('Zoom Fit')
         zoom_btn.clicked.connect(self.zoom_to_fit_symbol)
         setup_tb.addWidget(zoom_btn)
-        setup_tb.addWidget(QLabel('Origo:'))
+        setup_tb.addWidget(QLabel('Origin:'))
         self.origin_combo = QComboBox()
         self.origin_combo.addItems([x.value for x in OriginMode])
         self.origin_combo.setCurrentText(self.symbol.origin)
         self.origin_combo.currentTextChanged.connect(self.origin_mode_changed)
         setup_tb.addWidget(self.origin_combo)
-        origin_btn = QPushButton('Origo Reset')
+        origin_btn = QPushButton('Origin Reset')
         origin_btn.clicked.connect(self.reset_origin_to_selected_anchor)
         setup_tb.addWidget(origin_btn)
 
@@ -908,6 +950,8 @@ class MainWindow(QMainWindow):
         for label, fn in [
             ('⟲ 15°', lambda: self.rotate_selected(-15)),
             ('⟳ 15°', lambda: self.rotate_selected(15)),
+            ('Flip H', self.flip_selected_horizontal),
+            ('Flip V', self.flip_selected_vertical),
             ('Scale +', lambda: self.scale_selected(1.1)),
             ('Scale -', lambda: self.scale_selected(1 / 1.1)),
         ]:
@@ -1359,14 +1403,14 @@ class MainWindow(QMainWindow):
             if len(pins) == len(selected):
                 self.form.addRow(QLabel(f'<b>Multi-Edit: {len(pins)} PINs</b>'))
                 fn = QLineEdit('')
-                fn.setPlaceholderText('Pin Function für alle ausgewählten Pins setzen')
+                fn.setPlaceholderText('Set Pin Function for all selected pins')
                 fn.returnPressed.connect(lambda editor=fn, items=pins: self.set_selected_pins_attr(items, 'function', editor.text()))
                 self.form.addRow('Pin Function', fn)
                 for label, attr in [('Show Number', 'visible_number'), ('Show Name', 'visible_name'), ('Show Function', 'visible_function')]:
                     cb = self._multi_pin_visibility_checkbox(pins, attr)
                     self.form.addRow(label, cb)
             else:
-                self.form.addRow(QLabel('Multi-Edit ist nur möglich, wenn ausschließlich PINs ausgewählt sind.'))
+                self.form.addRow(QLabel('Multi-edit is only available when only PINs are selected.'))
             return
         item = selected[0]
         kind = item.data(0)
@@ -1448,7 +1492,7 @@ class MainWindow(QMainWindow):
         self.form.addRow('Pin Type', self._combo([x.value for x in PinType], m.pin_type, lambda v: self.set_pin_attr(m, 'pin_type', v)))
         self.form.addRow('Side', self._combo([x.value for x in PinSide], m.side, lambda v: self.set_pin_attr(m, 'side', v)))
         inv = QCheckBox(); inv.setChecked(m.inverted); inv.toggled.connect(lambda v: self.set_pin_attr(m, 'inverted', v)); self.form.addRow('Inverted', inv)
-        self.form.addRow(QLabel('<b>PIN-Attribute</b>'))
+        self.form.addRow(QLabel('<b>PIN Attributes</b>'))
         for label, attr in [('Show Number', 'visible_number'), ('Show Name', 'visible_name'), ('Show Function', 'visible_function')]:
             cb = QCheckBox(); cb.setChecked(getattr(m, attr)); cb.toggled.connect(lambda v, a=attr: self.set_pin_attr(m, a, v)); self.form.addRow(label, cb)
         self.form.addRow('Length [grid]', self._dbl(m.length, lambda v: self.set_pin_length(m, v), 1, 100, 1))
@@ -1797,7 +1841,7 @@ class MainWindow(QMainWindow):
         self.push_undo_state()
         shape = {DrawTool.LINE.value: 'line', DrawTool.RECT.value: 'rect', DrawTool.ELLIPSE.value: 'ellipse'}[tool]
         if shape == 'line':
-            # Linien werden initial gerade eingefügt: horizontal, auf Raster, Länge 2 Grid.
+            # Lines are inserted initially as straight horizontal grid-aligned segments of length 2.
             model = GraphicModel(shape=shape, x=x, y=y, w=2.0, h=0.0, style=StyleModel(stroke=self.default_color, line_width=self.line_width.value(), line_style=self.line_style.currentText()))
         else:
             model = GraphicModel(shape=shape, x=x, y=y, style=StyleModel(stroke=self.default_color, line_width=self.line_width.value(), line_style=self.line_style.currentText()))
@@ -1818,6 +1862,20 @@ class MainWindow(QMainWindow):
             if hasattr(it, 'scale_selected'):
                 it.scale_selected(factor)
         self.enforce_symbol_size_limit(silent=True)
+        self.schedule_scene_refresh(visual_only=True)
+
+    def flip_selected_horizontal(self):
+        self.push_undo_state()
+        for it in self.scene.selectedItems():
+            if hasattr(it, 'flip_horizontal'):
+                it.flip_horizontal()
+        self.schedule_scene_refresh(visual_only=True)
+
+    def flip_selected_vertical(self):
+        self.push_undo_state()
+        for it in self.scene.selectedItems():
+            if hasattr(it, 'flip_vertical'):
+                it.flip_vertical()
         self.schedule_scene_refresh(visual_only=True)
 
     def copy_selected(self):
@@ -1853,7 +1911,7 @@ class MainWindow(QMainWindow):
             if hasattr(m, 'y'):
                 m.y -= 1
             if kind == 'PIN':
-                # Kopieren erzeugt eindeutige Pin-Nummern und Pin-Namen; Ausschneiden/Einfügen behält sie.
+                # Copy creates unique pin numbers and names; cut/paste keeps them.
                 if not getattr(self, 'clipboard_is_cut', False):
                     m.number = next_pin_number(existing_pins)
                     existing_pins.append(m.number)
@@ -2136,7 +2194,7 @@ class MainWindow(QMainWindow):
     def add_unit(self):
         self.push_undo_state()
         if self.symbol.kind != SymbolKind.SPLIT.value:
-            QMessageBox.information(self, 'Split Symbol', 'Units können nur in Split Symbols angelegt werden. Bitte lege ein New Split Symbol an.')
+            QMessageBox.information(self, 'Split Symbol', 'Units can only be created in split symbols. Please create a New Split Symbol.')
             return
         self.symbol.units.append(SymbolUnitModel(name=f'{self.symbol.name}_{len(self.symbol.units) + 1}'))
         self.current_unit_index = len(self.symbol.units) - 1
@@ -2254,8 +2312,8 @@ class MainWindow(QMainWindow):
             return True
         res = QMessageBox.question(
             self,
-            'Änderungen verwerfen?',
-            'Am aktuellen Symbol gibt es Änderungen. Wirklich zur Neuauswahl wechseln und diese Änderungen verwerfen?',
+            'Discard changes?',
+            'The current symbol has changes. Do you really want to choose a new template and discard these changes?',
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
         )
@@ -2317,15 +2375,15 @@ class MainWindow(QMainWindow):
             self.origin_combo.setCurrentText(mode)
             self.origin_combo.blockSignals(False)
         self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
-        self.statusBar().showMessage(f'Origo auf {mode} nachgezogen.', 3000)
+        self.statusBar().showMessage(f'Origin auf {mode} nachgezogen.', 3000)
 
     def symbol_tab_context_menu(self, kind: str, tabs: QTabWidget, pos):
         tab = tabs.tabBar().tabAt(pos)
         if tab < 0:
             return
         menu = QMenu(tabs)
-        menu.addAction('Symbol umbenennen', lambda: self.rename_symbol_from_tab(kind, tab))
-        menu.addAction('Symbol löschen', lambda: self.delete_symbol_from_tab(kind, tab))
+        menu.addAction('Rename Symbol', lambda: self.rename_symbol_from_tab(kind, tab))
+        menu.addAction('Delete Symbol', lambda: self.delete_symbol_from_tab(kind, tab))
         menu.exec(tabs.mapToGlobal(pos))
 
     def delete_symbol_from_tab(self, kind: str, tab_index: int):
@@ -2335,9 +2393,9 @@ class MainWindow(QMainWindow):
         si = indices[tab_index]
         name = self.library.symbols[si].name
         if len(self.library.symbols) <= 1:
-            QMessageBox.warning(self, 'Symbol löschen', 'Das letzte Symbol kann nicht gelöscht werden.')
+            QMessageBox.warning(self, 'Delete Symbol', 'The last symbol cannot be deleted.')
             return
-        if QMessageBox.question(self, 'Symbol löschen', f'Symbol "{name}" wirklich löschen?') != QMessageBox.Yes:
+        if QMessageBox.question(self, 'Delete Symbol', f'Symbol "{name}" really delete?') != QMessageBox.Yes:
             return
         self.push_undo_state()
         del self.library.symbols[si]
@@ -2351,7 +2409,7 @@ class MainWindow(QMainWindow):
             return
         si = indices[tab_index]
         old = self.library.symbols[si].name
-        name, ok = QInputDialog.getText(self, 'Symbol umbenennen', 'Neuer Symbolname:', text=old)
+        name, ok = QInputDialog.getText(self, 'Rename Symbol', 'Neuer Symbolname:', text=old)
         if ok and name.strip():
             self.library.current_symbol_index = si
             self.rename_current_symbol(name.strip())
@@ -2365,10 +2423,10 @@ class MainWindow(QMainWindow):
 
     def edit_symbol_templates_legacy(self):
         dlg = QDialog(self)
-        dlg.setWindowTitle('Symbol Templates editieren')
+        dlg.setWindowTitle('Edit Symbol Templates')
         dlg.resize(780, 620)
         layout = QVBoxLayout(dlg)
-        info = QLabel('Dieses Werkzeug speichert die aktuell sichtbare Unit als Template und kann Body, Pins und sichtbare Attribute auf das aktuelle Symbol anwenden. Bestehende manuelle Geometrie/Pins bleiben beim reinen Attribut-/Style-Update erhalten.')
+        info = QLabel('Dieses Werkzeug speichert die aktuell visiblee Unit als Template und kann Body, Pins und visiblee Attribute auf das aktuelle Symbol anwenden. Bestehende manuelle Geometrie/Pins bleiben beim reinen Attribut-/Style-Update erhalten.')
         info.setWordWrap(True)
         layout.addWidget(info)
         top = QHBoxLayout()
@@ -2384,10 +2442,10 @@ class MainWindow(QMainWindow):
         bh = QDoubleSpinBox(); bh.setRange(0, 500); bh.setDecimals(2); bh.setValue(self.current_unit.body.height)
         bx = QDoubleSpinBox(); bx.setRange(-500, 500); bx.setDecimals(2); bx.setValue(self.current_unit.body.x)
         by = QDoubleSpinBox(); by.setRange(-500, 500); by.setDecimals(2); by.setValue(self.current_unit.body.y)
-        body_form.addRow('Body X', bx); body_form.addRow('Body Y', by); body_form.addRow('Body Width (0 = Body löschen)', bw); body_form.addRow('Body Height (0 = Body löschen)', bh)
+        body_form.addRow('Body X', bx); body_form.addRow('Body Y', by); body_form.addRow('Body Width (0 = delete body)', bw); body_form.addRow('Body Height (0 = delete body)', bh)
         tabs.addTab(body_page, 'Body')
         pin_page = QWidget(); pin_layout = QVBoxLayout(pin_page)
-        pin_table = QTableWidget(0, 6); pin_table.setHorizontalHeaderLabels(['Nr', 'Name', 'Function', 'Type', 'Side', 'Inverted'])
+        pin_table = QTableWidget(0, 6); pin_table.setHorizontalHeaderLabels(['Number', 'Name', 'Function', 'Type', 'Side', 'Inverted'])
         pin_table.setItemDelegateForColumn(3, PinComboDelegate([x.value for x in PinType], pin_table))
         pin_table.setItemDelegateForColumn(4, PinComboDelegate([x.value for x in PinSide], pin_table))
         pin_table.setItemDelegateForColumn(5, PinComboDelegate(['yes', 'no'], pin_table))
@@ -2419,12 +2477,12 @@ class MainWindow(QMainWindow):
             attr_table.setItem(ar, 2, QTableWidgetItem('yes' if self.current_unit.body.visible_attributes.get(k, False) else 'no'))
             ar += 1
         attr_table.resizeColumnsToContents()
-        tabs.addTab(attr_page, 'Dargestellte Attribute')
+        tabs.addTab(attr_page, 'Displayed Attributes')
         opts = QGroupBox('Anwenden')
         opts_l = QHBoxLayout(opts)
-        apply_body = QCheckBox('Body übernehmen'); apply_body.setChecked(True)
-        apply_pins = QCheckBox('Pins übernehmen/ersetzen'); apply_pins.setChecked(False)
-        apply_attrs = QCheckBox('Attribute übernehmen'); apply_attrs.setChecked(True)
+        apply_body = QCheckBox('Apply body'); apply_body.setChecked(True)
+        apply_pins = QCheckBox('Apply/replace pins'); apply_pins.setChecked(False)
+        apply_attrs = QCheckBox('Apply attributes'); apply_attrs.setChecked(True)
         opts_l.addWidget(apply_body); opts_l.addWidget(apply_pins); opts_l.addWidget(apply_attrs)
         layout.addWidget(opts)
         buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Apply | QDialogButtonBox.Cancel)
@@ -2576,7 +2634,7 @@ class MainWindow(QMainWindow):
                 subtypes = type_def.get('subtypes') or {}
                 if not subtypes:
                     templates[type_name] = self.unit_from_template_def(type_name, None, data)
-                # Bei Typen mit Subtypen wird nur der konkrete Subtyp editiert/ausgewählt.
+                # For types with subtypes, only the concrete subtype is edited/selected.
                 for subtype_name in subtypes.keys():
                     templates[f'{type_name} / {subtype_name}'] = self.unit_from_template_def(type_name, subtype_name, data)
         except Exception as exc:
@@ -2631,7 +2689,7 @@ class MainWindow(QMainWindow):
         update_default_name()
         layout.addRow('Template', combo)
         layout.addRow('Symbolname', name_edit)
-        hint = QLabel('3 bis 24 Zeichen. Der Name wird beim Erstellen festgelegt und kann später per Edit oder RMT am Symbolreiter geändert werden.')
+        hint = QLabel('3 to 24 characters. The name is set during creation and can later be changed via Edit or the symbol tab context menu.')
         hint.setWordWrap(True); layout.addRow('', hint)
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         layout.addRow(buttons)

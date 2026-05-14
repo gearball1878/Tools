@@ -1,6 +1,7 @@
 from __future__ import annotations
+import math
 from PySide6.QtCore import QPointF, QRectF, Qt, QEvent
-from PySide6.QtGui import QColor, QFont, QPainter, QPen, QBrush, QTransform, QTextCursor
+from PySide6.QtGui import QColor, QFont, QPainter, QPen, QBrush, QTransform, QTextCursor, QCursor
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem, QGraphicsTextItem
 from symbol_wizard.models.document import PinSide, LineStyle
 from symbol_wizard.rules.grid import snap
@@ -22,7 +23,8 @@ def pen_for(color, width_grid, style, grid_px):
 
 
 class TransformMixin:
-    handle_size_factor = .22
+    handle_size_factor = .35
+    rotate_handle_factor = .42
 
     def apply_transform_from_model(self):
         def f(name, default):
@@ -32,8 +34,23 @@ class TransformMixin:
                 return default
         sx, sy, rot = f('scale_x', 1.0), f('scale_y', 1.0), f('rotation', 0.0)
         self.model.scale_x, self.model.scale_y, self.model.rotation = sx, sy, rot
+        try:
+            br = self.boundingRect()
+            self.setTransformOriginPoint(br.center())
+        except Exception:
+            pass
         self.setTransform(QTransform().scale(sx, sy))
         self.setRotation(rot)
+
+    def flip_horizontal(self):
+        self.model.scale_x = -float(getattr(self.model, 'scale_x', 1.0) or 1.0)
+        self.apply_transform_from_model()
+        self.update()
+
+    def flip_vertical(self):
+        self.model.scale_y = -float(getattr(self.model, 'scale_y', 1.0) or 1.0)
+        self.apply_transform_from_model()
+        self.update()
 
     def common_flags(self):
         self.setAcceptHoverEvents(True)
@@ -63,7 +80,7 @@ class TransformMixin:
         except (TypeError, ValueError):
             cur = 0.0
         self.model.rotation = (cur + float(deg)) % 360
-        self.setRotation(float(self.model.rotation))
+        self.apply_transform_from_model()
         self.update()
 
     def scale_selected(self, factor):
@@ -95,14 +112,38 @@ def _hit_handle(handles, pos):
             return name
     return None
 
+def _cursor_for_handle(name):
+    if name in ('l', 'r'):
+        return Qt.SizeHorCursor
+    if name in ('t', 'b'):
+        return Qt.SizeVerCursor
+    if name in ('tl', 'br'):
+        return Qt.SizeFDiagCursor
+    if name in ('tr', 'bl'):
+        return Qt.SizeBDiagCursor
+    if name == 'rot':
+        return Qt.CrossCursor
+    return Qt.ArrowCursor
+
+def _rotation_handle(rect: QRectF, s: float):
+    return QRectF(rect.center().x() - s / 2, rect.top() - 1.8 * s, s, s)
+
+def _angle_from(center: QPointF, p: QPointF):
+    return math.degrees(math.atan2(p.y() - center.y(), p.x() - center.x()))
+
 
 class BodyItem(TransformMixin, QGraphicsRectItem):
     def __init__(self, model, window):
         self.model = model
         self.window = window
         self._resizing = None
+        self._rotating = False
         self._resize_anchor_scene = None
         self._resize_start = None
+        self._rotating = False
+        self._rotate_start_angle = 0.0
+        self._rotate_start_model = 0.0
+        self._rotate_center_scene = QPointF()
         self._last_model_pos = (model.x, model.y)
         g = window.grid_px
         super().__init__(0, 0, model.width * g, model.height * g)
@@ -136,10 +177,27 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
             painter.setBrush(QBrush(QColor(40, 40, 40)))
             for r in self._handles().values():
                 painter.drawRect(r)
+            painter.drawEllipse(_rotation_handle(self.rect(), self.window.grid_px * self.rotate_handle_factor))
             painter.restore()
+
+    def hoverMoveEvent(self, event):
+        if self.isSelected():
+            h = 'rot' if _rotation_handle(self.rect(), self.window.grid_px * self.rotate_handle_factor).contains(event.pos()) else _hit_handle(self._handles(), event.pos())
+            self.setCursor(QCursor(_cursor_for_handle(h)) if h else QCursor(Qt.ArrowCursor))
+        super().hoverMoveEvent(event)
+
+    def hoverLeaveEvent(self, event):
+        self.unsetCursor()
+        super().hoverLeaveEvent(event)
 
     def mousePressEvent(self, event):
         if self.isSelected():
+            if _rotation_handle(self.rect(), self.window.grid_px * self.rotate_handle_factor).contains(event.pos()):
+                self._rotating = True
+                self._rotate_center_scene = self.mapToScene(self.boundingRect().center())
+                self._rotate_start_angle = _angle_from(self._rotate_center_scene, event.scenePos())
+                self._rotate_start_model = float(getattr(self.model, 'rotation', 0.0) or 0.0)
+                event.accept(); return
             h = _hit_handle(self._handles(), event.pos())
             if h:
                 self._resizing = h
@@ -157,6 +215,12 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
+        if getattr(self, '_rotating', False):
+            delta = _angle_from(self._rotate_center_scene, event.scenePos()) - self._rotate_start_angle
+            self.model.rotation = (self._rotate_start_model + delta) % 360
+            self.apply_transform_from_model()
+            self.window.live_refresh()
+            event.accept(); return
         if self._resizing and self._resize_start is not None:
             g = self.window.grid_px
             p = QPointF(snap(event.scenePos().x(), g), snap(event.scenePos().y(), g))
@@ -253,12 +317,7 @@ class PinItem(TransformMixin, QGraphicsItem):
         self.setPos(model.x * g, -model.y * g)
         self.common_flags()
         self.setData(0, 'PIN')
-        # Pins are controlled only by their side (left/right) and length.
-        # Rotation is intentionally disabled for EDA symbols.
-        self.model.rotation = 0.0
-        self.model.scale_x = 1.0
-        self.model.scale_y = 1.0
-        self.setRotation(0.0)
+        self.apply_transform_from_model()
 
     def boundingRect(self):
         g = self.window.grid_px
@@ -297,20 +356,35 @@ class PinItem(TransformMixin, QGraphicsItem):
         if self.isSelected():
             painter.setPen(QPen(QColor(80, 80, 80), 1, Qt.DashLine))
             painter.drawRect(self.boundingRect())
+            painter.setBrush(QBrush(QColor(40, 40, 40)))
+            painter.drawEllipse(_rotation_handle(self.boundingRect(), self.window.grid_px * self.rotate_handle_factor))
+
+    def mousePressEvent(self, event):
+        if self.isSelected() and _rotation_handle(self.boundingRect(), self.window.grid_px * self.rotate_handle_factor).contains(event.pos()):
+            self._rotating = True
+            self._rotate_center_scene = self.mapToScene(self.boundingRect().center())
+            self._rotate_start_angle = _angle_from(self._rotate_center_scene, event.scenePos())
+            self._rotate_start_model = float(getattr(self.model, 'rotation', 0.0) or 0.0)
+            event.accept(); return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if getattr(self, '_rotating', False):
+            delta = _angle_from(self._rotate_center_scene, event.scenePos()) - self._rotate_start_angle
+            self.model.rotation = (self._rotate_start_model + delta) % 360
+            self.apply_transform_from_model()
+            self.window.live_refresh()
+            event.accept(); return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self._rotating = False
+        super().mouseReleaseEvent(event)
 
     def update_model_pos(self):
         g = self.window.grid_px
         self.model.x = self.pos().x() / g
         self.model.y = -self.pos().y() / g
-
-    def rotate_by(self, deg):
-        # Pin rotation is disabled. Use the Side property (left/right) instead.
-        self.model.rotation = 0.0
-        self.model.scale_x = 1.0
-        self.model.scale_y = 1.0
-        self.setRotation(0.0)
-        self.setTransform(QTransform())
-        self.update()
 
     def scale_selected(self, factor):
         # Pin length is always quantized to full grid units.
@@ -332,6 +406,39 @@ class TextItem(TransformMixin, QGraphicsTextItem):
         self.setTextInteractionFlags(Qt.NoTextInteraction)
         self.setData(0, 'TEXT')
         self.apply_transform_from_model()
+        self._rotating = False
+
+    def paint(self, painter, option, widget=None):
+        super().paint(painter, option, widget)
+        if self.isSelected():
+            painter.save()
+            painter.setPen(QPen(QColor(80, 80, 80), 1, Qt.DashLine))
+            painter.drawRect(self.boundingRect())
+            painter.setBrush(QBrush(QColor(40, 40, 40)))
+            painter.drawEllipse(_rotation_handle(self.boundingRect(), self.window.grid_px * self.rotate_handle_factor))
+            painter.restore()
+
+    def mousePressEvent(self, event):
+        if self.isSelected() and _rotation_handle(self.boundingRect(), self.window.grid_px * self.rotate_handle_factor).contains(event.pos()):
+            self._rotating = True
+            self._rotate_center_scene = self.mapToScene(self.boundingRect().center())
+            self._rotate_start_angle = _angle_from(self._rotate_center_scene, event.scenePos())
+            self._rotate_start_model = float(getattr(self.model, 'rotation', 0.0) or 0.0)
+            event.accept(); return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if getattr(self, '_rotating', False):
+            delta = _angle_from(self._rotate_center_scene, event.scenePos()) - self._rotate_start_angle
+            self.model.rotation = (self._rotate_start_model + delta) % 360
+            self.apply_transform_from_model()
+            self.window.live_refresh()
+            event.accept(); return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self._rotating = False
+        super().mouseReleaseEvent(event)
 
     def mouseDoubleClickEvent(self, event):
         self.setTextInteractionFlags(Qt.TextEditorInteraction)
@@ -380,8 +487,13 @@ class GraphicItem(TransformMixin, QGraphicsItem):
         self.model = model
         self.window = window
         self._resizing = None
+        self._rotating = False
         self._resize_anchor_scene = None
         self._resize_start = None
+        self._rotating = False
+        self._rotate_start_angle = 0.0
+        self._rotate_start_model = 0.0
+        self._rotate_center_scene = QPointF()
         g = window.grid_px
         self.setPos(model.x * g, -model.y * g)
         self.common_flags()
@@ -425,10 +537,27 @@ class GraphicItem(TransformMixin, QGraphicsItem):
             painter.setPen(QPen(QColor(40, 40, 40), 1))
             for r in self._handles().values():
                 painter.drawRect(r)
+            painter.drawEllipse(_rotation_handle(self._rect(), self.window.grid_px * self.rotate_handle_factor))
             painter.restore()
+
+    def hoverMoveEvent(self, event):
+        if self.isSelected():
+            h = 'rot' if _rotation_handle(self._rect(), self.window.grid_px * self.rotate_handle_factor).contains(event.pos()) else _hit_handle(self._handles(), event.pos())
+            self.setCursor(QCursor(_cursor_for_handle(h)) if h else QCursor(Qt.ArrowCursor))
+        super().hoverMoveEvent(event)
+
+    def hoverLeaveEvent(self, event):
+        self.unsetCursor()
+        super().hoverLeaveEvent(event)
 
     def mousePressEvent(self, event):
         if self.isSelected():
+            if _rotation_handle(self._rect(), self.window.grid_px * self.rotate_handle_factor).contains(event.pos()):
+                self._rotating = True
+                self._rotate_center_scene = self.mapToScene(self._rect().center())
+                self._rotate_start_angle = _angle_from(self._rotate_center_scene, event.scenePos())
+                self._rotate_start_model = float(getattr(self.model, 'rotation', 0.0) or 0.0)
+                event.accept(); return
             h = _hit_handle(self._handles(), event.pos())
             if h:
                 self._resizing = h
@@ -442,6 +571,12 @@ class GraphicItem(TransformMixin, QGraphicsItem):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event):
+        if getattr(self, '_rotating', False):
+            delta = _angle_from(self._rotate_center_scene, event.scenePos()) - self._rotate_start_angle
+            self.model.rotation = (self._rotate_start_model + delta) % 360
+            self.apply_transform_from_model()
+            self.window.live_refresh()
+            event.accept(); return
         if self._resizing and self._resize_start is not None:
             g = self.window.grid_px
             p = QPointF(snap(event.scenePos().x(), g), snap(event.scenePos().y(), g))
