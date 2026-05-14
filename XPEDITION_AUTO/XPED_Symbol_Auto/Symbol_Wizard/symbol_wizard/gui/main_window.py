@@ -12,8 +12,7 @@ from symbol_wizard.graphics.scene import SymbolScene, SHEET_INCHES, sheet_rect_f
 from symbol_wizard.graphics.view import SymbolView
 from symbol_wizard.graphics.items import BodyItem, PinItem, TextItem, GraphicItem
 from symbol_wizard.io.json_store import save_library, load_library, save_symbol, load_symbol
-from symbol_wizard.templates.symbol_types import type_names, subtype_names, effective_profile
-from symbol_wizard.gui.template_editor import TemplateEditorDialog
+from symbol_wizard.io.template_store import load_templates, save_templates, template_to_unit, unit_to_template, deep_merge
 
 
 class PinComboDelegate(QStyledItemDelegate):
@@ -60,6 +59,117 @@ class PinComboDelegate(QStyledItemDelegate):
         style.drawControl(QStyle.CE_ComboBoxLabel, opt, painter, widget)
 
 
+
+class TemplateEditor(QDialog):
+    """Standalone canvas for editing Type/Subtype templates.
+
+    No application menu/ribbon is shown here.  The dialog provides a small local
+    tool strip plus one exposed Save Template button.  Saving performs a deep
+    merge into symbol_types.json, so older keys remain intact.
+    """
+    def __init__(self, parent: MainWindow, symbol_type: str, subtype: str):
+        super().__init__(parent)
+        self.parent_window = parent
+        self.templates = load_templates()
+        self.symbol_type = symbol_type
+        self.subtype = subtype
+        self.library = LibraryModel()
+        self.library.symbols = [SymbolModel(name=f'Template: {symbol_type}.{subtype}', symbol_type=symbol_type, symbol_subtype=subtype)]
+        self.library.current_symbol_index = 0
+        self.current_unit_index = 0
+        self.draw_tool = DrawTool.SELECT.value
+        self.default_color = (0, 0, 0)
+        self.clipboard = []
+        self.suspend = False
+        self._refresh_visual_only = False
+        self.refresh_timer = QTimer(self); self.refresh_timer.setSingleShot(True); self.refresh_timer.timeout.connect(self.rebuild_scene)
+        self.scene = SymbolScene(self)
+        self.view = SymbolView(self.scene, self)
+        self.symbol.units[0] = template_to_unit(symbol_type, subtype, self.templates)
+        self.setWindowTitle(f'Template Editor - {symbol_type}.{subtype}')
+        self.resize(1100, 800)
+        self._build_ui()
+        self.rebuild_scene()
+        QTimer.singleShot(0, self.zoom_to_fit_symbol)
+
+    @property
+    def symbol(self): return self.library.current_symbol()
+    @property
+    def current_unit(self): return self.symbol.units[0]
+    @property
+    def grid_px(self): return self.symbol.grid_inch * PX_PER_INCH
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        tb = QHBoxLayout()
+        self.save_btn = QPushButton('SAVE TEMPLATE')
+        self.save_btn.setMinimumHeight(34)
+        self.save_btn.clicked.connect(self.save_template)
+        tb.addWidget(self.save_btn)
+        for tool, label in [(DrawTool.SELECT,'Select/Edit'),(DrawTool.PIN_LEFT,'Pin L'),(DrawTool.PIN_RIGHT,'Pin R'),(DrawTool.TEXT,'Text'),(DrawTool.LINE,'Line'),(DrawTool.CURVE,'Curve'),(DrawTool.RECT,'Rect'),(DrawTool.ELLIPSE,'Ellipse')]:
+            b=QPushButton(label); b.setCheckable(True); b.clicked.connect(lambda _, t=tool.value: self.set_tool(t)); tb.addWidget(b)
+        tb.addStretch()
+        layout.addLayout(tb)
+        layout.addWidget(self.view)
+
+    def set_tool(self, t): self.draw_tool=t
+    def scene_to_grid_x(self, x): return round(x / self.grid_px)
+    def scene_to_grid_y(self, y): return round(-y / self.grid_px)
+    def live_refresh(self): self.scene.update()
+    def schedule_scene_refresh(self, visual_only=False): self.scene.update()
+    def enforce_symbol_size_limit(self, silent=True): return True
+    def validate_pins(self, silent=True): return True
+    def rebuild_tree(self): pass
+    def rebuild_pin_table(self): pass
+    def update_attribute_items_for_unit(self): pass
+    def update_current_unit_canvas_positions(self):
+        for it in self.scene.items():
+            if hasattr(it, 'model'):
+                g=self.grid_px
+                if hasattr(it.model,'x') and hasattr(it.model,'y'):
+                    it.setPos(it.model.x*g, -it.model.y*g)
+    def move_current_unit_group(self, dx, dy, source_body=None):
+        for p in self.current_unit.pins: p.x += dx; p.y += dy
+        for t in self.current_unit.texts: t.x += dx; t.y += dy
+        for gr in self.current_unit.graphics: gr.x += dx; gr.y += dy
+    def scale_current_unit_children_from_body_resize(self, st, b):
+        # In template mode keep child items attached by position ratio around the body top-left.
+        old_w=max(st['w'], 1e-9); old_h=max(st['h'], 1e-9)
+        sx=b.width/old_w; sy=b.height/old_h
+        for p, x, y, L in st.get('pins',[]): p.x=b.x+(x-st['x'])*sx; p.y=b.y+(y-st['y'])*sy; p.length=max(1, round(L*sx))
+        for t, x, y in st.get('texts',[]): t.x=b.x+(x-st['x'])*sx; t.y=b.y+(y-st['y'])*sy
+        for gr, x, y, w, h in st.get('graphics',[]): gr.x=b.x+(x-st['x'])*sx; gr.y=b.y+(y-st['y'])*sy; gr.w=w*sx; gr.h=h*sy
+    def select_model_after_rebuild(self, m): self._select_after=m
+
+    def rebuild_scene(self):
+        self.scene.clear()
+        self.scene.addItem(BodyItem(self.current_unit.body, self))
+        for p in self.current_unit.pins: self.scene.addItem(PinItem(p,self))
+        for t in self.current_unit.texts: self.scene.addItem(TextItem(t,self))
+        for g in self.current_unit.graphics: self.scene.addItem(GraphicItem(g,self))
+        self.scene.update()
+
+    def add_pin(self, side, x=None, y=None):
+        p=PinModel(number=str(len(self.current_unit.pins)+1), name=f'PIN_{len(self.current_unit.pins)+1}', side=side, x=x if x is not None else 0, y=y if y is not None else 0)
+        self.current_unit.pins.append(p); self.rebuild_scene()
+    def add_text(self,x,y):
+        self.current_unit.texts.append(TextModel(text='Text',x=x,y=y,font_size_grid=.5)); self.rebuild_scene()
+    def add_graphic(self, tool, x, y):
+        shape={DrawTool.LINE.value:'line',DrawTool.CURVE.value:'curve',DrawTool.RECT.value:'rect',DrawTool.ELLIPSE.value:'ellipse'}[tool]
+        self.current_unit.graphics.append(GraphicModel(shape=shape,x=x,y=y,w=2,h=0 if shape in ('line','curve') else 2)); self.rebuild_scene()
+    def zoom_to_fit_symbol(self):
+        rect=QRectF(self.current_unit.body.x*self.grid_px, -self.current_unit.body.y*self.grid_px, self.current_unit.body.width*self.grid_px, self.current_unit.body.height*self.grid_px).normalized().adjusted(-100,-100,100,100)
+        self.view.fitInView(rect, Qt.KeepAspectRatio)
+    def save_template(self):
+        data=load_templates()
+        data.setdefault(self.symbol_type, {}).setdefault('subtypes', {}).setdefault(self.subtype, {})
+        old=data[self.symbol_type]['subtypes'][self.subtype]
+        data[self.symbol_type]['subtypes'][self.subtype]=unit_to_template(self.current_unit, old)
+        save_templates(data)
+        QMessageBox.information(self, 'Template saved', f'Saved template {self.symbol_type}.{self.subtype}')
+        self.accept()
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -70,6 +180,7 @@ class MainWindow(QMainWindow):
         self.suspend = False
         self._selection_restore_ids: set[int] = set()
         self.default_color = (0, 0, 0)
+        self.templates = load_templates()
         self._refresh_visual_only = False
         self.refresh_timer = QTimer(self)
         self.refresh_timer.setSingleShot(True)
@@ -224,6 +335,117 @@ class MainWindow(QMainWindow):
         self._autosize_table(table)
         table.viewport().update()
 
+
+    def update_type_editors(self):
+        if not hasattr(self, 'type_combo'):
+            return
+        self.type_combo.blockSignals(True)
+        self.type_combo.clear()
+        self.type_combo.addItems(sorted(self.templates.keys()))
+        self.type_combo.setCurrentText(getattr(self.symbol, 'symbol_type', 'IC'))
+        self.type_combo.blockSignals(False)
+        self._reload_subtypes()
+        if hasattr(self, 'origin_combo'):
+            self.origin_combo.blockSignals(True)
+            self.origin_combo.setCurrentText(getattr(self.symbol, 'origin', OriginMode.CENTER.value))
+            self.origin_combo.blockSignals(False)
+
+    def _reload_subtypes(self):
+        if not hasattr(self, 'subtype_combo'):
+            return
+        typ = getattr(self.symbol, 'symbol_type', self.type_combo.currentText() if hasattr(self, 'type_combo') else 'IC')
+        subs = list(self.templates.get(typ, {}).get('subtypes', {}).keys()) or ['Generic']
+        self.subtype_combo.blockSignals(True)
+        self.subtype_combo.clear()
+        self.subtype_combo.addItems(subs)
+        sub = getattr(self.symbol, 'symbol_subtype', subs[0])
+        if sub not in subs:
+            sub = subs[0]
+        self.subtype_combo.setCurrentText(sub)
+        self.subtype_combo.blockSignals(False)
+
+    def type_changed(self, typ: str):
+        if self.suspend or not typ:
+            return
+        self.symbol.symbol_type = typ
+        self._reload_subtypes()
+        self.symbol.symbol_subtype = self.subtype_combo.currentText()
+        self.apply_selected_template_to_symbol()
+
+    def subtype_changed(self, subtype: str):
+        if self.suspend or not subtype:
+            return
+        self.symbol.symbol_subtype = subtype
+        self.apply_selected_template_to_symbol()
+
+    def apply_selected_template_to_symbol(self):
+        """Apply the selected Type/Subtype template to the current symbol immediately.
+        This is intentionally a merge: existing symbol-specific attribute values
+        survive when the template carries the same attribute keys.
+        """
+        old_unit = self.current_unit
+        old_body = old_unit.body
+        typ = getattr(self.symbol, 'symbol_type', 'IC')
+        sub = getattr(self.symbol, 'symbol_subtype', 'Generic IC')
+        tmpl_unit = template_to_unit(typ, sub, self.templates)
+        # Merge body dimensions/style from template, keep current symbol text values where possible.
+        keep_attrs = dict(old_body.attributes)
+        keep_visible = dict(old_body.visible_attributes)
+        old_unit.body.width = tmpl_unit.body.width
+        old_unit.body.height = tmpl_unit.body.height
+        old_unit.body.x = -old_unit.body.width / 2
+        old_unit.body.y = old_unit.body.height / 2
+        for k, v in tmpl_unit.body.attributes.items():
+            if k not in old_unit.body.attributes:
+                old_unit.body.attributes[k] = v
+            if k in keep_attrs and str(keep_attrs[k]).strip():
+                old_unit.body.attributes[k] = keep_attrs[k]
+            old_unit.body.visible_attributes[k] = keep_visible.get(k, tmpl_unit.body.visible_attributes.get(k, False))
+        # RefDes prefix follows Type/Subtype if RefDes is still empty/default-like.
+        prefix = self.templates.get(typ, {}).get('prefix', 'U')
+        cur_ref = old_unit.body.attributes.get('RefDes', '')
+        if not cur_ref or cur_ref.endswith('?'):
+            old_unit.body.attributes['RefDes'] = prefix + '?'
+        # If current unit has no pins, seed default template pins. Existing pins are not destroyed.
+        if not old_unit.pins and tmpl_unit.pins:
+            old_unit.pins = copy.deepcopy(tmpl_unit.pins)
+        self.apply_origin_to_current_body()
+        self.validate_pins(silent=True)
+        self.rebuild_all()
+        self.zoom_to_fit_symbol()
+
+    def set_origin_mode(self, mode: str):
+        if self.suspend or not mode:
+            return
+        self.symbol.origin = mode
+        self.apply_origin_to_current_body()
+        self.rebuild_scene()
+
+    def apply_origin_to_current_body(self):
+        b = self.current_unit.body
+        old_x, old_y = b.x, b.y
+        w, h = b.width, b.height
+        mode = getattr(self.symbol, 'origin', OriginMode.CENTER.value)
+        if mode == OriginMode.TOP_LEFT.value:
+            b.x, b.y = 0, 0
+        elif mode == OriginMode.TOP_RIGHT.value:
+            b.x, b.y = -w, 0
+        elif mode == OriginMode.BOTTOM_LEFT.value:
+            b.x, b.y = 0, h
+        elif mode == OriginMode.BOTTOM_RIGHT.value:
+            b.x, b.y = -w, h
+        else:
+            b.x, b.y = -w / 2, h / 2
+        dx, dy = b.x - old_x, b.y - old_y
+        if abs(dx) > 1e-9 or abs(dy) > 1e-9:
+            self.move_current_unit_group(dx, dy, source_body=b)
+
+    def open_template_editor(self):
+        dlg = TemplateEditor(self, self.symbol.symbol_type, self.symbol.symbol_subtype)
+        if dlg.exec() == QDialog.Accepted:
+            self.templates = load_templates()
+            self.apply_selected_template_to_symbol()
+
     def _menu(self):
         mb = self.menuBar()
         file_menu = mb.addMenu('&File')
@@ -321,23 +543,21 @@ class MainWindow(QMainWindow):
         setup_tb.addSeparator()
         setup_tb.addWidget(QLabel('Type:'))
         self.type_combo = QComboBox()
-        self.type_combo.addItems(type_names())
+        self.type_combo.addItems(sorted(self.templates.keys()))
         self.type_combo.currentTextChanged.connect(self.type_changed)
         setup_tb.addWidget(self.type_combo)
         setup_tb.addWidget(QLabel('Subtype:'))
         self.subtype_combo = QComboBox()
         self.subtype_combo.currentTextChanged.connect(self.subtype_changed)
         setup_tb.addWidget(self.subtype_combo)
-        self.template_button = QPushButton('Template Editor')
-        self.template_button.clicked.connect(self.open_template_editor)
-        setup_tb.addWidget(self.template_button)
-
-        setup_tb.addSeparator()
-        setup_tb.addWidget(QLabel('Select filter:'))
-        self.select_filter_combo = QComboBox()
-        self.select_filter_combo.addItems(['All','BODY','PIN','GRAPHIC','TEXT'])
-        self.select_filter_combo.currentTextChanged.connect(self.apply_select_filter)
-        setup_tb.addWidget(self.select_filter_combo)
+        self.edit_template_btn = QPushButton('Template Editor')
+        self.edit_template_btn.clicked.connect(self.open_template_editor)
+        setup_tb.addWidget(self.edit_template_btn)
+        setup_tb.addWidget(QLabel('Origo:'))
+        self.origin_combo = QComboBox()
+        self.origin_combo.addItems([x.value for x in OriginMode])
+        self.origin_combo.currentTextChanged.connect(self.set_origin_mode)
+        setup_tb.addWidget(self.origin_combo)
 
         setup_tb.addSeparator()
         setup_tb.addWidget(QLabel('Grid inch:'))
@@ -418,8 +638,8 @@ class MainWindow(QMainWindow):
         self.format_combo.blockSignals(True)
         self.format_combo.setCurrentText(getattr(self.symbol, 'sheet_format', SheetFormat.A3.value))
         self.format_combo.blockSignals(False)
-        self.update_type_controls()
         self.update_name_editors()
+        self.update_type_editors()
         self.left_tabs.setCurrentIndex(1 if self.symbol.kind == SymbolKind.SPLIT.value else 0)
 
     def _symbol_indices(self, kind: str):
@@ -575,7 +795,6 @@ class MainWindow(QMainWindow):
             self._restore_or_select_item(item, selected_ids)
         self.scene.update()
         self.scene.blockSignals(False)
-        self.apply_select_filter()
         self.refresh_properties()
 
     def select_model_after_rebuild(self, model):
@@ -840,7 +1059,7 @@ class MainWindow(QMainWindow):
 
     def graphic_props(self, item):
         m = item.model
-        self.form.addRow('Shape', self._combo(['line', 'curve', 'rect', 'ellipse'], m.shape, lambda v: self.set_and_refresh(m, 'shape', v)))
+        self.form.addRow('Shape', self._combo(['line', 'rect', 'ellipse'], m.shape, lambda v: self.set_and_refresh(m, 'shape', v)))
         self.form.addRow('Width [grid]', self._dbl(m.w, lambda v: self.set_and_refresh(m, 'w', v), -100, 300))
         self.form.addRow('Height [grid]', self._dbl(m.h, lambda v: self.set_and_refresh(m, 'h', v), -100, 300))
         self.form.addRow('Line style', self._combo([x.value for x in LineStyle], m.style.line_style, lambda v: self.set_style(m, 'line_style', v)))
@@ -920,7 +1139,7 @@ class MainWindow(QMainWindow):
         # Pin length is always an integer grid multiple.
         m.length = max(1.0, round(float(v)))
         # Remove any rotation/scale from older project files or pasted data.
-        m.rotation = round(float(getattr(m, 'rotation', 0) or 0) / 90) * 90 % 360
+        m.rotation = 0.0
         m.scale_x = 1.0
         m.scale_y = 1.0
         self.schedule_scene_refresh()
@@ -954,11 +1173,11 @@ class MainWindow(QMainWindow):
                 item.setRect(0, 0, model.width * g, model.height * g)
                 item.setPen(item.pen().__class__(QColor(*model.color), max(1, model.line_width * g)))
             elif kind == 'PIN':
-                model.rotation = round(float(getattr(model, 'rotation', 0) or 0) / 90) * 90 % 360
+                model.rotation = 0.0
                 model.scale_x = 1.0
                 model.scale_y = 1.0
+                item.setRotation(0.0)
                 item.setTransform(item.transform().__class__())
-                item.setRotation(float(model.rotation))
                 item.setPos(model.x * g, -model.y * g)
             elif kind == 'TEXT':
                 item.setPos(model.x * g, -model.y * g)
@@ -1126,11 +1345,9 @@ class MainWindow(QMainWindow):
 
     def add_graphic(self, tool, x, y):
         shape = {DrawTool.LINE.value: 'line', DrawTool.CURVE.value: 'curve', DrawTool.RECT.value: 'rect', DrawTool.ELLIPSE.value: 'ellipse'}[tool]
-        if shape == 'line':
+        if shape in ('line', 'curve'):
             # Linien werden initial gerade eingefügt: horizontal, auf Raster, Länge 2 Grid.
             model = GraphicModel(shape=shape, x=x, y=y, w=2.0, h=0.0, style=StyleModel(stroke=self.default_color, line_width=self.line_width.value(), line_style=self.line_style.currentText()))
-        elif shape == 'curve':
-            model = GraphicModel(shape=shape, x=x, y=y, w=3.0, h=0.0, c1x=1.0, c1y=-1.0, c2x=2.0, c2y=1.0, style=StyleModel(stroke=self.default_color, line_width=self.line_width.value(), line_style=self.line_style.currentText()))
         else:
             model = GraphicModel(shape=shape, x=x, y=y, style=StyleModel(stroke=self.default_color, line_width=self.line_width.value(), line_style=self.line_style.currentText()))
         self.current_unit.graphics.append(model)
@@ -1393,7 +1610,7 @@ class MainWindow(QMainWindow):
         self.rebuild_canvas_tabs(); self.rebuild_unit_tabs(); self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
         self.update_name_editors()
         self.grid_spin.blockSignals(True); self.grid_spin.setValue(self.symbol.grid_inch); self.grid_spin.blockSignals(False)
-        self.format_combo.blockSignals(True); self.format_combo.setCurrentText(getattr(self.symbol, 'sheet_format', SheetFormat.A3.value)); self.format_combo.blockSignals(False); self.update_type_controls()
+        self.format_combo.blockSignals(True); self.format_combo.setCurrentText(getattr(self.symbol, 'sheet_format', SheetFormat.A3.value)); self.format_combo.blockSignals(False)
 
     def change_unit(self, i):
         if i < 0: return
@@ -1418,109 +1635,6 @@ class MainWindow(QMainWindow):
         self.symbol.units.append(SymbolUnitModel(name=f'{self.symbol.name}_{len(self.symbol.units) + 1}'))
         self.current_unit_index = len(self.symbol.units) - 1
         self.rebuild_canvas_tabs(); self.rebuild_unit_tabs(); self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
-
-    def update_type_controls(self):
-        if not hasattr(self, 'type_combo'):
-            return
-        self.type_combo.blockSignals(True)
-        if self.type_combo.count() == 0:
-            self.type_combo.addItems(type_names())
-        t = getattr(self.symbol, 'symbol_type', 'IC') or 'IC'
-        if self.type_combo.findText(t) < 0:
-            self.type_combo.addItem(t)
-        self.type_combo.setCurrentText(t)
-        self.type_combo.blockSignals(False)
-        self.subtype_combo.blockSignals(True)
-        self.subtype_combo.clear()
-        self.subtype_combo.addItems(subtype_names(t))
-        st = getattr(self.symbol, 'symbol_subtype', self.subtype_combo.itemText(0) if self.subtype_combo.count() else '')
-        if st and self.subtype_combo.findText(st) < 0:
-            self.subtype_combo.addItem(st)
-        if st:
-            self.subtype_combo.setCurrentText(st)
-        self.subtype_combo.blockSignals(False)
-
-    def type_changed(self, t):
-        if self.suspend:
-            return
-        self.symbol.symbol_type = t
-        self.subtype_combo.blockSignals(True)
-        self.subtype_combo.clear()
-        self.subtype_combo.addItems(subtype_names(t))
-        self.subtype_combo.blockSignals(False)
-        self.symbol.symbol_subtype = self.subtype_combo.currentText()
-        self.apply_type_profile_to_symbol(apply_template=True)
-
-    def subtype_changed(self, st):
-        if self.suspend:
-            return
-        self.symbol.symbol_subtype = st
-        self.apply_type_profile_to_symbol(apply_template=True)
-
-    def open_template_editor(self):
-        dlg = TemplateEditorDialog(self, getattr(self.symbol, 'symbol_type', 'IC'), getattr(self.symbol, 'symbol_subtype', 'Generic IC'), self.apply_saved_template_from_editor)
-        dlg.exec()
-
-    def apply_saved_template_from_editor(self, t, st, template):
-        self.symbol.symbol_type = t
-        self.symbol.symbol_subtype = st
-        self.update_type_controls()
-        self.apply_template_to_current_unit(template)
-        self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
-
-    def apply_type_profile_to_symbol(self, apply_template=False):
-        prof = effective_profile(getattr(self.symbol, 'symbol_type', 'IC'), getattr(self.symbol, 'symbol_subtype', 'Generic IC'))
-        prefix = prof.get('refdes_prefix', 'U')
-        for u in self.symbol.units:
-            body = u.body
-            # Merge attributes. Existing values remain intact.
-            old_ref = body.attributes.get('RefDes', '')
-            for a in prof.get('attributes', []):
-                body.attributes.setdefault(a, '')
-                body.visible_attributes.setdefault(a, a in ('RefDes','Package','Order Code','Value'))
-            if (not old_ref) or old_ref.endswith('?') or old_ref in ('U?', 'R?', 'C?', 'L?', 'D?', 'Q?', 'J?', 'F?', 'BT?', 'X?', 'Y?'):
-                body.attributes['RefDes'] = f'{prefix}?'
-        if apply_template:
-            self.apply_template_to_current_unit(prof.get('template', {}))
-        self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
-
-    def apply_template_to_current_unit(self, template):
-        if not template:
-            return
-        u = self.current_unit
-        bdata = template.get('body', {}) if isinstance(template, dict) else {}
-        if bdata:
-            # Merge body dimensions and optional placement, preserve style and attrs.
-            if 'width' in bdata: u.body.width = float(bdata['width'])
-            if 'height' in bdata: u.body.height = float(bdata['height'])
-            if 'x' in bdata: u.body.x = float(bdata['x'])
-            else: u.body.x = -u.body.width / 2
-            if 'y' in bdata: u.body.y = float(bdata['y'])
-            else: u.body.y = u.body.height / 2
-        if 'graphics' in template:
-            u.graphics = []
-            for gd in template.get('graphics') or []:
-                style = StyleModel(stroke=tuple(gd.get('stroke', self.default_color)) if isinstance(gd, dict) else self.default_color)
-                u.graphics.append(GraphicModel(shape=gd.get('shape','line'), x=float(gd.get('x',0)), y=float(gd.get('y',0)), w=float(gd.get('w',2)), h=float(gd.get('h',0)), c1x=float(gd.get('c1x',1)), c1y=float(gd.get('c1y',1)), c2x=float(gd.get('c2x',1)), c2y=float(gd.get('c2y',1)), style=style))
-        if template.get('default_pins') and not u.pins:
-            for pd in template.get('default_pins') or []:
-                p = create_auto_pin(self.symbol, u, pd.get('side', PinSide.LEFT.value), pd.get('pin_type', PinType.BIDI.value))
-                p.number = str(pd.get('number', p.number)); p.name = str(pd.get('name', p.name)); p.function = str(pd.get('function', ''))
-                p.visible_name = not bool(p.function); p.visible_function = bool(p.function)
-                u.pins.append(p)
-            self.dock_pins_to_body(u)
-
-    def apply_select_filter(self):
-        if not hasattr(self, 'scene'):
-            return
-        wanted = self.select_filter_combo.currentText() if hasattr(self, 'select_filter_combo') else 'All'
-        for item in self.scene.items():
-            kind = item.data(0)
-            selectable = (wanted == 'All' or kind == wanted)
-            if kind in ('ATTR_REF_DES', 'ATTR_BODY'):
-                selectable = False
-            item.setFlag(QGraphicsItem.ItemIsSelectable, selectable)
-            item.setFlag(QGraphicsItem.ItemIsMovable, selectable and kind not in ('ATTR_REF_DES','ATTR_BODY'))
 
     def set_grid(self, v):
         self.symbol.grid_inch = v

@@ -102,7 +102,7 @@ class SymbolView(QGraphicsView):
             elif tool == DrawTool.PIN_RIGHT.value:
                 self.window.add_pin(PinSide.RIGHT.value, x=gx, y=gy)
             elif tool == DrawTool.TEXT.value:
-                m = TextModel(x=gx, y=gy)
+                m = TextModel(x=gx, y=gy, font_size_grid=0.5)
                 self.window.current_unit.texts.append(m)
                 self.window.select_model_after_rebuild(m)
                 self.window.rebuild_scene()

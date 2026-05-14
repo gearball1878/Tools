@@ -1,6 +1,6 @@
 from __future__ import annotations
 from PySide6.QtCore import QPointF, QRectF, Qt, QEvent
-from PySide6.QtGui import QColor, QFont, QPainter, QPen, QBrush, QTransform, QTextCursor, QPainterPath
+from PySide6.QtGui import QColor, QFont, QPainter, QPen, QBrush, QTransform, QTextCursor
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem, QGraphicsTextItem
 from symbol_wizard.models.document import PinSide, LineStyle
 from symbol_wizard.rules.grid import snap
@@ -253,10 +253,12 @@ class PinItem(TransformMixin, QGraphicsItem):
         self.setPos(model.x * g, -model.y * g)
         self.common_flags()
         self.setData(0, 'PIN')
-        self.model.rotation = round(float(getattr(self.model, 'rotation', 0) or 0) / 90) * 90 % 360
+        # Pins are controlled only by their side (left/right) and length.
+        # Rotation is intentionally disabled for EDA symbols.
+        self.model.rotation = 0.0
         self.model.scale_x = 1.0
         self.model.scale_y = 1.0
-        self.setRotation(float(self.model.rotation))
+        self.setRotation(0.0)
 
     def boundingRect(self):
         g = self.window.grid_px
@@ -302,13 +304,13 @@ class PinItem(TransformMixin, QGraphicsItem):
         self.model.y = -self.pos().y() / g
 
     def rotate_by(self, deg):
-        # Pins rotate only in 90 degree increments. Side still controls docking.
-        cur = float(getattr(self.model, 'rotation', 0) or 0)
+        # Pins rotate in exact 90 degree increments.
+        try:
+            cur = float(getattr(self.model, 'rotation', 0.0) or 0.0)
+        except (TypeError, ValueError):
+            cur = 0.0
         step = 90 if deg >= 0 else -90
-        self.model.rotation = (round((cur + step) / 90) * 90) % 360
-        self.model.scale_x = 1.0
-        self.model.scale_y = 1.0
-        self.setTransform(QTransform())
+        self.model.rotation = (round(cur / 90) * 90 + step) % 360
         self.setRotation(float(self.model.rotation))
         self.update()
 
@@ -414,8 +416,12 @@ class GraphicItem(TransformMixin, QGraphicsItem):
         if m.shape == 'line':
             painter.drawLine(QPointF(0, 0), QPointF(m.w * g, m.h * g))
         elif m.shape == 'curve':
-            path = QPainterPath(QPointF(0, 0))
-            path.cubicTo(QPointF(m.c1x * g, m.c1y * g), QPointF(m.c2x * g, m.c2y * g), QPointF(m.w * g, m.h * g))
+            path_start = QPointF(0, 0)
+            path_end = QPointF(m.w * g, m.h * g)
+            ctrl = QPointF((m.w * g) / 2, (m.h * g) / 2 - 1.5 * g)
+            from PySide6.QtGui import QPainterPath
+            path = QPainterPath(path_start)
+            path.quadTo(ctrl, path_end)
             painter.drawPath(path)
         elif m.shape == 'rect':
             painter.drawRect(QRectF(0, 0, m.w * g, m.h * g))
