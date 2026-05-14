@@ -22,7 +22,10 @@ def _body(d): return SymbolBodyModel(**_coerce_transform(d))
 def _unit(d):
     return SymbolUnitModel(name=d.get('name','Unit'), body=_body(d.get('body',{})), pins=[_pin(x) for x in d.get('pins',[])], texts=[_text(x) for x in d.get('texts',[])], graphics=[_graphic(x) for x in d.get('graphics',[])])
 def _symbol(d):
-    return SymbolModel(name=d.get('name','Symbol'), is_split=d.get('is_split',False), grid_inch=d.get('grid_inch',0.1), origin=d.get('origin','bottom_left'), units=[_unit(x) for x in d.get('units',[]) ] or [SymbolUnitModel()])
+    kind=d.get('kind')
+    if not kind:
+        kind=SymbolKind.SPLIT.value if d.get('is_split', False) else SymbolKind.SINGLE.value
+    return SymbolModel(name=d.get('name','Symbol'), kind=kind, is_split=(kind==SymbolKind.SPLIT.value), grid_inch=d.get('grid_inch',0.1), sheet_format=d.get('sheet_format', SheetFormat.A3.value), origin=d.get('origin','bottom_left'), units=[_unit(x) for x in d.get('units',[]) ] or [SymbolUnitModel()])
 
 def save_library(path, library: LibraryModel):
     Path(path).write_text(json.dumps(to_dict(library), indent=2), encoding='utf-8')

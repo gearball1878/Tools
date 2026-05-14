@@ -1,6 +1,6 @@
-# Symbol_Wizard
+# Symbol Wizard
 
-PySide6 MVP für einen modellgetriebenen Symboleditor.
+PySide6 MVP for creating/editing electronic symbols with single-symbol and split-symbol workflows.
 
 ## Start
 
@@ -9,37 +9,43 @@ pip install -r requirements.txt
 python main.py
 ```
 
-## Aktueller Funktionsumfang
+## Current MVP features
 
-- Mehrere Symbole, jedes Symbol hat einen eigenen Reiter
-- `New Symbol` legt ein neues Symbol an, ohne bestehende Symbole zu überschreiben
-- Defaultnamen: `Symbol 1`, `Symbol 2`, ...
-- Importierte Symbole mit gleichem Namen erhalten `_2`, `_3`, ...
-- Wahl pro Symbol: Single Symbol oder Split Symbol
-- Split Symbols werden als zusammengehöriges Symbol behandelt
-- Pin-Validierung über alle Units eines Split Symbols hinweg
-- Doppelte Pinnummern sind pro Symbol verboten, auch über Split-Units hinweg
-- Automatische Pin-Nummern-Inkrementierung
-- Extra Split-Symbol-Ansicht und Add-Unit/Split-Part-Funktion
-- Objektbaum: Body, Attribute, Pins, Text, Graphics
-- Pin-Tabelle mit Live-Bearbeitung
-- Direkte Zeichenflächen-Bearbeitung:
-  - Objekte auswählen und verschieben
-  - Body und Grafikobjekte über den schwarzen Griff unten rechts vergrößern/verkleinern
-  - ausgewählte Objekte mit `R` / `Q` rotieren
-  - mit `Shift+R` / `Shift+Q` in 90°-Schritten rotieren
-  - mit `+` / `-` skalieren
-  - mit `Ctrl + Mouse Wheel` skalieren
-- Draw Ribbon für Select/Edit, Pins, Text, Linie, Rechteck, Ellipse
-- Linienart und Linienstärke für Body, Pins und Graphics
-- RGB-Farben
-- Sichtbare Symbolbody-Attribute werden im Zeichenfeld gerendert
-- Visibility-Checkbox je Symbolbody-Attribut
-- Stabilere Live-Aktualisierung: Änderungen in Attributfeldern werden entkoppelt aktualisiert, damit die GUI beim Tippen nicht abstürzt
-- Copy/Paste/Delete ausgewählter Zeichenobjekte
-- JSON Export: einzelnes Symbol oder komplette Symbolbibliothek
+- Separate workspaces: **Symbols** for single symbols and **Split Symbols** for multi-unit symbols.
+- Each symbol has its own tab; default names are generated as `Symbol {n}`.
+- New imports with the same name are renamed using `_{n}` suffixes.
+- JSON exchange format:
+  - Save current symbol as JSON.
+  - Save all symbols as JSON library.
+  - Import symbol JSON.
+  - Open JSON library.
+- Verification: pin numbers must be unique across the whole symbol.
+  - For split symbols, all units are checked together.
+  - Copy/paste of pins assigns the next free pin number automatically.
+- Canvas editing:
+  - Select, move, resize and rotate objects.
+  - Body and its related pins/text/graphics move as a grouped unit.
+  - Body attributes are rendered in the drawing area and follow the body.
+  - Body resize keeps pins docked to the selected side.
+  - Multi-select copy/paste.
+- Draw Ribbon:
+  - Select/Edit, Pin L, Pin R, Text, Line, Rect, Ellipse.
+  - Line style and line width.
+  - RGB stroke color.
+  - Rotate and scale buttons.
+- Format preview:
+  - A0/A1/A2/A3/A4/A5 landscape preview.
+  - Red dashed usable region: max symbol area = 40% sheet width and 80% sheet height.
+  - Zoom to fit symbol and sheet.
 
-## JSON
+## Editing hints
 
-- `Save Current Symbol JSON`: speichert nur das aktuell gewählte Symbol
-- `Save All Symbols JSON`: speichert alle Symbole als Library
+- Drag object body/center to move.
+- Drag corner/edge handles to resize rectangular bodies and graphic objects.
+- Use `Ctrl + mouse wheel` to scale selected objects.
+- Use `R` / `Q` for rotate clockwise/counterclockwise.
+- Use `+` / `-` to scale selected objects.
+
+## Notes
+
+This is still an MVP. The next useful step is replacing the simple corner handles with a dedicated transform overlay/gizmo for precise CAD-like manipulation.

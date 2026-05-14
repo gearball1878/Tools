@@ -11,6 +11,10 @@ class OriginMode(str, Enum):
     BOTTOM_LEFT='bottom_left'; BOTTOM_RIGHT='bottom_right'; CENTER='center'; TOP_LEFT='top_left'; TOP_RIGHT='top_right'
 class DrawTool(str, Enum):
     SELECT='select'; PIN_LEFT='pin_left'; PIN_RIGHT='pin_right'; TEXT='text'; LINE='line'; RECT='rect'; ELLIPSE='ellipse'
+class SymbolKind(str, Enum):
+    SINGLE='single'; SPLIT='split'
+class SheetFormat(str, Enum):
+    A0='A0'; A1='A1'; A2='A2'; A3='A3'; A4='A4'; A5='A5'
 class LineStyle(str, Enum):
     SOLID='solid'; DASH='dash'; DOT='dot'; DASH_DOT='dash_dot'
 
@@ -66,8 +70,10 @@ class SymbolUnitModel:
 @dataclass
 class SymbolModel:
     name: str='Symbol 1'
-    is_split: bool=False
+    kind: str=SymbolKind.SINGLE.value
+    is_split: bool=False  # legacy compatibility; kind is authoritative
     grid_inch: float=0.100
+    sheet_format: str=SheetFormat.A3.value
     origin: str=OriginMode.BOTTOM_LEFT.value
     units: List[SymbolUnitModel]=field(default_factory=lambda:[SymbolUnitModel()])
 
@@ -79,13 +85,24 @@ class LibraryModel:
     def unique_symbol_name(self, base='Symbol') -> str:
         existing={s.name for s in self.symbols}
         i=1
-        while f'{base} {i}' in existing:
+        candidate=f'{base} {i}'
+        while candidate in existing:
             i+=1
-        return f'{base} {i}'
+            candidate=f'{base} {i}'
+        return candidate
 
-    def add_symbol(self, base='Symbol') -> SymbolModel:
+    def unique_import_name(self, desired: str) -> str:
+        existing={s.name for s in self.symbols}
+        if desired not in existing:
+            return desired
+        i=2
+        while f'{desired}_{i}' in existing:
+            i+=1
+        return f'{desired}_{i}'
+
+    def add_symbol(self, base='Symbol', kind: str=SymbolKind.SINGLE.value) -> SymbolModel:
         name=self.unique_symbol_name(base)
-        s=SymbolModel(name=name)
+        s=SymbolModel(name=name, kind=kind, is_split=(kind==SymbolKind.SPLIT.value))
         self.symbols.append(s)
         self.current_symbol_index=len(self.symbols)-1
         return s
