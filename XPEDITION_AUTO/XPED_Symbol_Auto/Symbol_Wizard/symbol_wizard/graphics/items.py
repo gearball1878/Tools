@@ -21,13 +21,21 @@ def pen_for(color, width_grid, style, grid_px):
     return p
 
 
-def qfont_for(family, size_pt):
+def qfont_for(family, size_px):
+    """Create a canvas font from a grid-derived pixel height.
+
+    The UI stores text size as a grid multiplier, e.g. 0.9 means the
+    visible text should occupy roughly 90% of one grid pitch. Qt point
+    sizes are device/DPI dependent and were the reason attributes appeared
+    far too small. Canvas text therefore uses pixelSize, where the caller
+    passes a value derived from grid_px.
+    """
     try:
-        pt = float(size_pt)
+        px = float(size_px)
     except (TypeError, ValueError):
-        pt = 7.2
+        px = 12.0
     font = QFont(family or 'Arial')
-    font.setPointSizeF(max(1.0, pt))
+    font.setPixelSize(max(1, int(round(px))))
     return font
 
 

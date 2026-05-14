@@ -1107,7 +1107,7 @@ class MainWindow(QMainWindow):
         if a == 'font_size_pt':
             v = float(v)
             item.model.font_size_pt = v
-            item.model.font_size_grid = round(v / 7.2, 3)
+            item.model.font_size_grid = round(v / max(1.0, float(self.grid_px) * 1.28), 3)
             from symbol_wizard.graphics.items import qfont_for
             item.setFont(qfont_for(item.model.font_family, item.model.font_size_pt))
         elif a == 'font_size_grid':
@@ -1826,11 +1826,19 @@ class MainWindow(QMainWindow):
 
 
     def grid_font_pt(self, size_grid=0.9):
+        """Return the canvas pixel font size for a grid-relative text height.
+
+        A value of 0.9 means the visible text should be about 90% of one
+        grid cell. Qt's pixelSize represents the em box, while the visible
+        capital height is smaller, therefore a small compensation factor is
+        applied. This keeps RefDes and all body attributes tied directly to
+        the active grid instead of to OS point-size/DPI settings.
+        """
         try:
             sg = float(size_grid)
         except (TypeError, ValueError):
             sg = 0.9
-        return round(float(self.symbol.grid_inch) * 72.0 * sg, 2)
+        return round(float(self.grid_px) * sg * 1.28, 2)
 
     def sync_font_points_to_grid(self):
         def sync_font(f):
