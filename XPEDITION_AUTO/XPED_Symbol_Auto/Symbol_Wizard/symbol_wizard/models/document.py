@@ -18,6 +18,13 @@ class SheetFormat(str, Enum):
 class LineStyle(str, Enum):
     SOLID='solid'; DASH='dash'; DOT='dot'; DASH_DOT='dash_dot'
 
+
+@dataclass
+class FontModel:
+    family: str='Arial'
+    size_grid: float=0.75
+    color: Tuple[int,int,int]=(0,0,0)
+
 @dataclass
 class TransformModel:
     rotation: float=0.0
@@ -45,6 +52,8 @@ class PinModel(TransformModel):
     inverted: bool=False; color: Tuple[int,int,int]=(0,0,0)
     visible_number: bool=True; visible_name: bool=True; visible_function: bool=True
     line_width: float=0.03; line_style: str=LineStyle.SOLID.value
+    number_font: FontModel=field(default_factory=lambda: FontModel(size_grid=0.45))
+    label_font: FontModel=field(default_factory=lambda: FontModel(size_grid=0.55))
 
 @dataclass
 class TextModel(TransformModel):
@@ -55,6 +64,8 @@ class TextModel(TransformModel):
 class SymbolBodyModel(TransformModel):
     x: float=0.0; y: float=0.0; width: float=16.0; height: float=24.0
     color: Tuple[int,int,int]=(0,0,0); line_width: float=0.03; line_style: str=LineStyle.SOLID.value
+    attribute_font: FontModel=field(default_factory=lambda: FontModel(size_grid=0.75))
+    refdes_font: FontModel=field(default_factory=lambda: FontModel(size_grid=0.9))
     attributes: Dict[str,str]=field(default_factory=lambda:{'Order Code':'','Package':'','RefDes':'U?','Value':'','Frequency':'','Tolerance':'','Technology':''})
     visible_attributes: Dict[str,bool]=field(default_factory=lambda:{'Order Code':False,'Package':True,'RefDes':True,'Value':True,'Frequency':False,'Tolerance':False,'Technology':False})
     refdes_align: str='left'; body_attr_align: str='left'

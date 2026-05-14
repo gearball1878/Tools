@@ -75,6 +75,14 @@ class MainWindow(QMainWindow):
         self.object_tree.setHeaderLabels(['Object', 'Info'])
         self.object_tree.itemClicked.connect(self.tree_clicked)
 
+        self.split_symbol_tree = QTreeWidget()
+        self.split_symbol_tree.setHeaderLabels(['Split Symbol / Pin', 'Info'])
+        self.split_symbol_tree.itemClicked.connect(self.tree_clicked)
+
+        self.split_object_tree = QTreeWidget()
+        self.split_object_tree.setHeaderLabels(['Object', 'Info'])
+        self.split_object_tree.itemClicked.connect(self.tree_clicked)
+
         self.pin_table = QTableWidget(0, 5)
         self.pin_table.setHorizontalHeaderLabels(['Unit', 'Number', 'Name', 'Function', 'Type'])
         self.pin_table.cellChanged.connect(self.pin_table_changed)
@@ -97,6 +105,10 @@ class MainWindow(QMainWindow):
         info = QLabel('Verification for split symbols is performed across all units as one symbol.')
         info.setWordWrap(True)
         split_layout.addWidget(info)
+        split_layout.addWidget(QLabel('Split Symbol Tree'))
+        split_layout.addWidget(self.split_symbol_tree, 2)
+        split_layout.addWidget(QLabel('Object Tree'))
+        split_layout.addWidget(self.split_object_tree, 2)
 
         left_tabs = QTabWidget()
         left_tabs.currentChanged.connect(self.left_workspace_changed)
@@ -244,6 +256,18 @@ class MainWindow(QMainWindow):
             b = QPushButton(label)
             b.clicked.connect(fn)
             tb.addWidget(b)
+
+        tb.addSeparator()
+        tb.addWidget(QLabel('Selected Pins:'))
+        self.selected_pin_side_combo = QComboBox()
+        self.selected_pin_side_combo.addItems([x.value for x in PinSide])
+        tb.addWidget(self.selected_pin_side_combo)
+        b = QPushButton('Assign Side')
+        b.clicked.connect(lambda: self.set_selected_pins_side(self.selected_pin_side_combo.currentText()))
+        tb.addWidget(b)
+        b = QPushButton('Distribute Vertical')
+        b.clicked.connect(self.distribute_selected_pins_vertical)
+        tb.addWidget(b)
 
     # ------------------------------------------------------------------ Rebuilds
     def rebuild_all(self):
@@ -413,7 +437,7 @@ class MainWindow(QMainWindow):
         b = u.body
         ref = b.attributes.get('RefDes', '')
         if b.visible_attributes.get('RefDes', False) and ref:
-            txt = TextItem(TextModel(text=ref, x=b.x, y=b.y + 1, font_size_grid=min(.9, 1.0), color=b.color), self)
+            txt = TextItem(TextModel(text=ref, x=b.x, y=b.y + 1, font_family=b.refdes_font.family, font_size_grid=b.refdes_font.size_grid, color=b.refdes_font.color), self)
             txt.setFlag(QGraphicsItem.ItemIsMovable, False)
             txt.setData(0, 'ATTR_REF_DES')
             self.scene.addItem(txt)
@@ -421,18 +445,25 @@ class MainWindow(QMainWindow):
         for k, v in b.attributes.items():
             if k == 'RefDes' or not b.visible_attributes.get(k, False) or not v:
                 continue
-            txt = TextItem(TextModel(text=f'{k}: {v}', x=b.x, y=b.y - b.height - row, font_size_grid=.75, color=b.color), self)
+            txt = TextItem(TextModel(text=f'{k}: {v}', x=b.x, y=b.y - b.height - row, font_family=b.attribute_font.family, font_size_grid=b.attribute_font.size_grid, color=b.attribute_font.color), self)
             txt.setFlag(QGraphicsItem.ItemIsMovable, False)
             txt.setData(0, 'ATTR_BODY')
             self.scene.addItem(txt)
             row += 1
 
     def rebuild_tree(self):
-        self.object_tree.clear()
+        self._populate_current_object_tree(self.object_tree)
+        if hasattr(self, 'split_object_tree'):
+            self._populate_current_object_tree(self.split_object_tree)
+        if hasattr(self, 'split_symbol_tree'):
+            self._populate_split_symbol_tree()
+
+    def _populate_current_object_tree(self, tree: QTreeWidget):
+        tree.clear()
         root = QTreeWidgetItem([self.symbol.name, 'Split Symbol' if self.symbol.kind == SymbolKind.SPLIT.value else 'Single Symbol'])
-        self.object_tree.addTopLevelItem(root)
+        tree.addTopLevelItem(root)
         for ui, u in enumerate(self.symbol.units):
-            unit = QTreeWidgetItem([u.name, 'Unit'])
+            unit = QTreeWidgetItem([u.name, 'Unit / Symbol Part'])
             unit.setData(0, Qt.UserRole, ('unit', ui, None))
             root.addChild(unit)
             body = QTreeWidgetItem(['Body', f'{u.body.width:g} x {u.body.height:g}'])
@@ -446,13 +477,13 @@ class MainWindow(QMainWindow):
             pins = QTreeWidgetItem(['Pins', str(len(u.pins))])
             unit.addChild(pins)
             for pi, p in enumerate(u.pins):
-                pin = QTreeWidgetItem([p.number, f'{p.name} {p.function} {p.pin_type}'])
+                pin = QTreeWidgetItem([f'Pin {p.number}', f'{p.name} | {p.function} | {p.pin_type} | {p.side}'])
                 pin.setData(0, Qt.UserRole, ('pin', ui, pi))
                 pins.addChild(pin)
             texts = QTreeWidgetItem(['Text', str(len(u.texts))])
             unit.addChild(texts)
             for ti, t in enumerate(u.texts):
-                text = QTreeWidgetItem([t.text[:30], 'Text'])
+                text = QTreeWidgetItem([t.text[:30], f'{t.font_family} {t.font_size_grid:g}'])
                 text.setData(0, Qt.UserRole, ('text', ui, ti))
                 texts.addChild(text)
             graphics = QTreeWidgetItem(['Graphics', str(len(u.graphics))])
@@ -461,7 +492,30 @@ class MainWindow(QMainWindow):
                 gr = QTreeWidgetItem([g.shape, f'{g.w:g} x {g.h:g}'])
                 gr.setData(0, Qt.UserRole, ('graphic', ui, gi))
                 graphics.addChild(gr)
-        self.object_tree.expandAll()
+        tree.expandAll()
+        tree.resizeColumnToContents(0)
+        tree.resizeColumnToContents(1)
+
+    def _populate_split_symbol_tree(self):
+        tree = self.split_symbol_tree
+        tree.clear()
+        for si, symbol in enumerate(self.library.symbols):
+            if symbol.kind != SymbolKind.SPLIT.value:
+                continue
+            sym_item = QTreeWidgetItem([symbol.name, 'Split Symbol'])
+            sym_item.setData(0, Qt.UserRole, ('symbol', si, None))
+            tree.addTopLevelItem(sym_item)
+            for ui, u in enumerate(symbol.units):
+                unit_item = QTreeWidgetItem([u.name, f'{len(u.pins)} pins'])
+                unit_item.setData(0, Qt.UserRole, ('split_unit', si, ui))
+                sym_item.addChild(unit_item)
+                for pi, pin in enumerate(u.pins):
+                    pin_item = QTreeWidgetItem([f'Pin {pin.number}', f'{pin.name} | {pin.function} | {pin.pin_type} | {pin.side}'])
+                    pin_item.setData(0, Qt.UserRole, ('split_pin', si, ui, pi))
+                    unit_item.addChild(pin_item)
+        tree.expandAll()
+        tree.resizeColumnToContents(0)
+        tree.resizeColumnToContents(1)
 
     def rebuild_pin_table(self):
         self.suspend = True
@@ -479,6 +533,8 @@ class MainWindow(QMainWindow):
                     self.pin_table.setItem(r, c, it)
                 r += 1
         self.suspend = False
+        self.pin_table.resizeColumnsToContents()
+        self.pin_table.resizeRowsToContents()
 
     # ------------------------------------------------------------------ Properties
     def clear_properties(self):
@@ -493,6 +549,17 @@ class MainWindow(QMainWindow):
             return
         if len(selected) > 1:
             self.form.addRow(QLabel(f'{len(selected)} objects selected'))
+            pins = [i for i in selected if i.data(0) == 'PIN']
+            if pins:
+                self.form.addRow(QLabel(f'{len(pins)} selected pin(s)'))
+                side = QComboBox(); side.addItems([x.value for x in PinSide])
+                self.form.addRow('Pin Side', side)
+                b = QPushButton('Assign side to selected pins')
+                b.clicked.connect(lambda: self.set_selected_pins_side(side.currentText()))
+                self.form.addRow('', b)
+                b = QPushButton('Distribute selected pins vertically')
+                b.clicked.connect(self.distribute_selected_pins_vertical)
+                self.form.addRow('', b)
             return
         item = selected[0]
         kind = item.data(0)
@@ -530,6 +597,8 @@ class MainWindow(QMainWindow):
         self.form.addRow('Height [grid]', self._dbl(m.height, lambda v: self.set_body_dim(item, 'height', v), 1, 300))
         self.form.addRow('Line style', self._combo([x.value for x in LineStyle], m.line_style, lambda v: self.set_and_refresh(m, 'line_style', v)))
         self.form.addRow('Line width', self._dbl(m.line_width, lambda v: self.set_and_refresh(m, 'line_width', v), .01, 1, .01))
+        self.font_props('RefDes font', m.refdes_font, refresh_attrs=True)
+        self.font_props('Attribute font', m.attribute_font, refresh_attrs=True)
         for k in list(m.attributes.keys()):
             row = QWidget()
             l = QHBoxLayout(row)
@@ -558,6 +627,8 @@ class MainWindow(QMainWindow):
             cb = QCheckBox(); cb.setChecked(getattr(m, attr)); cb.toggled.connect(lambda v, a=attr: self.set_pin_attr(m, a, v)); self.form.addRow(label, cb)
         self.form.addRow('Line style', self._combo([x.value for x in LineStyle], m.line_style, lambda v: self.set_pin_attr(m, 'line_style', v)))
         self.form.addRow('Line width', self._dbl(m.line_width, lambda v: self.set_pin_attr(m, 'line_width', v), .01, 1, .01))
+        self.font_props('Pin number font', m.number_font)
+        self.font_props('Pin label font', m.label_font)
         self.transform_props(m)
         b = QPushButton('Color RGB'); b.clicked.connect(lambda: self.color_model(m)); self.form.addRow('Color', b)
 
@@ -579,12 +650,34 @@ class MainWindow(QMainWindow):
         self.transform_props(m)
         b = QPushButton('Stroke RGB'); b.clicked.connect(lambda: self.color_model(m.style, 'stroke')); self.form.addRow('Color', b)
 
+    def font_props(self, title, f, refresh_attrs=False):
+        self.form.addRow(QLabel(title))
+        self.form.addRow('Family', self._line(f.family, lambda v: self.set_font_attr(f, 'family', v, refresh_attrs)))
+        self.form.addRow('Size [grid]', self._dbl(f.size_grid, lambda v: self.set_font_attr(f, 'size_grid', v, refresh_attrs), .1, 5, .1))
+        b = QPushButton('Font Color RGB')
+        b.clicked.connect(lambda: self.color_font(f, refresh_attrs))
+        self.form.addRow('Font color', b)
+
     def transform_props(self, m):
         self.form.addRow('Rotation [deg]', self._dbl(getattr(m, 'rotation', 0), lambda v: self.set_and_refresh(m, 'rotation', v), -360, 360, 15))
         self.form.addRow('Scale X', self._dbl(getattr(m, 'scale_x', 1), lambda v: self.set_and_refresh(m, 'scale_x', v), .1, 10, .1))
         self.form.addRow('Scale Y', self._dbl(getattr(m, 'scale_y', 1), lambda v: self.set_and_refresh(m, 'scale_y', v), .1, 10, .1))
 
     # ------------------------------------------------------------------ Model updates
+    def set_font_attr(self, f, a, v, refresh_attrs=False):
+        setattr(f, a, v)
+        if refresh_attrs:
+            self.update_attribute_items_for_unit()
+        self.schedule_scene_refresh()
+
+    def color_font(self, f, refresh_attrs=False):
+        c = QColorDialog.getColor(QColor(*f.color), self)
+        if c.isValid():
+            f.color = (c.red(), c.green(), c.blue())
+            if refresh_attrs:
+                self.update_attribute_items_for_unit()
+            self.schedule_scene_refresh()
+
     def set_and_refresh(self, m, a, v):
         setattr(m, a, v)
         self.schedule_scene_refresh()
@@ -912,6 +1005,52 @@ class MainWindow(QMainWindow):
         rect = sheet_rect_for(getattr(self.symbol, 'sheet_format', 'A3'))
         self.view.fitInView(rect.adjusted(-100, -100, 100, 100), Qt.KeepAspectRatio)
 
+    def selected_pin_items(self):
+        return [it for it in self.scene.selectedItems() if it.data(0) == 'PIN']
+
+    def set_selected_pins_side(self, side: str):
+        pins = self.selected_pin_items()
+        if not pins:
+            self.statusBar().showMessage('No pins selected.', 2500)
+            return
+        body = self.current_unit.body
+        for it in pins:
+            it.model.side = side
+            it.model.x = body.x if side == PinSide.LEFT.value else body.x + body.width
+        self._selection_restore_ids = {id(it.model) for it in pins}
+        self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
+
+    def distribute_selected_pins_vertical(self):
+        pins = self.selected_pin_items()
+        if len(pins) < 2:
+            self.statusBar().showMessage('Select at least two pins to distribute.', 3000)
+            return
+        models = [it.model for it in pins]
+        # Use the upper-most selected pin as anchor and then apply type-specific spacing.
+        models.sort(key=lambda p: p.y, reverse=True)
+        y = round(models[0].y * 2) / 2
+        for idx, pin in enumerate(models):
+            pin.y = y
+            if idx < len(models) - 1:
+                spacing = self.pin_spacing_grid(models[idx + 1])
+                y -= spacing
+        self.dock_pins_to_body(self.current_unit)
+        self._selection_restore_ids = {id(p) for p in models}
+        self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
+
+    def pin_spacing_grid(self, pin: PinModel) -> float:
+        return 1.0 if pin.pin_type in (PinType.POWER.value, PinType.GROUND.value) else 2.0
+
+    def select_model_in_scene(self, model):
+        self.scene.clearSelection()
+        self.current_unit_index = max(0, min(self.current_unit_index, len(self.symbol.units)-1))
+        for it in self.scene.items():
+            if getattr(it, 'model', None) is model:
+                it.setSelected(True)
+                self.view.centerOn(it)
+                break
+        self.refresh_properties()
+
     # ------------------------------------------------------------------ Navigation / tables
     def pin_table_changed(self, r, c):
         if self.suspend: return
@@ -929,11 +1068,40 @@ class MainWindow(QMainWindow):
 
     def tree_clicked(self, item, col):
         data = item.data(0, Qt.UserRole)
-        if not data: return
-        kind, ui, idx = data
+        if not data:
+            return
+        kind = data[0]
+        if kind == 'symbol':
+            self.library.current_symbol_index = data[1]
+            self.current_unit_index = 0
+            self.rebuild_all()
+            return
+        if kind == 'split_unit':
+            _, si, ui = data
+            self.library.current_symbol_index = si
+            self.current_unit_index = ui
+            self.rebuild_all()
+            return
+        if kind == 'split_pin':
+            _, si, ui, pi = data
+            self.library.current_symbol_index = si
+            self.current_unit_index = ui
+            self.rebuild_all()
+            self.select_model_in_scene(self.symbol.units[ui].pins[pi])
+            return
+        _, ui, idx = data
         self.current_unit_index = ui
         self.rebuild_unit_tabs()
         self.rebuild_scene()
+        u = self.current_unit
+        if kind == 'body':
+            self.select_model_in_scene(u.body)
+        elif kind == 'pin' and idx is not None:
+            self.select_model_in_scene(u.pins[idx])
+        elif kind == 'text' and idx is not None:
+            self.select_model_in_scene(u.texts[idx])
+        elif kind == 'graphic' and idx is not None:
+            self.select_model_in_scene(u.graphics[idx])
 
     def left_workspace_changed(self, idx):
         # 0 = single, 1 = split, 2 = pins; only switch when a symbol exists there.

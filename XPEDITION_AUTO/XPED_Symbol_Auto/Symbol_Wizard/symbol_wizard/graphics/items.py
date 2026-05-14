@@ -269,7 +269,8 @@ class PinItem(TransformMixin, QGraphicsItem):
         if m.inverted:
             r = .18 * g
             painter.drawEllipse(QPointF((-r if m.side == PinSide.LEFT.value else r), 0), r, r)
-        painter.setFont(QFont('Arial', max(6, int(g * .28))))
+        painter.setPen(pen_for(m.number_font.color, m.line_width, m.line_style, g))
+        painter.setFont(QFont(m.number_font.family, max(6, int(g * m.number_font.size_grid * .45))))
         if m.visible_number:
             painter.drawText(QRectF(min(x1, x2), -.85 * g, abs(x2 - x1), .5 * g), Qt.AlignCenter, m.number)
         # Display rule: if a dedicated function exists, show function; otherwise show pin name.
@@ -282,7 +283,8 @@ class PinItem(TransformMixin, QGraphicsItem):
             if m.visible_name: parts.append(m.name)
         label = ' / '.join([x for x in parts if x])
         if label:
-            painter.setFont(QFont('Arial', max(8, int(g * .35))))
+            painter.setPen(pen_for(m.label_font.color, m.line_width, m.line_style, g))
+            painter.setFont(QFont(m.label_font.family, max(8, int(g * m.label_font.size_grid * .45))))
             if m.side == PinSide.LEFT.value:
                 painter.drawText(QRectF(.25 * g, -.35 * g, 6 * g, .7 * g), Qt.AlignVCenter | Qt.AlignLeft, label)
             else:

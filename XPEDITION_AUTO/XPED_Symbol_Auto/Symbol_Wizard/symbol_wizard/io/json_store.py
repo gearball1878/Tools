@@ -2,6 +2,8 @@ import json
 from pathlib import Path
 from symbol_wizard.models.document import *
 
+def _font(d, size=.75):
+    return FontModel(**d) if isinstance(d, dict) else FontModel(size_grid=size)
 def _style(d): return StyleModel(**d) if isinstance(d, dict) else StyleModel()
 def _graphic(d):
     d = _coerce_transform(d)
@@ -16,9 +18,17 @@ def _coerce_transform(d):
             d[key] = default
     return d
 
-def _pin(d): return PinModel(**_coerce_transform(d))
+def _pin(d):
+    d=_coerce_transform(d)
+    d['number_font']=_font(d.get('number_font', {}), .45)
+    d['label_font']=_font(d.get('label_font', {}), .55)
+    return PinModel(**d)
 def _text(d): return TextModel(**_coerce_transform(d))
-def _body(d): return SymbolBodyModel(**_coerce_transform(d))
+def _body(d):
+    d=_coerce_transform(d)
+    d['attribute_font']=_font(d.get('attribute_font', {}), .75)
+    d['refdes_font']=_font(d.get('refdes_font', {}), .9)
+    return SymbolBodyModel(**d)
 def _unit(d):
     return SymbolUnitModel(name=d.get('name','Unit'), body=_body(d.get('body',{})), pins=[_pin(x) for x in d.get('pins',[])], texts=[_text(x) for x in d.get('texts',[])], graphics=[_graphic(x) for x in d.get('graphics',[])])
 def _symbol(d):
