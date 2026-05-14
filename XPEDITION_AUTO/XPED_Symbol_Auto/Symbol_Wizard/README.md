@@ -144,13 +144,15 @@ Use **Tools → Split Pin Manager / Multi-Edit Pins** to inspect and edit all pi
 Features:
 
 - Shows all pins across all split parts/units of a split symbol.
-- Filter by unit, pin number, pin name, pin function, or pin type.
+- Filter by unit, pin number, pin name, pin function, pin type, inverted state, and visibility columns.
+- Column filters are placed directly above the corresponding table column.
 - Sort by clicking table headers.
 - Mark selected or filtered rows for batch operations.
 - Bulk-edit display visibility for:
   - Pin Number
   - Pin Name
   - Pin Function
+- Bulk-edit the **Inverted** state for pins.
 - Bulk-edit the **Pin Function Text** for marked, filtered, or all pins:
   - `Unchanged` leaves existing functions untouched.
   - `Set to text` writes the entered function text to every target pin.
@@ -174,8 +176,8 @@ Typical workflow:
 Display visibility and edited Pin Function values are stored in the pin model. Mentor export writes the visible pin label as the native `L` record and writes Pin Function as an invisible pin `A ... PINFUNCTION=...` attribute using the Pin Name label coordinates.
 
 
-### Split Pin Manager: column filters and inverted filters
+### Split Pin Manager: header filters and inverted pins
 
-Open **Tools → Split Pin Manager / Multi-Edit Pins** to review every pin of the current split symbol in one table. The global filter searches across Unit, Pin Number, Pin Name, Pin Function, and Type. The **Column filters** section lets you filter each of these columns independently; all active column filters are combined. Enable **Invert filter** to show rows that do *not* match the current global/column filters. Use **Marked only** to restrict the result to already marked rows.
+Open **Tools → Split Pin Manager / Multi-Edit Pins** to review every pin of the current split symbol in one table. The global filter searches across Unit, Pin Number, Pin Name, Pin Function, Type, and Inverted state. In addition, every relevant table column has its own filter field directly above the column header. Active column filters are combined, so you can narrow the table by unit, type, name fragment, visibility, or `yes`/`no` in the **Inverted** column. Use **Marked only** to restrict the result to already marked rows.
 
-The same dialog can bulk-edit visibility of Pin Number, Pin Name, and Pin Function, and can bulk-edit Pin Function text for marked, filtered, or all pins.
+The same dialog can bulk-edit visibility of Pin Number, Pin Name, and Pin Function, can bulk-edit Pin Function text, and can set pins to **Inverted** or **Not inverted** for marked, filtered, or all pins.

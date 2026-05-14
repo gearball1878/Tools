@@ -109,9 +109,10 @@ class SplitPinManagerDialog(QDialog):
     COL_NAME = 3
     COL_FUNCTION = 4
     COL_TYPE = 5
-    COL_SHOW_NUMBER = 6
-    COL_SHOW_NAME = 7
-    COL_SHOW_FUNCTION = 8
+    COL_INVERTED = 6
+    COL_SHOW_NUMBER = 7
+    COL_SHOW_NAME = 8
+    COL_SHOW_FUNCTION = 9
 
     def __init__(self, parent: 'MainWindow'):
         super().__init__(parent)
@@ -140,40 +141,13 @@ class SplitPinManagerDialog(QDialog):
         self.only_marked = QCheckBox('Marked only')
         self.only_marked.stateChanged.connect(self.apply_filter)
         filter_row.addWidget(self.only_marked)
-        self.invert_filter = QCheckBox('Invert filter')
-        self.invert_filter.setToolTip('Show rows that do not match the active text filters.')
-        self.invert_filter.stateChanged.connect(self.apply_filter)
-        filter_row.addWidget(self.invert_filter)
-        layout.addLayout(filter_row)
-
-        column_filter_box = QGroupBox('Column filters')
-        column_filter_layout = QGridLayout(column_filter_box)
-        column_filter_layout.setContentsMargins(8, 6, 8, 6)
-        column_filter_layout.setHorizontalSpacing(8)
-        column_filter_layout.setVerticalSpacing(4)
-        self.column_filters = {}
-
-        def add_column_filter(col, label, row, column):
-            lbl = QLabel(label)
-            edit = QLineEdit()
-            edit.setPlaceholderText(label)
-            edit.textChanged.connect(self.apply_filter)
-            self.column_filters[col] = edit
-            column_filter_layout.addWidget(lbl, row, column * 2)
-            column_filter_layout.addWidget(edit, row, column * 2 + 1)
-
-        add_column_filter(self.COL_UNIT, 'Unit', 0, 0)
-        add_column_filter(self.COL_NUMBER, 'Pin #', 0, 1)
-        add_column_filter(self.COL_NAME, 'Pin Name', 0, 2)
-        add_column_filter(self.COL_FUNCTION, 'Function', 1, 0)
-        add_column_filter(self.COL_TYPE, 'Type', 1, 1)
         clear_filters = QPushButton('Clear filters')
         clear_filters.clicked.connect(self.clear_filters)
-        column_filter_layout.addWidget(clear_filters, 1, 5)
-        layout.addWidget(column_filter_box)
+        filter_row.addWidget(clear_filters)
+        layout.addLayout(filter_row)
 
-        self.table = QTableWidget(0, 9)
-        self.table.setHorizontalHeaderLabels(['Mark', 'Unit', 'Pin Number', 'Pin Name', 'Pin Function', 'Type', 'Show #', 'Show Name', 'Show Function'])
+        self.table = QTableWidget(0, 10)
+        self.table.setHorizontalHeaderLabels(['Mark', 'Unit', 'Pin Number', 'Pin Name', 'Pin Function', 'Type', 'Inverted', 'Show #', 'Show Name', 'Show Function'])
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.table.setSortingEnabled(True)
@@ -181,6 +155,8 @@ class SplitPinManagerDialog(QDialog):
         self.table.verticalHeader().setVisible(False)
         self.table.cellChanged.connect(self.cell_changed)
         self.table.cellDoubleClicked.connect(self.goto_pin_from_cell)
+        self.column_filters = {}
+        self._build_header_filters(layout)
         layout.addWidget(self.table, 1)
 
         mark_row = QHBoxLayout()
@@ -206,6 +182,7 @@ class SplitPinManagerDialog(QDialog):
         self.show_number_combo = self._tri_combo()
         self.show_name_combo = self._tri_combo()
         self.show_function_combo = self._tri_combo()
+        self.inverted_combo = self._tri_combo(on_text='Inverted', off_text='Not inverted')
 
         def add_bulk_pair(target_layout, label_text, combo):
             pair = QHBoxLayout()
@@ -223,6 +200,7 @@ class SplitPinManagerDialog(QDialog):
         add_bulk_pair(visibility_row, 'Show #', self.show_number_combo)
         add_bulk_pair(visibility_row, 'Show Name', self.show_name_combo)
         add_bulk_pair(visibility_row, 'Show Function', self.show_function_combo)
+        add_bulk_pair(visibility_row, 'Inverted', self.inverted_combo)
         visibility_row.addStretch(1)
         bulk_outer.addLayout(visibility_row)
 
@@ -253,9 +231,49 @@ class SplitPinManagerDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
-    def _tri_combo(self):
+    def _build_header_filters(self, parent_layout):
+        """Create per-column filter fields directly above the table columns."""
+        self.header_filter_widget = QWidget()
+        row = QHBoxLayout(self.header_filter_widget)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(0)
+        self.header_filter_edits = {}
+        labels = {
+            self.COL_MARK: '',
+            self.COL_UNIT: 'Filter Unit',
+            self.COL_NUMBER: 'Filter #',
+            self.COL_NAME: 'Filter Name',
+            self.COL_FUNCTION: 'Filter Function',
+            self.COL_TYPE: 'Filter Type',
+            self.COL_INVERTED: 'yes/no',
+            self.COL_SHOW_NUMBER: 'show/hide',
+            self.COL_SHOW_NAME: 'show/hide',
+            self.COL_SHOW_FUNCTION: 'show/hide',
+        }
+        for col in range(10):
+            edit = QLineEdit()
+            edit.setPlaceholderText(labels.get(col, ''))
+            edit.setClearButtonEnabled(True)
+            edit.textChanged.connect(self.apply_filter)
+            if col == self.COL_MARK:
+                edit.setEnabled(False)
+            self.column_filters[col] = edit
+            self.header_filter_edits[col] = edit
+            row.addWidget(edit)
+        parent_layout.addWidget(self.header_filter_widget)
+
+    def _sync_header_filter_widths(self):
+        if not hasattr(self, 'header_filter_edits'):
+            return
+        for col, edit in self.header_filter_edits.items():
+            try:
+                edit.setFixedWidth(max(40, self.table.columnWidth(col)))
+            except Exception:
+                pass
+
+    def _tri_combo(self, on_text='Show', off_text='Hide'):
         c = QComboBox()
-        c.addItems(['Unchanged', 'Show', 'Hide'])
+        c.addItems(['Unchanged', on_text, off_text])
         return c
 
     def _all_pin_rows(self):
@@ -272,23 +290,26 @@ class SplitPinManagerDialog(QDialog):
         for ui, pi, unit, pin in self._all_pin_rows():
             r = self.table.rowCount()
             self.table.insertRow(r)
-            values = ['', unit.name, pin.number, pin.name, pin.function, pin.pin_type, '', '', '']
+            values = ['', unit.name, pin.number, pin.name, pin.function, pin.pin_type, 'yes' if pin.inverted else 'no', '', '', '']
             for c, value in enumerate(values):
                 item = QTableWidgetItem(str(value))
                 item.setData(Qt.UserRole, (ui, pi))
-                if c in (self.COL_MARK, self.COL_SHOW_NUMBER, self.COL_SHOW_NAME, self.COL_SHOW_FUNCTION):
+                if c in (self.COL_MARK, self.COL_INVERTED, self.COL_SHOW_NUMBER, self.COL_SHOW_NAME, self.COL_SHOW_FUNCTION):
                     item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsUserCheckable)
                     item.setCheckState(Qt.Unchecked)
                 else:
                     item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
                 self.table.setItem(r, c, item)
+            self.table.item(r, self.COL_INVERTED).setCheckState(Qt.Checked if pin.inverted else Qt.Unchecked)
             self.table.item(r, self.COL_SHOW_NUMBER).setCheckState(Qt.Checked if pin.visible_number else Qt.Unchecked)
             self.table.item(r, self.COL_SHOW_NAME).setCheckState(Qt.Checked if pin.visible_name else Qt.Unchecked)
             self.table.item(r, self.COL_SHOW_FUNCTION).setCheckState(Qt.Checked if pin.visible_function else Qt.Unchecked)
         self.table.resizeColumnsToContents()
-        minimums = {0: 70, 1: 160, 2: 120, 3: 240, 4: 240, 5: 90, 6: 85, 7: 110, 8: 125}
+        minimums = {0: 70, 1: 160, 2: 120, 3: 240, 4: 240, 5: 90, 6: 90, 7: 85, 8: 110, 9: 125}
         for c, w in minimums.items():
             self.table.setColumnWidth(c, max(self.table.columnWidth(c), w))
+        self._sync_header_filter_widths()
+        self.table.horizontalHeader().sectionResized.connect(lambda *_: self._sync_header_filter_widths())
         self.table.setSortingEnabled(True)
         self._loading = False
         self.apply_filter()
@@ -313,12 +334,13 @@ class SplitPinManagerDialog(QDialog):
         return item.data(Qt.UserRole)
 
     def cell_changed(self, row, col):
-        if self._loading or col not in (self.COL_SHOW_NUMBER, self.COL_SHOW_NAME, self.COL_SHOW_FUNCTION):
+        if self._loading or col not in (self.COL_INVERTED, self.COL_SHOW_NUMBER, self.COL_SHOW_NAME, self.COL_SHOW_FUNCTION):
             return
         pin = self._row_pin(row)
         if pin is None:
             return
         attr = {
+            self.COL_INVERTED: 'inverted',
             self.COL_SHOW_NUMBER: 'visible_number',
             self.COL_SHOW_NAME: 'visible_name',
             self.COL_SHOW_FUNCTION: 'visible_function',
@@ -330,7 +352,7 @@ class SplitPinManagerDialog(QDialog):
 
     def _row_text(self, row):
         parts = []
-        for c in (self.COL_UNIT, self.COL_NUMBER, self.COL_NAME, self.COL_FUNCTION, self.COL_TYPE):
+        for c in (self.COL_UNIT, self.COL_NUMBER, self.COL_NAME, self.COL_FUNCTION, self.COL_TYPE, self.COL_INVERTED):
             item = self.table.item(row, c)
             parts.append(item.text().lower() if item else '')
         return ' '.join(parts)
@@ -344,20 +366,22 @@ class SplitPinManagerDialog(QDialog):
 
     def _cell_text(self, row, col):
         item = self.table.item(row, col)
-        return item.text().lower() if item else ''
+        if not item:
+            return ''
+        if col in (self.COL_MARK, self.COL_INVERTED, self.COL_SHOW_NUMBER, self.COL_SHOW_NAME, self.COL_SHOW_FUNCTION):
+            return 'yes' if item.checkState() == Qt.Checked else 'no'
+        return item.text().lower()
 
     def clear_filters(self):
         self.filter_edit.clear()
         for edit in getattr(self, 'column_filters', {}).values():
             edit.clear()
         self.only_marked.setChecked(False)
-        self.invert_filter.setChecked(False)
         self.apply_filter()
 
     def apply_filter(self):
         text = self.filter_edit.text().strip().lower()
         marked_only = self.only_marked.isChecked()
-        invert = self.invert_filter.isChecked()
         column_terms = []
         for col, edit in getattr(self, 'column_filters', {}).items():
             term = edit.text().strip().lower()
@@ -368,8 +392,6 @@ class SplitPinManagerDialog(QDialog):
             column_ok = all(term in self._cell_text(r, col) for col, term in column_terms)
             marked_ok = not marked_only or self._is_marked(r)
             filter_ok = text_ok and column_ok
-            if invert and (text or column_terms):
-                filter_ok = not filter_ok
             ok = filter_ok and marked_ok
             self.table.setRowHidden(r, not ok)
 
@@ -404,15 +426,16 @@ class SplitPinManagerDialog(QDialog):
     def _bulk_values(self):
         values = {}
         mapping = [
-            (self.show_number_combo, 'visible_number'),
-            (self.show_name_combo, 'visible_name'),
-            (self.show_function_combo, 'visible_function'),
+            (self.show_number_combo, 'visible_number', 'Show', 'Hide'),
+            (self.show_name_combo, 'visible_name', 'Show', 'Hide'),
+            (self.show_function_combo, 'visible_function', 'Show', 'Hide'),
+            (self.inverted_combo, 'inverted', 'Inverted', 'Not inverted'),
         ]
-        for combo, attr in mapping:
+        for combo, attr, on_text, off_text in mapping:
             text = combo.currentText()
-            if text == 'Show':
+            if text == on_text:
                 values[attr] = True
-            elif text == 'Hide':
+            elif text == off_text:
                 values[attr] = False
         return values
 
