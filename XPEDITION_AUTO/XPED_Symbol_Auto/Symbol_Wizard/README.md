@@ -125,3 +125,22 @@ These colors are Wizard UI colors only. Native Mentor export remains colorless/s
 ### Pin name and pin function
 
 Pin name and pin function are independent fields. If both are visible, both are rendered in the Wizard label. This is intentional.
+
+## Split Pin Manager / Multi-Edit Pins
+
+Use **Tools → Split Pin Manager / Multi-Edit Pins** to inspect and edit all pins of the current symbol in one window.
+
+Features:
+
+- Shows all pins across all split parts/units of a split symbol.
+- Filter by unit, pin number, pin name, pin function, or pin type.
+- Sort by clicking table headers.
+- Mark selected or filtered rows for batch operations.
+- Bulk-edit display visibility for:
+  - Pin Number
+  - Pin Name
+  - Pin Function
+- Apply bulk changes to marked pins, filtered pins, or all pins.
+- Double-click a row or use **Go to selected pin** to jump to the corresponding split part and select the pin on the canvas.
+
+This display visibility is stored in the pin model and is also respected by Mentor export/import workflows where applicable.

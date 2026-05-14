@@ -95,6 +95,282 @@ class PinComboDelegate(QStyledItemDelegate):
         style.drawControl(QStyle.CE_ComboBoxLabel, opt, painter, widget)
 
 
+
+
+class SplitPinManagerDialog(QDialog):
+    """Pin overview and bulk visibility editor for complete split symbols.
+
+    The dialog intentionally works on the semantic pin model, not on the current
+    canvas selection.  It can therefore edit all pins of all split-parts at once.
+    """
+    COL_MARK = 0
+    COL_UNIT = 1
+    COL_NUMBER = 2
+    COL_NAME = 3
+    COL_FUNCTION = 4
+    COL_TYPE = 5
+    COL_SHOW_NUMBER = 6
+    COL_SHOW_NAME = 7
+    COL_SHOW_FUNCTION = 8
+
+    def __init__(self, parent: 'MainWindow'):
+        super().__init__(parent)
+        self.main = parent
+        self.symbol = parent.symbol
+        self._loading = False
+        self.setWindowTitle('Split Pin Manager')
+        self.setWindowFlag(Qt.WindowMinMaxButtonsHint, True)
+        self.setWindowFlag(Qt.WindowCloseButtonHint, True)
+        self.resize(1200, 720)
+        self._build_ui()
+        self.reload()
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        title = QLabel('All pins of the current symbol / split symbol')
+        title.setStyleSheet('font-weight: bold;')
+        layout.addWidget(title)
+
+        filter_row = QHBoxLayout()
+        filter_row.addWidget(QLabel('Filter'))
+        self.filter_edit = QLineEdit()
+        self.filter_edit.setPlaceholderText('Filter by unit, number, name, function or type')
+        self.filter_edit.textChanged.connect(self.apply_filter)
+        filter_row.addWidget(self.filter_edit, 1)
+        self.only_marked = QCheckBox('Marked only')
+        self.only_marked.stateChanged.connect(self.apply_filter)
+        filter_row.addWidget(self.only_marked)
+        layout.addLayout(filter_row)
+
+        self.table = QTableWidget(0, 9)
+        self.table.setHorizontalHeaderLabels(['Mark', 'Unit', 'Pin Number', 'Pin Name', 'Pin Function', 'Type', 'Show #', 'Show Name', 'Show Function'])
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.table.setSortingEnabled(True)
+        self.table.setAlternatingRowColors(True)
+        self.table.verticalHeader().setVisible(False)
+        self.table.cellChanged.connect(self.cell_changed)
+        self.table.cellDoubleClicked.connect(self.goto_pin_from_cell)
+        layout.addWidget(self.table, 1)
+
+        mark_row = QHBoxLayout()
+        for label, slot in [
+            ('Mark selected rows', self.mark_selected_rows),
+            ('Mark filtered rows', self.mark_filtered_rows),
+            ('Clear marks', self.clear_marks),
+            ('Go to selected pin', self.goto_selected_pin),
+        ]:
+            b = QPushButton(label); b.clicked.connect(slot); mark_row.addWidget(b)
+        mark_row.addStretch(1)
+        layout.addLayout(mark_row)
+
+        bulk_box = QGroupBox('Bulk edit display attributes')
+        bulk = QHBoxLayout(bulk_box)
+        self.show_number_combo = self._tri_combo()
+        self.show_name_combo = self._tri_combo()
+        self.show_function_combo = self._tri_combo()
+        bulk.addWidget(QLabel('Pin Number')); bulk.addWidget(self.show_number_combo)
+        bulk.addWidget(QLabel('Pin Name')); bulk.addWidget(self.show_name_combo)
+        bulk.addWidget(QLabel('Pin Function')); bulk.addWidget(self.show_function_combo)
+        for label, slot in [
+            ('Apply to marked', self.apply_bulk_marked),
+            ('Apply to filtered', self.apply_bulk_filtered),
+            ('Apply to all pins', self.apply_bulk_all),
+        ]:
+            b = QPushButton(label); b.clicked.connect(slot); bulk.addWidget(b)
+        layout.addWidget(bulk_box)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Close)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def _tri_combo(self):
+        c = QComboBox()
+        c.addItems(['Unchanged', 'Show', 'Hide'])
+        return c
+
+    def _all_pin_rows(self):
+        rows = []
+        for ui, unit in enumerate(self.symbol.units):
+            for pi, pin in enumerate(unit.pins):
+                rows.append((ui, pi, unit, pin))
+        return rows
+
+    def reload(self):
+        self._loading = True
+        self.table.setSortingEnabled(False)
+        self.table.setRowCount(0)
+        for ui, pi, unit, pin in self._all_pin_rows():
+            r = self.table.rowCount()
+            self.table.insertRow(r)
+            values = ['', unit.name, pin.number, pin.name, pin.function, pin.pin_type, '', '', '']
+            for c, value in enumerate(values):
+                item = QTableWidgetItem(str(value))
+                item.setData(Qt.UserRole, (ui, pi))
+                if c in (self.COL_MARK, self.COL_SHOW_NUMBER, self.COL_SHOW_NAME, self.COL_SHOW_FUNCTION):
+                    item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsUserCheckable)
+                    item.setCheckState(Qt.Unchecked)
+                else:
+                    item.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+                self.table.setItem(r, c, item)
+            self.table.item(r, self.COL_SHOW_NUMBER).setCheckState(Qt.Checked if pin.visible_number else Qt.Unchecked)
+            self.table.item(r, self.COL_SHOW_NAME).setCheckState(Qt.Checked if pin.visible_name else Qt.Unchecked)
+            self.table.item(r, self.COL_SHOW_FUNCTION).setCheckState(Qt.Checked if pin.visible_function else Qt.Unchecked)
+        self.table.resizeColumnsToContents()
+        minimums = {0: 70, 1: 160, 2: 120, 3: 240, 4: 240, 5: 90, 6: 85, 7: 110, 8: 125}
+        for c, w in minimums.items():
+            self.table.setColumnWidth(c, max(self.table.columnWidth(c), w))
+        self.table.setSortingEnabled(True)
+        self._loading = False
+        self.apply_filter()
+
+    def _pin_for_item(self, item):
+        if item is None:
+            return None
+        ui, pi = item.data(Qt.UserRole)
+        try:
+            return self.symbol.units[ui].pins[pi]
+        except Exception:
+            return None
+
+    def _row_pin(self, row):
+        item = self.table.item(row, self.COL_UNIT)
+        return self._pin_for_item(item)
+
+    def _row_unit_pin_indices(self, row):
+        item = self.table.item(row, self.COL_UNIT)
+        if item is None:
+            return None
+        return item.data(Qt.UserRole)
+
+    def cell_changed(self, row, col):
+        if self._loading or col not in (self.COL_SHOW_NUMBER, self.COL_SHOW_NAME, self.COL_SHOW_FUNCTION):
+            return
+        pin = self._row_pin(row)
+        if pin is None:
+            return
+        attr = {
+            self.COL_SHOW_NUMBER: 'visible_number',
+            self.COL_SHOW_NAME: 'visible_name',
+            self.COL_SHOW_FUNCTION: 'visible_function',
+        }[col]
+        value = self.table.item(row, col).checkState() == Qt.Checked
+        self.main.push_undo_state()
+        setattr(pin, attr, value)
+        self.main.rebuild_scene(); self.main.rebuild_pin_table(); self.main.refresh_properties()
+
+    def _row_text(self, row):
+        parts = []
+        for c in (self.COL_UNIT, self.COL_NUMBER, self.COL_NAME, self.COL_FUNCTION, self.COL_TYPE):
+            item = self.table.item(row, c)
+            parts.append(item.text().lower() if item else '')
+        return ' '.join(parts)
+
+    def _is_marked(self, row):
+        item = self.table.item(row, self.COL_MARK)
+        return bool(item and item.checkState() == Qt.Checked)
+
+    def _visible_rows(self):
+        return [r for r in range(self.table.rowCount()) if not self.table.isRowHidden(r)]
+
+    def apply_filter(self):
+        text = self.filter_edit.text().strip().lower()
+        marked_only = self.only_marked.isChecked()
+        for r in range(self.table.rowCount()):
+            ok = (not text or text in self._row_text(r)) and (not marked_only or self._is_marked(r))
+            self.table.setRowHidden(r, not ok)
+
+    def mark_selected_rows(self):
+        self._loading = True
+        for item in self.table.selectedItems():
+            r = item.row()
+            mark = self.table.item(r, self.COL_MARK)
+            if mark:
+                mark.setCheckState(Qt.Checked)
+        self._loading = False
+        self.apply_filter()
+
+    def mark_filtered_rows(self):
+        self._loading = True
+        for r in self._visible_rows():
+            mark = self.table.item(r, self.COL_MARK)
+            if mark:
+                mark.setCheckState(Qt.Checked)
+        self._loading = False
+        self.apply_filter()
+
+    def clear_marks(self):
+        self._loading = True
+        for r in range(self.table.rowCount()):
+            mark = self.table.item(r, self.COL_MARK)
+            if mark:
+                mark.setCheckState(Qt.Unchecked)
+        self._loading = False
+        self.apply_filter()
+
+    def _bulk_values(self):
+        values = {}
+        mapping = [
+            (self.show_number_combo, 'visible_number'),
+            (self.show_name_combo, 'visible_name'),
+            (self.show_function_combo, 'visible_function'),
+        ]
+        for combo, attr in mapping:
+            text = combo.currentText()
+            if text == 'Show':
+                values[attr] = True
+            elif text == 'Hide':
+                values[attr] = False
+        return values
+
+    def _apply_bulk_to_rows(self, rows):
+        values = self._bulk_values()
+        if not values:
+            return
+        pins = []
+        for r in rows:
+            pin = self._row_pin(r)
+            if pin is not None:
+                pins.append(pin)
+        if not pins:
+            return
+        self.main.push_undo_state()
+        for pin in pins:
+            for attr, value in values.items():
+                setattr(pin, attr, value)
+        self.reload()
+        self.main.rebuild_scene(); self.main.rebuild_pin_table(); self.main.refresh_properties()
+
+    def apply_bulk_marked(self):
+        self._apply_bulk_to_rows([r for r in range(self.table.rowCount()) if self._is_marked(r)])
+
+    def apply_bulk_filtered(self):
+        self._apply_bulk_to_rows(self._visible_rows())
+
+    def apply_bulk_all(self):
+        self._apply_bulk_to_rows(list(range(self.table.rowCount())))
+
+    def goto_pin_from_cell(self, row, col):
+        self._goto_row(row)
+
+    def goto_selected_pin(self):
+        rows = sorted({i.row() for i in self.table.selectedItems()})
+        if rows:
+            self._goto_row(rows[0])
+
+    def _goto_row(self, row):
+        data = self._row_unit_pin_indices(row)
+        if not data:
+            return
+        ui, pi = data
+        self.main.current_unit_index = ui
+        self.main.rebuild_unit_tabs(); self.main.rebuild_scene(); self.main.rebuild_tree(); self.main.rebuild_pin_table()
+        try:
+            self.main.select_model_in_scene(self.symbol.units[ui].pins[pi])
+        except Exception:
+            pass
+
+
 class TemplateEditorDialog(QDialog):
     """Independent canvas-based editor for reusable symbol templates."""
     def __init__(self, parent: 'MainWindow'):
@@ -1592,6 +1868,10 @@ class MainWindow(QMainWindow):
             table.blockSignals(old)
         self._commit_pin_table_value(table, r, c)
 
+    def open_split_pin_manager(self):
+        dlg = SplitPinManagerDialog(self)
+        dlg.exec()
+
     def _menu(self):
         mb = self.menuBar()
         file_menu = mb.addMenu('&File')
@@ -1651,6 +1931,9 @@ class MainWindow(QMainWindow):
         tools_menu.addSeparator()
         a = QAction('Validate Pins', self)
         a.triggered.connect(self.validate_pins)
+        tools_menu.addAction(a)
+        a = QAction('Split Pin Manager / Multi-Edit Pins', self)
+        a.triggered.connect(self.open_split_pin_manager)
         tools_menu.addAction(a)
 
         view_menu = mb.addMenu('&View')
