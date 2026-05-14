@@ -457,10 +457,14 @@ def _export_native_unit(symbol: SymbolModel, unit: SymbolUnitModel, index: int, 
         lines.append(f"L {lx} {y} 10 0 {lalign} 0 1 0 {pin.name}")
         lines.append(f"A {ax_num} {y} 8 0 {anum_align} 3 #={pin.number}")
         lines.append(f"A {ax_type} {y} 10 0 {atype_align} 0 PINTYPE={_pin_type_to_mentor(pin.pin_type)}")
-        # Export pin function separately from pin name. Mentor treats these as
-        # independent pin attributes; visibility 0 keeps the symbol native-clean.
-        if str(getattr(pin, 'function', '') or '').strip() and str(pin.function) != str(pin.name):
-            lines.append(f"A {ax_type} {y} 10 0 {atype_align} 0 PINFUNCTION={pin.function}")
+        # Export pin function separately from the visible pin name. Mentor treats
+        # this as an independent pin attribute. Use the exact same coordinates,
+        # size and alignment as the native L pin-name record, but keep it hidden
+        # with visibility 0. This preserves Pin Function semantically without
+        # changing the rendered Mentor symbol.
+        pin_function = str(getattr(pin, 'function', '') or '').strip()
+        if pin_function:
+            lines.append(f"A {lx} {y} 10 0 {lalign} 0 PINFUNCTION={pin_function}")
         # Preserve additional invisible/custom pin attributes when present.
         for an, av in sorted((getattr(pin, 'attributes', {}) or {}).items()):
             if str(an).upper() in ('#', 'PINTYPE', 'PINFUNCTION', 'FUNCTION', 'PIN_FUNCTION'):
