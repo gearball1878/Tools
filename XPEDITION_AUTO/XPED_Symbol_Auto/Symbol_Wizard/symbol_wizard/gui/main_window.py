@@ -2640,6 +2640,51 @@ Use **File > Import PINMUX CSV** to import pin information from a CSV file. Afte
         cb.stateChanged.connect(lambda state, a=attr, items=pin_items: self._apply_multi_pin_visibility_state(items, a, state))
         return cb
 
+    def _body_attr_sync_targets(self, body=None):
+        """Return BODY models that should receive BODY-attribute edits.
+
+        For split symbols the BODY-attribute section is intentionally global:
+        editing attribute values, visibility or attribute fonts in the active
+        part updates the same BODY attributes in every split part.  This is
+        model-only for inactive parts, so it avoids expensive scene rebuilds.
+        Geometry (x/y/width/height, pins, graphics, plain texts) stays local.
+        """
+        body = body or self.current_unit.body
+        try:
+            if self.symbol.kind == SymbolKind.SPLIT.value and len(self.symbol.units) > 1:
+                return [u.body for u in self.symbol.units if getattr(u, 'body', None) is not None]
+        except Exception:
+            pass
+        return [body]
+
+    def _sync_body_attribute_text_models(self, body: SymbolBodyModel, key: str | None = None):
+        """Keep cached attribute text models in sync without repainting inactive units."""
+        if getattr(body, 'attribute_texts', None) is None:
+            body.attribute_texts = {}
+        keys = [key] if key is not None else list(body.attributes.keys())
+        for k in keys:
+            if k not in body.attributes:
+                continue
+            tm = body.attribute_texts.get(k)
+            if tm is None:
+                continue
+            tm.text = str(body.attributes.get(k, '')) if k == 'RefDes' else f'{k}: {body.attributes.get(k, "")}'
+            font = body.refdes_font if k == 'RefDes' else body.attribute_font
+            tm.font_family = font.family
+            tm.font_size_grid = font.size_grid
+            tm.color = font.color
+
+    def _copy_font_values(self, src: FontModel, dst: FontModel):
+        dst.family = src.family
+        dst.size_grid = src.size_grid
+        dst.color = src.color
+
+    def _is_split_body_attr_sync_active(self) -> bool:
+        try:
+            return self.symbol.kind == SymbolKind.SPLIT.value and len(self.symbol.units) > 1
+        except Exception:
+            return False
+
     def body_props(self, item):
         m = item.model
         head = QLabel('<b>BODY</b>')
@@ -2651,6 +2696,10 @@ Use **File > Import PINMUX CSV** to import pin information from a CSV file. Afte
         self.transform_props(m)
         self.form.addRow('Color', self._color_button_row('Color RGB', m.color, lambda _checked=False: self.color_model(m)))
         self.form.addRow(QLabel('<b>BODY-Attribute</b>'))
+        if self._is_split_body_attr_sync_active():
+            sync_info = QLabel('Split sync active: BODY attribute values, visibility and fonts are applied to all split parts.')
+            sync_info.setWordWrap(True)
+            self.form.addRow(sync_info)
         self.font_props('RefDes font', m.refdes_font, refresh_attrs=True)
         self.font_props('Attribute font', m.attribute_font, refresh_attrs=True)
         for k in list(m.attributes.keys()):
@@ -2779,11 +2828,19 @@ Use **File > Import PINMUX CSV** to import pin information from a CSV file. Afte
         setattr(f, a, v)
         if refresh_attrs:
             body = self.current_unit.body
-            if f is body.refdes_font:
-                self._apply_body_font_to_attribute_texts(f, refdes=True)
-            elif f is body.attribute_font:
-                self._apply_body_font_to_attribute_texts(f, refdes=False)
-            self.update_attribute_items_for_unit()
+            refdes = (f is body.refdes_font)
+            attr_font = (f is body.attribute_font)
+            if refdes or attr_font:
+                targets = self._body_attr_sync_targets(body)
+                for tb in targets:
+                    target_font = tb.refdes_font if refdes else tb.attribute_font
+                    self._copy_font_values(f, target_font)
+                    self._sync_body_attribute_text_models(tb, 'RefDes' if refdes else None)
+                # Only the active split part is repainted now. Inactive parts use the
+                # updated model values when they become active, avoiding global redraws.
+                self.update_attribute_items_for_unit()
+            else:
+                setattr(f, a, v)
         self.schedule_scene_refresh()
 
     def color_font(self, f, refresh_attrs=False):
@@ -2793,11 +2850,15 @@ Use **File > Import PINMUX CSV** to import pin information from a CSV file. Afte
             f.color = (c.red(), c.green(), c.blue())
             if refresh_attrs:
                 body = self.current_unit.body
-                if f is body.refdes_font:
-                    self._apply_body_font_to_attribute_texts(f, refdes=True)
-                elif f is body.attribute_font:
-                    self._apply_body_font_to_attribute_texts(f, refdes=False)
-                self.update_attribute_items_for_unit()
+                refdes = (f is body.refdes_font)
+                attr_font = (f is body.attribute_font)
+                if refdes or attr_font:
+                    targets = self._body_attr_sync_targets(body)
+                    for tb in targets:
+                        target_font = tb.refdes_font if refdes else tb.attribute_font
+                        self._copy_font_values(f, target_font)
+                        self._sync_body_attribute_text_models(tb, 'RefDes' if refdes else None)
+                    self.update_attribute_items_for_unit()
             self.schedule_scene_refresh()
 
     def set_and_refresh(self, m, a, v):
@@ -2831,15 +2892,25 @@ Use **File > Import PINMUX CSV** to import pin information from a CSV file. Afte
 
     def set_attr_vis(self, m, k, v):
         self.push_undo_state()
-        m.visible_attributes[k] = v
+        for body in self._body_attr_sync_targets(m):
+            if k not in body.attributes:
+                body.attributes[k] = m.attributes.get(k, '')
+            body.visible_attributes[k] = bool(v)
+            self._sync_body_attribute_text_models(body, k)
         self.update_attribute_items_for_unit()
         self.rebuild_tree()
+        self.schedule_scene_refresh(visual_only=True)
 
     def set_attr_val(self, m, k, v):
         self.push_undo_state()
-        m.attributes[k] = v
+        for body in self._body_attr_sync_targets(m):
+            body.attributes[k] = v
+            if k not in body.visible_attributes:
+                body.visible_attributes[k] = m.visible_attributes.get(k, False)
+            self._sync_body_attribute_text_models(body, k)
         self.update_attribute_items_for_unit()
         self.rebuild_tree()
+        self.schedule_scene_refresh(visual_only=True)
 
     def _apply_multi_pin_visibility_choice(self, pin_items, attr, index):
         # 0 = unchanged, 1 = hidden/False, 2 = visible/True
