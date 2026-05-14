@@ -285,7 +285,12 @@ class TemplateEditorDialog(QDialog):
                     cb = self._multi_pin_visibility_checkbox(pins, attr)
                     self.form.addRow(label, cb)
             else:
-                self.form.addRow(QLabel('Multi-edit is only available when only PINs are selected.'))
+                text_like = [i for i in sel if i.data(0) in ('TEXT', 'ATTR_REF_DES', 'ATTR_BODY')]
+                if len(text_like) == len(sel):
+                    self.form.addRow(QLabel(f'<b>Multi-Edit: {len(text_like)} text objects</b>'))
+                    self._template_multi_text_props(text_like)
+                else:
+                    self.form.addRow(QLabel('Multi-edit is only available for PIN-only or TEXT/ATTRIBUTE-only selections.'))
             return
         if not sel:
             self.form.addRow(QLabel('No selection. Template canvas is independent from the Symbol Wizard.'))
@@ -322,12 +327,17 @@ class TemplateEditorDialog(QDialog):
             self.form.addRow('Number font', self._font_combo(m.number_font.family, lambda v: self._set(m.number_font, 'family', v)))
             self.form.addRow('Label font', self._font_combo(m.label_font.family, lambda v: self._set(m.label_font, 'family', v)))
         elif kind in ('TEXT', 'ATTR_REF_DES', 'ATTR_BODY'):
-            self.form.addRow('Text', self._line(m.text, lambda v: self._set(m, 'text', v)))
-            self.form.addRow('Font', self._font_combo(m.font_family, lambda v: self._set(m, 'font_family', v)))
-            self.form.addRow('Size', self._dbl(m.font_size_grid, lambda v: self._set(m, 'font_size_grid', v), .1, 10))
-            self.form.addRow('Horizontal align', self._combo(['left','center','right'], getattr(m, 'h_align', 'left'), lambda v: self._set(m, 'h_align', v)))
-            self.form.addRow('Vertical align', self._combo(['upper','center','lower'], getattr(m, 'v_align', 'upper'), lambda v: self._set(m, 'v_align', v)))
-            self.form.addRow('Rotation [deg]', self._dbl(getattr(m, 'rotation', 0), lambda v: self._set(m, 'rotation', v), -360, 360, 15))
+            is_attr = kind in ('ATTR_REF_DES', 'ATTR_BODY') or bool(getattr(m, '_is_attribute_text', False))
+            line = self._line(m.text, lambda v, item=item: self._set_text_item_attr(item, 'text', v))
+            if is_attr:
+                line.setReadOnly(True)
+                line.setToolTip('Attribute text content is driven by the owning object attribute value.')
+            self.form.addRow('Text', line)
+            self.form.addRow('Font', self._font_combo(m.font_family, lambda v, item=item: self._set_text_item_attr(item, 'font_family', v)))
+            self.form.addRow('Size', self._dbl(m.font_size_grid, lambda v, item=item: self._set_text_item_attr(item, 'font_size_grid', v), .1, 10))
+            self.form.addRow('Horizontal align', self._combo(['left','center','right'], getattr(m, 'h_align', 'left'), lambda v, item=item: self._set_text_item_attr(item, 'h_align', v)))
+            self.form.addRow('Vertical align', self._combo(['upper','center','lower'], getattr(m, 'v_align', 'upper'), lambda v, item=item: self._set_text_item_attr(item, 'v_align', v)))
+            self.form.addRow('Rotation [deg]', self._dbl(getattr(m, 'rotation', 0), lambda v, item=item: self._set_text_item_attr(item, 'rotation', v), -360, 360, 15))
         elif kind == 'GRAPHIC':
             self.form.addRow('Shape', self._combo(['line','rect','ellipse'], m.shape, lambda v: self._set(m, 'shape', v)))
             self.form.addRow('X', self._dbl(m.x, lambda v: self._set(m, 'x', v)))
@@ -357,6 +367,50 @@ class TemplateEditorDialog(QDialog):
             cb.setCheckState(Qt.PartiallyChecked)
         cb.stateChanged.connect(lambda state, a=attr, items=pin_items: self._apply_multi_pin_visibility_state(items, a, state))
         return cb
+
+    def _common_model_value(self, items, attr, default=''):
+        vals = [getattr(getattr(i, 'model', None), attr, default) for i in items if getattr(i, 'model', None) is not None]
+        if not vals:
+            return default
+        first = vals[0]
+        return first if all(v == first for v in vals) else default
+
+    def _template_multi_text_props(self, items):
+        self.form.addRow('Font', self._font_combo(self._common_model_value(items, 'font_family', ''), lambda v, its=items: self._set_selected_text_attr(its, 'font_family', v)))
+        self.form.addRow('Size grid', self._dbl(float(self._common_model_value(items, 'font_size_grid', 1.0) or 1.0), lambda v, its=items: self._set_selected_text_attr(its, 'font_size_grid', v), .1, 10, .1))
+        self.form.addRow('Horizontal align', self._combo(['', 'left','center','right'], self._common_model_value(items, 'h_align', ''), lambda v, its=items: v and self._set_selected_text_attr(its, 'h_align', v)))
+        self.form.addRow('Vertical align', self._combo(['', 'upper','center','lower'], self._common_model_value(items, 'v_align', ''), lambda v, its=items: v and self._set_selected_text_attr(its, 'v_align', v)))
+        self.form.addRow('Rotation [deg]', self._dbl(float(self._common_model_value(items, 'rotation', 0) or 0), lambda v, its=items: self._set_selected_text_attr(its, 'rotation', v), -360, 360, 15))
+
+    def _set_text_item_attr(self, item, attr, value):
+        if item.data(0) in ('ATTR_REF_DES', 'ATTR_BODY') and attr == 'text':
+            return
+        self.push_undo_state()
+        self._selection_restore_ids = {id(item.model)}
+        if attr == 'rotation':
+            value = (round(float(value) / 15.0) * 15.0) % 360
+        setattr(item.model, attr, value)
+        if hasattr(item, 'apply_text_from_model'):
+            item.apply_text_from_model()
+        elif attr == 'text':
+            item.setPlainText(value)
+        self.update_current_unit_canvas_positions()
+        self.refresh_properties()
+
+    def _set_selected_text_attr(self, items, attr, value):
+        models = [getattr(i, 'model', None) for i in items if i.data(0) in ('TEXT', 'ATTR_REF_DES', 'ATTR_BODY')]
+        if not models or len(models) != len(items) or attr == 'text':
+            return
+        self.push_undo_state()
+        if attr == 'rotation':
+            value = (round(float(value) / 15.0) * 15.0) % 360
+        self._selection_restore_ids = {id(m) for m in models}
+        for item in items:
+            setattr(item.model, attr, value)
+            if hasattr(item, 'apply_text_from_model'):
+                item.apply_text_from_model()
+        self.update_current_unit_canvas_positions()
+        self.refresh_properties()
     def _set(self, m, a, v):
         self.push_undo_state(); self._selection_restore_ids={id(m)}
         if a == 'rotation':
@@ -385,8 +439,19 @@ class TemplateEditorDialog(QDialog):
         self.push_undo_state(); self._selection_restore_ids={id(p) for p in pins}
         for p in pins: setattr(p, attr, value)
         self.rebuild_scene()
-    def _set_attr_vis(self, key, val): self._selection_restore_ids=self._capture_selection_ids(); self.unit.body.visible_attributes.__setitem__(key, val); self.rebuild_scene()
-    def _set_attr_val(self, key, val): self._selection_restore_ids=self._capture_selection_ids(); self.unit.body.attributes.__setitem__(key, val); self.rebuild_scene()
+    def _set_attr_vis(self, key, val):
+        self.push_undo_state()
+        self._selection_restore_ids = self._capture_selection_ids()
+        self.unit.body.visible_attributes[key] = bool(val)
+        self.update_attribute_items_for_unit()
+        self.refresh_properties()
+
+    def _set_attr_val(self, key, val):
+        self.push_undo_state()
+        self._selection_restore_ids = self._capture_selection_ids()
+        self.unit.body.attributes[key] = val
+        self.update_attribute_items_for_unit()
+        self.refresh_properties()
 
 
     def _capture_selection_ids(self):
@@ -470,22 +535,32 @@ class TemplateEditorDialog(QDialog):
         self.refresh_properties()
 
     def add_attribute_text_items(self, u):
+        """Create selectable, transformable text items for body attributes in the template editor.
+
+        The text content itself is generated from the owning body attributes, so it is
+        locked in the text editor.  Geometry/font/alignment changes are allowed and
+        follow the same interaction rules as in the main Symbol Wizard.
+        """
         b = u.body
         row = 1
         ref = b.attributes.get('RefDes', '')
         if b.visible_attributes.get('RefDes', False):
             label = ref if str(ref).strip() else 'RefDes'
-            txt = TextItem(TextModel(text=label, x=b.x, y=b.y + 1, font_family=b.refdes_font.family, font_size_grid=b.refdes_font.size_grid, color=b.refdes_font.color), self)
-            txt.setData(0, 'ATTR_REF_DES'); txt.setZValue(2)
-            txt.setFlag(QGraphicsItem.ItemIsSelectable, True); txt.setFlag(QGraphicsItem.ItemIsMovable, True)
+            tm = TextModel(text=label, x=b.x, y=b.y + 1, font_family=b.refdes_font.family, font_size_grid=b.refdes_font.size_grid, color=b.refdes_font.color)
+            tm._is_attribute_text = True
+            txt = TextItem(tm, self)
+            txt.setData(0, 'ATTR_REF_DES')
+            self.apply_item_selectability(txt)
             self.scene.addItem(txt)
         for k, v in b.attributes.items():
             if k == 'RefDes' or not b.visible_attributes.get(k, False):
                 continue
             label = f'{k}: {v}' if str(v).strip() else str(k)
-            txt = TextItem(TextModel(text=label, x=b.x, y=b.y - b.height - row, font_family=b.attribute_font.family, font_size_grid=b.attribute_font.size_grid, color=b.attribute_font.color), self)
-            txt.setData(0, 'ATTR_BODY'); txt.setZValue(2)
-            txt.setFlag(QGraphicsItem.ItemIsSelectable, True); txt.setFlag(QGraphicsItem.ItemIsMovable, True)
+            tm = TextModel(text=label, x=b.x, y=b.y - b.height - row, font_family=b.attribute_font.family, font_size_grid=b.attribute_font.size_grid, color=b.attribute_font.color)
+            tm._is_attribute_text = True
+            txt = TextItem(tm, self)
+            txt.setData(0, 'ATTR_BODY')
+            self.apply_item_selectability(txt)
             self.scene.addItem(txt)
             row += 1
 
@@ -541,15 +616,54 @@ class TemplateEditorDialog(QDialog):
             elif it.data(0)=='GRAPHIC': self.unit.graphics=[g for g in self.unit.graphics if g is not it.model]
             elif it.data(0)=='BODY': self.unit.body.width=0.01; self.unit.body.height=0.01
         self.rebuild_scene()
-    def live_refresh(self): self.refresh_properties()
+    def live_refresh(self):
+        self.scene.invalidate(self.scene.sceneRect())
+        self.scene.update(self.scene.sceneRect())
+        self.view.viewport().update()
+        self.refresh_properties()
+
     def dock_pins_to_body(self, u):
         b=u.body
         for p in u.pins: p.x = b.x if p.side == PinSide.LEFT.value else b.x + b.width
+
     def scale_current_unit_children_from_body_resize(self, st, body):
         # Template editor keeps pins docked; detailed proportional scaling is available in the main canvas.
         self.dock_pins_to_body(self.unit)
-    def update_current_unit_canvas_positions(self): pass
-    def update_attribute_items_for_unit(self): pass
+
+    def update_current_unit_canvas_positions(self):
+        g = self.grid_px
+        for item in self.scene.items():
+            model = getattr(item, 'model', None)
+            if model is None:
+                continue
+            kind = item.data(0)
+            if kind == 'BODY':
+                item.setPos(model.x * g, -model.y * g)
+                item.setRect(0, 0, model.width * g, model.height * g)
+            elif kind in ('PIN', 'TEXT', 'ATTR_REF_DES', 'ATTR_BODY', 'GRAPHIC'):
+                if hasattr(item, 'apply_text_from_model') and kind in ('TEXT', 'ATTR_REF_DES', 'ATTR_BODY'):
+                    item.apply_text_from_model()
+                else:
+                    item.setPos(model.x * g, -model.y * g)
+            item.update()
+        self.scene.invalidate(self.scene.sceneRect())
+        self.scene.update(self.scene.sceneRect())
+        self.view.viewport().update()
+
+    def update_attribute_items_for_unit(self):
+        selected_ids = self._capture_selection_ids()
+        for item in list(self.scene.items()):
+            if item.data(0) in ('ATTR_REF_DES', 'ATTR_BODY'):
+                self.scene.removeItem(item)
+        self.add_attribute_text_items(self.unit)
+        for item in self.scene.items():
+            model = getattr(item, 'model', None)
+            if model is not None and id(model) in selected_ids:
+                item.setSelected(True)
+        self.scene.invalidate(self.scene.sceneRect())
+        self.scene.update(self.scene.sceneRect())
+        self.view.viewport().update()
+
     def enforce_symbol_size_limit(self, silent=False): return True
 
     def apply_item_selectability(self, item):
