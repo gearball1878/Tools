@@ -9,7 +9,7 @@ class SymbolView(QGraphicsView):
         super().__init__(scene)
         self.window = window
         self.setRenderHint(QPainter.Antialiasing)
-        self.setViewportUpdateMode(QGraphicsView.MinimalViewportUpdate)
+        self.setViewportUpdateMode(QGraphicsView.FullViewportUpdate)
         self.setDragMode(QGraphicsView.RubberBandDrag)
         self.setRubberBandSelectionMode(Qt.ContainsItemBoundingRect)
         self.setTransformationAnchor(QGraphicsView.AnchorUnderMouse)

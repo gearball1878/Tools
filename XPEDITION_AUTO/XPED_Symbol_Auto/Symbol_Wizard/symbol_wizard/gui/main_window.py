@@ -4,7 +4,7 @@ import csv
 import json
 from pathlib import Path
 from dataclasses import asdict
-from PySide6.QtCore import Qt, QTimer, QRectF
+from PySide6.QtCore import Qt, QTimer, QRectF, QEvent, QObject
 from PySide6.QtGui import QAction, QColor, QKeySequence, QFontDatabase
 from PySide6.QtWidgets import *
 
@@ -15,6 +15,33 @@ from symbol_wizard.graphics.scene import SymbolScene, SHEET_INCHES, sheet_rect_f
 from symbol_wizard.graphics.view import SymbolView
 from symbol_wizard.graphics.items import BodyItem, PinItem, TextItem, GraphicItem, pen_for
 from symbol_wizard.io.json_store import save_library, load_library, save_symbol, load_symbol
+
+
+class NoWheelOnValueWidgets(QObject):
+    """Global UI guard: mouse wheel scrolls panels/views only.
+
+    QComboBox and spin box values are often changed accidentally while the user
+    scrolls a long property panel. This filter blocks wheel based value changes
+    for every combo/spin/dropdown in the complete tool. Values can still be
+    changed via the dropdown, arrow buttons, keyboard, or direct numeric input.
+    """
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Wheel and isinstance(obj, (QComboBox, QAbstractSpinBox)):
+            event.ignore()
+            return True
+        return False
+
+
+def install_no_wheel_value_filter(owner):
+    app = QApplication.instance()
+    if app is None:
+        return
+    filt = getattr(app, '_symbol_wizard_no_wheel_value_filter', None)
+    if filt is None:
+        filt = NoWheelOnValueWidgets(app)
+        app.installEventFilter(filt)
+        app._symbol_wizard_no_wheel_value_filter = filt
+    owner._no_wheel_value_filter = filt
 
 
 class PinComboDelegate(QStyledItemDelegate):
@@ -65,12 +92,14 @@ class TemplateEditorDialog(QDialog):
     """Independent canvas-based editor for reusable symbol templates."""
     def __init__(self, parent: 'MainWindow'):
         super().__init__(parent)
+        install_no_wheel_value_filter(self)
         self.main = parent
         self.templates = parent.available_templates()
         self.unit = copy.deepcopy(next(iter(self.templates.values()), SymbolUnitModel()))
         self.draw_tool = DrawTool.SELECT.value
         self.default_color = (0, 0, 0)
         self.symbol = SymbolModel(name='Template Editor', units=[self.unit])
+        self._format_guide_offset = (0.0, 0.0)
         self.current_unit_index = 0
         self.scene = SymbolScene(self)
         self.view = SymbolView(self.scene, self)
@@ -1223,6 +1252,7 @@ class TemplateEditorDialog(QDialog):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        install_no_wheel_value_filter(self)
         self.library = LibraryModel()
         self.current_unit_index = 0
         self.draw_tool = DrawTool.SELECT.value
@@ -1240,6 +1270,7 @@ class MainWindow(QMainWindow):
         self._selection_restore_ids: set[int] = set()
         self.default_color = (0, 0, 0)
         self._refresh_visual_only = False
+        self._format_guide_offset = (0.0, 0.0)
         self.selection_enabled = {'BODY': True, 'PIN': True, 'TEXT': True, 'GRAPHIC': True}
         self.refresh_timer = QTimer(self)
         self.refresh_timer.setSingleShot(True)
@@ -1250,7 +1281,7 @@ class MainWindow(QMainWindow):
         self.resize(1600, 980)
         self._build_ui()
         self.rebuild_all()
-        # No automatic zoom/fit here: split imports must keep the user scale stable.
+        QTimer.singleShot(0, self.zoom_to_fit_symbol)
 
     @property
     def symbol(self) -> SymbolModel:
@@ -1660,15 +1691,8 @@ class MainWindow(QMainWindow):
         b.clicked.connect(self.distribute_selected_pins_vertical)
         pin_tb.addWidget(b)
 
-        # --- Help -------------------------------------------------------
-        self.addToolBarBreak()
-        help_tb = make_bar('Help')
-        howto_btn = QPushButton('How To')
-        howto_btn.clicked.connect(self.show_how_to)
-        help_tb.addWidget(howto_btn)
-        about_btn = QPushButton('About')
-        about_btn.clicked.connect(self.show_about_dialog)
-        help_tb.addWidget(about_btn)
+        # Help/About remain available from the Help menu only.
+        # They are intentionally not duplicated in the ribbon.
 
     def show_how_to(self):
         dlg = QDialog(self)
@@ -2044,6 +2068,7 @@ Use **File > Import PINMUX CSV** to import pin information from a CSV file. Afte
         self.scene.blockSignals(True)
         self.scene.clear()
         u = self.current_unit
+        self.set_format_guide_to_active_origin()
         self.dock_pins_to_body(u)
 
         body_item = BodyItem(u.body, self)
@@ -2247,87 +2272,63 @@ Use **File > Import PINMUX CSV** to import pin information from a CSV file. Afte
         tree.resizeColumnToContents(1)
 
     def _populate_current_object_tree(self, tree: QTreeWidget):
-        """Populate the object tree for the focused canvas only.
-
-        Split symbols can contain many units and hundreds of pins. Rebuilding the
-        complete tree on every edit made the UI freeze after imports. The canvas
-        edits exactly one active unit, so the tree now shows only that active unit.
-        The split overview still lists the units for navigation.
-        """
-        tree.setUpdatesEnabled(False)
         tree.clear()
-        try:
-            root = QTreeWidgetItem([self.symbol.name, 'Split Symbol' if self.symbol.kind == SymbolKind.SPLIT.value else 'Single Symbol'])
-            tree.addTopLevelItem(root)
-            unit_indices = [self.current_unit_index] if self.symbol.kind == SymbolKind.SPLIT.value else list(range(len(self.symbol.units)))
-            for ui in unit_indices:
-                if ui < 0 or ui >= len(self.symbol.units):
-                    continue
-                u = self.symbol.units[ui]
-                unit = QTreeWidgetItem([u.name, 'Focused Unit / Symbol Part'])
-                unit.setData(0, Qt.UserRole, ('unit', ui, None))
-                root.addChild(unit)
-                body = QTreeWidgetItem(['Body', f'{u.body.width:g} x {u.body.height:g}'])
-                body.setData(0, Qt.UserRole, ('body', ui, None))
-                unit.addChild(body)
-                attrs = QTreeWidgetItem(['Attributes', 'Body'])
-                unit.addChild(attrs)
-                for k, v in u.body.attributes.items():
-                    att = QTreeWidgetItem([k, f'{v} / visible={u.body.visible_attributes.get(k, False)}'])
-                    attrs.addChild(att)
-                pins = QTreeWidgetItem(['Pins', str(len(u.pins))])
-                unit.addChild(pins)
-                for pi, p in enumerate(u.pins):
-                    pin = QTreeWidgetItem([f'Pin {p.number}', f'{p.name} | {p.function} | {p.pin_type} | {p.side}'])
-                    pin.setData(0, Qt.UserRole, ('pin', ui, pi))
-                    pins.addChild(pin)
-                texts = QTreeWidgetItem(['Text', str(len(u.texts))])
-                unit.addChild(texts)
-                for ti, t in enumerate(u.texts):
-                    text = QTreeWidgetItem([t.text[:30], f'{t.font_family} {t.font_size_grid:g}'])
-                    text.setData(0, Qt.UserRole, ('text', ui, ti))
-                    texts.addChild(text)
-                graphics = QTreeWidgetItem(['Graphics', str(len(u.graphics))])
-                unit.addChild(graphics)
-                for gi, g in enumerate(u.graphics):
-                    gr = QTreeWidgetItem([g.shape, f'{g.w:g} x {g.h:g}'])
-                    gr.setData(0, Qt.UserRole, ('graphic', ui, gi))
-                    graphics.addChild(gr)
-            root.setExpanded(True)
-        finally:
-            tree.setUpdatesEnabled(True)
+        root = QTreeWidgetItem([self.symbol.name, 'Split Symbol' if self.symbol.kind == SymbolKind.SPLIT.value else 'Single Symbol'])
+        tree.addTopLevelItem(root)
+        for ui, u in enumerate(self.symbol.units):
+            unit = QTreeWidgetItem([u.name, 'Unit / Symbol Part'])
+            unit.setData(0, Qt.UserRole, ('unit', ui, None))
+            root.addChild(unit)
+            body = QTreeWidgetItem(['Body', f'{u.body.width:g} x {u.body.height:g}'])
+            body.setData(0, Qt.UserRole, ('body', ui, None))
+            unit.addChild(body)
+            attrs = QTreeWidgetItem(['Attributes', 'Body'])
+            unit.addChild(attrs)
+            for k, v in u.body.attributes.items():
+                att = QTreeWidgetItem([k, f'{v} / visible={u.body.visible_attributes.get(k, False)}'])
+                attrs.addChild(att)
+            pins = QTreeWidgetItem(['Pins', str(len(u.pins))])
+            unit.addChild(pins)
+            for pi, p in enumerate(u.pins):
+                pin = QTreeWidgetItem([f'Pin {p.number}', f'{p.name} | {p.function} | {p.pin_type} | {p.side}'])
+                pin.setData(0, Qt.UserRole, ('pin', ui, pi))
+                pins.addChild(pin)
+            texts = QTreeWidgetItem(['Text', str(len(u.texts))])
+            unit.addChild(texts)
+            for ti, t in enumerate(u.texts):
+                text = QTreeWidgetItem([t.text[:30], f'{t.font_family} {t.font_size_grid:g}'])
+                text.setData(0, Qt.UserRole, ('text', ui, ti))
+                texts.addChild(text)
+            graphics = QTreeWidgetItem(['Graphics', str(len(u.graphics))])
+            unit.addChild(graphics)
+            for gi, g in enumerate(u.graphics):
+                gr = QTreeWidgetItem([g.shape, f'{g.w:g} x {g.h:g}'])
+                gr.setData(0, Qt.UserRole, ('graphic', ui, gi))
+                graphics.addChild(gr)
+        tree.expandAll()
+        tree.resizeColumnToContents(0)
+        tree.resizeColumnToContents(1)
 
     def _populate_split_symbol_tree(self):
-        """Fast split overview: list split parts for navigation, not every pin.
-
-        Expanding every pin of every split unit after a large import is expensive and
-        was one cause of the edit-mode freeze. Pin details are shown in the pin table
-        for the focused unit.
-        """
         tree = self.split_symbol_tree
-        tree.setUpdatesEnabled(False)
         tree.clear()
-        try:
-            for si, symbol in enumerate(self.library.symbols):
-                if symbol.kind != SymbolKind.SPLIT.value:
-                    continue
-                if si != self.library.current_symbol_index:
-                    # Keep non-active split symbols out of the live tree to avoid
-                    # background rebuilds while editing the focused symbol.
-                    continue
-                sym_item = QTreeWidgetItem([symbol.name, 'Split Symbol'])
-                sym_item.setData(0, Qt.UserRole, ('symbol', si, None))
-                tree.addTopLevelItem(sym_item)
-                for ui, u in enumerate(symbol.units):
-                    label = f'{len(u.pins)} pins'
-                    if ui == self.current_unit_index:
-                        label += '  [focused]'
-                    unit_item = QTreeWidgetItem([u.name, label])
-                    unit_item.setData(0, Qt.UserRole, ('split_unit', si, ui))
-                    sym_item.addChild(unit_item)
-                sym_item.setExpanded(True)
-        finally:
-            tree.setUpdatesEnabled(True)
+        for si, symbol in enumerate(self.library.symbols):
+            if symbol.kind != SymbolKind.SPLIT.value:
+                continue
+            sym_item = QTreeWidgetItem([symbol.name, 'Split Symbol'])
+            sym_item.setData(0, Qt.UserRole, ('symbol', si, None))
+            tree.addTopLevelItem(sym_item)
+            for ui, u in enumerate(symbol.units):
+                unit_item = QTreeWidgetItem([u.name, f'{len(u.pins)} pins'])
+                unit_item.setData(0, Qt.UserRole, ('split_unit', si, ui))
+                sym_item.addChild(unit_item)
+                for pi, pin in enumerate(u.pins):
+                    pin_item = QTreeWidgetItem([f'Pin {pin.number}', f'{pin.name} | {pin.function} | {pin.pin_type} | {pin.side}'])
+                    pin_item.setData(0, Qt.UserRole, ('split_pin', si, ui, pi))
+                    unit_item.addChild(pin_item)
+        tree.expandAll()
+        tree.resizeColumnToContents(0)
+        tree.resizeColumnToContents(1)
 
     def rebuild_pin_table(self):
         # Single Symbols: show pins of the currently selected single symbol only.
@@ -2979,6 +2980,7 @@ Use **File > Import PINMUX CSV** to import pin information from a CSV file. Afte
         self.refresh_timer.start(35 if visual_only else 80)
 
     def _scheduled_refresh(self):
+        self.enforce_symbol_size_limit(silent=True)
         if self._refresh_visual_only:
             self.update_current_unit_canvas_positions()
             self.update_attribute_items_for_unit()
@@ -3035,14 +3037,8 @@ Use **File > Import PINMUX CSV** to import pin information from a CSV file. Afte
         return min(xs), min(ys), max(xs), max(ys)
 
     def enforce_symbol_size_limit(self, silent=False):
-        """Do not auto-rescale imported or edited symbols.
-
-        Older builds silently scaled all units after import or during deferred refreshes
-        to fit the sheet preview. For large split symbols this caused a delayed resize
-        a few seconds after loading and also forced all split parts through expensive
-        geometry updates. Size changes are now explicit only: users can zoom/fit the
-        view manually without modifying symbol geometry.
-        """
+        # Never auto-scale imported or edited symbols.  The sheet/usable-area preview
+        # is only an orientation guide; it must not change the user's geometry.
         return True
 
     # ------------------------------------------------------------------ Actions
@@ -3216,6 +3212,48 @@ Use **File > Import PINMUX CSV** to import pin information from a CSV file. Afte
         elif not msgs and not silent:
             QMessageBox.information(self, 'Pin validation', 'Keine doppelten Pinnummern oder Pinnamen gefunden.')
         return not msgs
+
+    def _current_unit_bounds_grid(self):
+        u = self.current_unit
+        xs, ys = [], []
+        b = u.body
+        xs.extend([b.x, b.x + b.width]); ys.extend([b.y, b.y - b.height])
+        for p in u.pins:
+            xs.extend([p.x - p.length, p.x + p.length]); ys.append(p.y)
+        for t in u.texts:
+            xs.append(t.x); ys.append(t.y)
+        for t in getattr(u.body, 'attribute_texts', {}).values():
+            xs.append(t.x); ys.append(t.y)
+        for g in u.graphics:
+            xs.extend([g.x, g.x + g.w]); ys.extend([g.y, g.y - g.h])
+        if not xs:
+            return 0.0, 0.0, 0.0, 0.0
+        return min(xs), min(ys), max(xs), max(ys)
+
+    def _origin_anchor_from_bounds(self, bounds, mode: str):
+        x0, y0, x1, y1 = bounds
+        mapping = {
+            OriginMode.TOP_LEFT.value: (x0, y1),
+            OriginMode.TOP_RIGHT.value: (x1, y1),
+            OriginMode.BOTTOM_LEFT.value: (x0, y0),
+            OriginMode.BOTTOM_RIGHT.value: (x1, y0),
+            OriginMode.CENTER.value: ((x0 + x1) / 2.0, (y0 + y1) / 2.0),
+        }
+        return mapping.get(mode, mapping[OriginMode.CENTER.value])
+
+    def set_format_guide_to_active_origin(self):
+        """Refresh the sheet/recommended-area guide for the active origin.
+
+        The guide is now purely origin-driven: the crosshair is the selected
+        symbol origin, the red recommended drawing area is anchored at that
+        origin according to the selected direction, and the blue sheet preview is
+        centered around the red area.  No symbol bounds are used here, so the
+        guide can never cause late autoscaling, recentering, or split-unit global
+        movement.
+        """
+        self._format_guide_offset = (0.0, 0.0)
+        if hasattr(self, 'scene'):
+            self.scene.update()
 
     def zoom_to_fit_symbol(self):
         items = [i for i in self.scene.items() if i.data(0) not in ('ATTR_REF_DES', 'ATTR_BODY')]
@@ -3530,15 +3568,8 @@ Use **File > Import PINMUX CSV** to import pin information from a CSV file. Afte
 
     def change_unit(self, i):
         if i < 0: return
-        if i == self.current_unit_index:
-            return
-        self.current_unit_index = max(0, min(i, len(self.symbol.units) - 1))
-        # Switch focus only. Do not touch other split units.
-        self.rebuild_canvas_tabs()
-        self.rebuild_scene()
-        self.rebuild_tree()
-        self.rebuild_pin_table()
-        self.update_name_editors()
+        self.current_unit_index = i
+        self.rebuild_canvas_tabs(); self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table(); self.update_name_editors()
 
     def new_single_symbol(self):
         spec = self.ask_new_symbol_template(SymbolKind.SINGLE.value)
@@ -3728,6 +3759,36 @@ Use **File > Import PINMUX CSV** to import pin information from a CSV file. Afte
         }
         return mapping.get(mode, mapping[OriginMode.CENTER.value])
 
+    def shift_unit_geometry(self, unit: SymbolUnitModel, dx: float, dy: float):
+        unit.body.x += dx
+        unit.body.y += dy
+        for p in unit.pins:
+            p.x += dx; p.y += dy
+        for t in unit.texts:
+            t.x += dx; t.y += dy
+        for t in getattr(unit.body, 'attribute_texts', {}).values():
+            t.x += dx; t.y += dy
+        for g in unit.graphics:
+            g.x += dx; g.y += dy
+
+    def normalize_unit_origin(self, unit: SymbolUnitModel, mode: str):
+        # Put the selected origin anchor of exactly this unit at grid (0, 0).
+        # The red format guide is drawn relative to that origin, depending on the
+        # selected origin mode.  This keeps split-parts independent and prevents
+        # global origin-reset side effects.
+        ax, ay = self.body_anchor_point(unit.body, mode)
+        if abs(ax) > 1e-9 or abs(ay) > 1e-9:
+            self.shift_unit_geometry(unit, -ax, -ay)
+        self.dock_pins_to_body(unit)
+
+    def normalize_symbol_origins_for_import(self, symbol: SymbolModel):
+        mode = getattr(symbol, 'origin', OriginMode.CENTER.value) or OriginMode.CENTER.value
+        if mode not in [x.value for x in OriginMode]:
+            mode = OriginMode.CENTER.value
+            symbol.origin = mode
+        for unit in symbol.units:
+            self.normalize_unit_origin(unit, mode)
+
     def origin_mode_changed(self, mode: str):
         # Changing the anchor selection immediately re-aligns the current canvas.
         self.reset_origin_to_selected_anchor(mode)
@@ -3742,24 +3803,15 @@ Use **File > Import PINMUX CSV** to import pin information from a CSV file. Afte
             return
         self.push_undo_state()
         self.symbol.origin = mode
-        unit = self.current_unit
-        unit.body.x -= ax
-        unit.body.y -= ay
-        for p in unit.pins:
-            p.x -= ax; p.y -= ay
-        for t in unit.texts:
-            t.x -= ax; t.y -= ay
-        # Body/TBody attributes are rendered from body.attribute_texts and must
-        # follow Origo Reset exactly like pins, plain text and graphics, but only
-        # for the currently focused split part.
-        for t in getattr(unit.body, 'attribute_texts', {}).values():
-            t.x -= ax; t.y -= ay
-        for g in unit.graphics:
-            g.x -= ax; g.y -= ay
+        # Origin Reset is local to the active split part / current canvas only.
+        # Other split units must not be moved or recalculated while editing one unit.
+        self.shift_unit_geometry(self.current_unit, -ax, -ay)
+        self.dock_pins_to_body(self.current_unit)
         if hasattr(self, 'origin_combo'):
             self.origin_combo.blockSignals(True)
             self.origin_combo.setCurrentText(mode)
             self.origin_combo.blockSignals(False)
+        self.set_format_guide_to_active_origin()
         self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
         self.statusBar().showMessage(f'Origin auf {mode} nachgezogen.', 3000)
 
@@ -4209,6 +4261,10 @@ Use **File > Import PINMUX CSV** to import pin information from a CSV file. Afte
         p, _ = QFileDialog.getOpenFileName(self, 'Import Symbol JSON', '', 'JSON (*.json)')
         if not p: return
         s = load_symbol(p)
+        # Imported symbols keep their source scale.  Only their local origin is
+        # normalised per unit so each split part can be edited independently and
+        # starts in the correct drawing direction for the selected origin mode.
+        self.normalize_symbol_origins_for_import(s)
         s.name = self.library.unique_import_name(s.name)
         self.library.symbols.append(s)
         self.library.current_symbol_index = len(self.library.symbols) - 1

@@ -204,3 +204,7 @@ Imported snapshot from `Symbol_Wizard_51.zip`.
 
 Imported snapshot from `Symbol_Wizard_52.zip`.
 
+## v53
+
+Imported snapshot from `Symbol_Wizard_53.zip`.
+
