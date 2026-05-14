@@ -66,12 +66,9 @@ class MainWindow(QMainWindow):
         self.split_tabs = QTabWidget()
         self.split_tabs.currentChanged.connect(lambda i: self.change_symbol_from_tab(SymbolKind.SPLIT.value, i))
 
-        # Tree-oriented overview for the Symbols workspace. The former dedicated
-        # Pins tab is intentionally removed; pins are shown where they belong in
-        # the symbol hierarchy.
-        self.single_symbol_tree = QTreeWidget()
-        self.single_symbol_tree.setHeaderLabels(['Symbol / Object / Pin', 'Info'])
-        self.single_symbol_tree.itemClicked.connect(self.tree_clicked)
+        # Pin overview for the Symbols workspace. The complete object hierarchy stays
+        # in the lower Object Tree; the upper area is now a compact pin table.
+        self.single_pin_table = self._create_pin_overview_table()
 
         self.unit_tabs = QTabWidget()
         self.unit_tabs.currentChanged.connect(self.change_unit)
@@ -82,23 +79,16 @@ class MainWindow(QMainWindow):
         self.object_tree.setHeaderLabels(['Object', 'Info'])
         self.object_tree.itemClicked.connect(self.tree_clicked)
 
-        self.split_symbol_tree = QTreeWidget()
-        self.split_symbol_tree.setHeaderLabels(['Split Symbol / Pin', 'Info'])
-        self.split_symbol_tree.itemClicked.connect(self.tree_clicked)
+        self.split_pin_table = self._create_pin_overview_table()
 
         self.split_object_tree = QTreeWidget()
         self.split_object_tree.setHeaderLabels(['Object', 'Info'])
         self.split_object_tree.itemClicked.connect(self.tree_clicked)
 
-        self.pin_table = QTableWidget(0, 5)
-        self.pin_table.setHorizontalHeaderLabels(['Unit', 'Number', 'Name', 'Function', 'Type'])
-        self.pin_table.cellChanged.connect(self.pin_table_changed)
-        self.pin_table.horizontalHeader().setStretchLastSection(True)
-
         single_page = QWidget()
         single_layout = QVBoxLayout(single_page)
-        single_layout.addWidget(QLabel('Single Symbols'))
-        single_layout.addWidget(self.single_symbol_tree, 2)
+        single_layout.addWidget(QLabel('Pins of selected single symbol'))
+        single_layout.addWidget(self.single_pin_table, 2)
         single_layout.addWidget(QLabel('Object Tree'))
         single_layout.addWidget(self.object_tree)
 
@@ -112,8 +102,8 @@ class MainWindow(QMainWindow):
         info = QLabel('Verification for split symbols is performed across all units as one symbol.')
         info.setWordWrap(True)
         split_layout.addWidget(info)
-        split_layout.addWidget(QLabel('Split Symbol Tree'))
-        split_layout.addWidget(self.split_symbol_tree, 2)
+        split_layout.addWidget(QLabel('Pins of selected split part'))
+        split_layout.addWidget(self.split_pin_table, 2)
         split_layout.addWidget(QLabel('Object Tree'))
         split_layout.addWidget(self.split_object_tree, 2)
 
@@ -137,6 +127,35 @@ class MainWindow(QMainWindow):
         splitter.setSizes([360, 900, 380])
         self.setCentralWidget(splitter)
         self.scene.selectionChanged.connect(self.refresh_properties)
+
+    def _create_pin_overview_table(self):
+        table = QTableWidget(0, 6)
+        table.setHorizontalHeaderLabels(['Pin Number', 'Pin Name', 'Pin Function', 'Pin Type', 'Side', 'Inverted'])
+        table.cellChanged.connect(self.pin_table_changed)
+        table.cellClicked.connect(self.pin_table_clicked)
+        table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        table.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        table.horizontalHeader().setStretchLastSection(False)
+        table.verticalHeader().setVisible(False)
+        return table
+
+    def _autosize_table(self, table: QTableWidget):
+        table.resizeColumnsToContents()
+        table.resizeRowsToContents()
+        for col in range(table.columnCount()):
+            table.setColumnWidth(col, max(table.columnWidth(col) + 18, 90))
+
+    def _fill_pin_table(self, table: QTableWidget, rows):
+        table.blockSignals(True)
+        table.setRowCount(len(rows))
+        for r, (si, ui, pi, pin) in enumerate(rows):
+            values = [pin.number, pin.name, pin.function, pin.pin_type, pin.side, 'yes' if pin.inverted else 'no']
+            for c, v in enumerate(values):
+                it = QTableWidgetItem(str(v))
+                it.setData(Qt.UserRole, (si, ui, pi, c))
+                table.setItem(r, c, it)
+        table.blockSignals(False)
+        self._autosize_table(table)
 
     def _menu(self):
         mb = self.menuBar()
@@ -469,13 +488,11 @@ class MainWindow(QMainWindow):
             row += 1
 
     def rebuild_tree(self):
-        if hasattr(self, 'single_symbol_tree'):
-            self._populate_single_symbol_tree()
+        # Upper left areas show only pin tables; lower areas keep the object hierarchy.
         self._populate_current_object_tree(self.object_tree)
         if hasattr(self, 'split_object_tree'):
             self._populate_current_object_tree(self.split_object_tree)
-        if hasattr(self, 'split_symbol_tree'):
-            self._populate_split_symbol_tree()
+        self.rebuild_pin_table()
 
     def _populate_single_symbol_tree(self):
         """Tree for the Symbols workspace: single symbols with their pins and objects."""
@@ -585,23 +602,25 @@ class MainWindow(QMainWindow):
         tree.resizeColumnToContents(1)
 
     def rebuild_pin_table(self):
-        self.suspend = True
-        rows = sum(len(u.pins) for u in self.symbol.units)
-        self.pin_table.setRowCount(rows)
-        r = 0
-        for ui, u in enumerate(self.symbol.units):
-            for pi, p in enumerate(u.pins):
-                values = [u.name, p.number, p.name, p.function, p.pin_type]
-                for c, v in enumerate(values):
-                    it = QTableWidgetItem(str(v))
-                    it.setData(Qt.UserRole, (ui, pi, c))
-                    if c == 0:
-                        it.setFlags(it.flags() & ~Qt.ItemIsEditable)
-                    self.pin_table.setItem(r, c, it)
-                r += 1
-        self.suspend = False
-        self.pin_table.resizeColumnsToContents()
-        self.pin_table.resizeRowsToContents()
+        # Single Symbols: show pins of the currently selected single symbol only.
+        if hasattr(self, 'single_pin_table'):
+            rows = []
+            if self.symbol.kind == SymbolKind.SINGLE.value:
+                si = self.library.current_symbol_index
+                for ui, u in enumerate(self.symbol.units):
+                    for pi, pin in enumerate(u.pins):
+                        rows.append((si, ui, pi, pin))
+            self._fill_pin_table(self.single_pin_table, rows)
+
+        # Split Symbols: show only pins of the currently selected split part.
+        if hasattr(self, 'split_pin_table'):
+            rows = []
+            if self.symbol.kind == SymbolKind.SPLIT.value and self.symbol.units:
+                si = self.library.current_symbol_index
+                ui = max(0, min(self.current_unit_index, len(self.symbol.units) - 1))
+                for pi, pin in enumerate(self.symbol.units[ui].pins):
+                    rows.append((si, ui, pi, pin))
+            self._fill_pin_table(self.split_pin_table, rows)
 
     # ------------------------------------------------------------------ Properties
     def clear_properties(self):
@@ -1120,18 +1139,48 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------------ Navigation / tables
     def pin_table_changed(self, r, c):
-        if self.suspend: return
-        it = self.pin_table.item(r, c)
-        if not it: return
-        ui, pi, col = it.data(Qt.UserRole)
-        p = self.symbol.units[ui].pins[pi]
-        val = it.text()
-        if col == 1: p.number = val
-        elif col == 2: p.name = val
-        elif col == 3: p.function = val
-        elif col == 4: p.pin_type = val
+        table = self.sender()
+        if self.suspend or not isinstance(table, QTableWidget):
+            return
+        it = table.item(r, c)
+        if not it:
+            return
+        si, ui, pi, col = it.data(Qt.UserRole)
+        if si >= len(self.library.symbols):
+            return
+        sym = self.library.symbols[si]
+        if ui >= len(sym.units) or pi >= len(sym.units[ui].pins):
+            return
+        p = sym.units[ui].pins[pi]
+        val = it.text().strip()
+        if col == 0:
+            p.number = val
+        elif col == 1:
+            p.name = val
+        elif col == 2:
+            p.function = val
+        elif col == 3:
+            p.pin_type = val
+        elif col == 4:
+            p.side = val if val in [x.value for x in PinSide] else p.side
+        elif col == 5:
+            p.inverted = val.lower() in ('1', 'true', 'yes', 'ja', 'x')
         self.validate_pins(silent=True)
-        self.rebuild_scene(); self.rebuild_tree()
+        if si == self.library.current_symbol_index:
+            self.rebuild_scene(); self.rebuild_tree()
+
+    def pin_table_clicked(self, r, c):
+        table = self.sender()
+        if not isinstance(table, QTableWidget):
+            return
+        it = table.item(r, 0)
+        if not it:
+            return
+        si, ui, pi, _ = it.data(Qt.UserRole)
+        self.library.current_symbol_index = si
+        self.current_unit_index = ui
+        self.rebuild_symbol_tabs(); self.rebuild_canvas_tabs(); self.rebuild_unit_tabs(); self.rebuild_scene(); self.rebuild_tree(); self.update_name_editors()
+        self.select_model_in_scene(self.symbol.units[ui].pins[pi])
 
     def tree_clicked(self, item, col):
         data = item.data(0, Qt.UserRole)
