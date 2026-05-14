@@ -105,7 +105,7 @@ class SymbolModel:
 
 @dataclass
 class LibraryModel:
-    symbols: List[SymbolModel]=field(default_factory=lambda:[SymbolModel()])
+    symbols: List[SymbolModel]=field(default_factory=list)
     current_symbol_index: int=0
 
     def unique_symbol_name(self, base='Symbol') -> str:

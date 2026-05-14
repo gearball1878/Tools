@@ -1292,7 +1292,8 @@ class MainWindow(QMainWindow):
         self.resize(1600, 980)
         self._build_ui()
         self.rebuild_all()
-        QTimer.singleShot(0, self.zoom_to_fit_symbol)
+        if self.library.symbols:
+            QTimer.singleShot(0, self.zoom_to_fit_symbol)
 
     @property
     def symbol(self) -> SymbolModel:
@@ -1928,6 +1929,15 @@ Use **File > Import PINMUX CSV** to import pin information from a CSV file. Afte
 
     # ------------------------------------------------------------------ Rebuilds
     def rebuild_all(self):
+        if not self.library.symbols:
+            self.rebuild_symbol_tabs()
+            self.rebuild_canvas_tabs()
+            self.scene.clear()
+            self.rebuild_tree()
+            self.rebuild_pin_table()
+            self.refresh_properties()
+            self.statusBar().showMessage('No symbol loaded. Use File > New Symbol, New Split Symbol, Open, or Import.', 4000)
+            return
         self.rebuild_symbol_tabs()
         self.rebuild_canvas_tabs()
         self.rebuild_unit_tabs()
@@ -1987,6 +1997,10 @@ Use **File > Import PINMUX CSV** to import pin information from a CSV file. Afte
         # Remove all tabs without deleting the view widget.
         while self.canvas_tabs.count():
             self.canvas_tabs.removeTab(0)
+        if not self.library.symbols:
+            self.canvas_tabs.addTab(current_widget, 'No Symbol')
+            self.canvas_tabs.blockSignals(False)
+            return
         for idx, s in enumerate(self.library.symbols):
             self.canvas_tabs.addTab(current_widget if self.canvas_tabs.count() == self.library.current_symbol_index else QWidget(), self.canvas_label_for_symbol(s, idx))
         # Make sure the real canvas widget is placed at the current symbol index.
@@ -2393,6 +2407,9 @@ Use **File > Import PINMUX CSV** to import pin information from a CSV file. Afte
     def refresh_properties(self):
         if not self.clear_properties():
             return
+        if not self.library.symbols:
+            self.form.addRow(QLabel('No symbol loaded'))
+            return
         selected = [i for i in self.scene.selectedItems()]
         if not selected:
             self.form.addRow(QLabel('No selection'))
@@ -2421,6 +2438,8 @@ Use **File > Import PINMUX CSV** to import pin information from a CSV file. Afte
                 graphics = [i for i in selected if i.data(0) == 'GRAPHIC']
                 self.form.addRow(QLabel(f'<b>Multi-Edit: {len(graphics)} graphic objects</b>'))
                 self.form.addRow('Line width', self._dbl(float(self._common_graphic_value(graphics, 'line_width', 0.03) or 0.03), lambda v, items=graphics: self.set_selected_graphics_style(items, 'line_width', float(v)), .01, 1, .01))
+                if all(getattr(i.model, 'shape', '') == 'line' for i in graphics):
+                    self.form.addRow('Curve radius', self._dbl(float(self._common_model_value(graphics, 'curve_radius', 0.0) or 0.0), lambda v, items=graphics: self.set_selected_graphics_attr(items, 'curve_radius', float(v)), -100, 100, .1))
             else:
                 self.form.addRow(QLabel('Multi-edit is only available for PIN-only, TEXT/ATTRIBUTE-only or GRAPHIC-only selections.'))
             return
@@ -2800,6 +2819,17 @@ Use **File > Import PINMUX CSV** to import pin information from a CSV file. Afte
         self._selection_restore_ids = {id(g) for g in graphics}
         for g in graphics:
             setattr(g.style, attr, value)
+        self.update_current_unit_canvas_positions()
+        self.schedule_scene_refresh(visual_only=True)
+
+    def set_selected_graphics_attr(self, graphic_items, attr, value):
+        graphics = [getattr(i, 'model', None) for i in graphic_items if getattr(i, 'model', None) is not None and i.data(0) == 'GRAPHIC']
+        if not graphics or len(graphics) != len(graphic_items):
+            return
+        self.push_undo_state()
+        self._selection_restore_ids = {id(g) for g in graphics}
+        for g in graphics:
+            setattr(g, attr, value)
         self.update_current_unit_canvas_positions()
         self.schedule_scene_refresh(visual_only=True)
 
@@ -3712,15 +3742,46 @@ Use **File > Import PINMUX CSV** to import pin information from a CSV file. Afte
         self.redo_stack.clear()
         self.dirty = True
 
+    def _restore_active_symbol_and_unit_after_history(self, previous_symbol_index: int, previous_unit_index: int, previous_unit_name: str | None):
+        """Keep the visible split part stable after undo/redo.
+
+        Older history handling always reset current_unit_index to 0, which made
+        Ctrl+Z/Ctrl+Y jump to the first split part.  The history snapshot itself
+        already contains the current library state; this helper only restores the
+        user's active focus as far as the restored model still allows it.
+        """
+        if not self.library.symbols:
+            self.library.current_symbol_index = 0
+            self.current_unit_index = 0
+            return
+        self.library.current_symbol_index = max(0, min(previous_symbol_index, len(self.library.symbols) - 1))
+        units = self.library.symbols[self.library.current_symbol_index].units
+        if not units:
+            self.current_unit_index = 0
+            return
+        if previous_unit_name:
+            for idx, unit in enumerate(units):
+                if unit.name == previous_unit_name:
+                    self.current_unit_index = idx
+                    return
+        self.current_unit_index = max(0, min(previous_unit_index, len(units) - 1))
+
     def undo(self):
         self.set_tool(DrawTool.SELECT.value)
         if not self.undo_stack:
             self.statusBar().showMessage('Undo-Historie ist leer.', 2000)
             return
+        prev_symbol_index = self.library.current_symbol_index
+        prev_unit_index = self.current_unit_index
+        prev_unit_name = None
+        try:
+            prev_unit_name = self.library.symbols[prev_symbol_index].units[prev_unit_index].name
+        except Exception:
+            pass
         self._history_guard = True
         self.redo_stack.append(copy.deepcopy(self.library))
         self.library = self.undo_stack.pop()
-        self.current_unit_index = 0
+        self._restore_active_symbol_and_unit_after_history(prev_symbol_index, prev_unit_index, prev_unit_name)
         self._history_guard = False
         self.rebuild_all()
 
@@ -3729,10 +3790,17 @@ Use **File > Import PINMUX CSV** to import pin information from a CSV file. Afte
         if not self.redo_stack:
             self.statusBar().showMessage('Redo-Historie ist leer.', 2000)
             return
+        prev_symbol_index = self.library.current_symbol_index
+        prev_unit_index = self.current_unit_index
+        prev_unit_name = None
+        try:
+            prev_unit_name = self.library.symbols[prev_symbol_index].units[prev_unit_index].name
+        except Exception:
+            pass
         self._history_guard = True
         self.undo_stack.append(copy.deepcopy(self.library))
         self.library = self.redo_stack.pop()
-        self.current_unit_index = 0
+        self._restore_active_symbol_and_unit_after_history(prev_symbol_index, prev_unit_index, prev_unit_name)
         self._history_guard = False
         self.rebuild_all()
 
