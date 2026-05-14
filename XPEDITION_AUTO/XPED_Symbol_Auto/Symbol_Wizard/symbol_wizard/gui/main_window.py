@@ -203,6 +203,23 @@ class TemplateEditorDialog(QDialog):
                 it.flip_vertical()
         self.live_refresh()
 
+    def set_selected_text_alignment(self, h_align=None, v_align=None):
+        self.push_undo_state()
+        for it in self.scene.selectedItems():
+            if it.data(0) == 'TEXT' and hasattr(it, 'model'):
+                if h_align is not None:
+                    it.model.h_align = h_align
+                if v_align is not None:
+                    it.model.v_align = v_align
+                owner = getattr(it.model, '_attribute_owner', None)
+                key = getattr(it.model, '_attribute_key', None)
+                if owner is not None and key:
+                    if not hasattr(owner, 'attribute_h_align') or owner.attribute_h_align is None: owner.attribute_h_align = {}
+                    if not hasattr(owner, 'attribute_v_align') or owner.attribute_v_align is None: owner.attribute_v_align = {}
+                    owner.attribute_h_align[key] = getattr(it.model, 'h_align', 'left')
+                    owner.attribute_v_align[key] = getattr(it.model, 'v_align', 'center')
+        self.live_refresh()
+
     def load_selected_template(self):
         name = self.template_combo.currentText()
         if not name: return
@@ -383,7 +400,7 @@ class TemplateEditorDialog(QDialog):
         kind = item.data(0)
         selectable = self.selection_enabled.get(kind, True)
         item.setFlag(QGraphicsItem.ItemIsSelectable, selectable)
-        item.setFlag(QGraphicsItem.ItemIsMovable, selectable and kind not in ('ATTR_REF_DES', 'ATTR_BODY'))
+        item.setFlag(QGraphicsItem.ItemIsMovable, selectable)
         # Disabled object classes must not intercept mouse clicks. This makes
         # Custom selection behave like the Template Canvas also in the Wizard.
         try:
@@ -456,17 +473,31 @@ class TemplateEditorDialog(QDialog):
         ref = b.attributes.get('RefDes', '')
         if b.visible_attributes.get('RefDes', False):
             label = ref if str(ref).strip() else 'RefDes'
-            txt = TextItem(TextModel(text=label, x=b.x, y=b.y + 1, font_family=b.refdes_font.family, font_size_grid=b.refdes_font.size_grid, color=b.refdes_font.color), self)
-            txt.setData(0, 'ATTR_REF_DES'); txt.setZValue(-1)
-            txt.setFlag(QGraphicsItem.ItemIsSelectable, False); txt.setFlag(QGraphicsItem.ItemIsMovable, False)
+            pos = getattr(b, 'attribute_positions', {}).get('RefDes', (b.x, b.y + 1))
+            tm = TextModel(text=label, x=pos[0], y=pos[1], font_family=b.refdes_font.family, font_size_grid=b.refdes_font.size_grid, color=b.refdes_font.color)
+            tm.rotation = getattr(b, 'attribute_rotations', {}).get('RefDes', 0.0)
+            tm.scale_x = getattr(b, 'attribute_scale_x', {}).get('RefDes', 1.0)
+            tm.scale_y = getattr(b, 'attribute_scale_y', {}).get('RefDes', 1.0)
+            tm.h_align = getattr(b, 'attribute_h_align', {}).get('RefDes', 'left')
+            tm.v_align = getattr(b, 'attribute_v_align', {}).get('RefDes', 'center')
+            tm._attribute_owner = b; tm._attribute_key = 'RefDes'
+            txt = TextItem(tm, self)
+            txt.setData(0, 'TEXT'); txt.setData(1, 'ATTR_REF_DES'); txt.setZValue(2)
             self.scene.addItem(txt)
         for k, v in b.attributes.items():
             if k == 'RefDes' or not b.visible_attributes.get(k, False):
                 continue
             label = f'{k}: {v}' if str(v).strip() else str(k)
-            txt = TextItem(TextModel(text=label, x=b.x, y=b.y - b.height - row, font_family=b.attribute_font.family, font_size_grid=b.attribute_font.size_grid, color=b.attribute_font.color), self)
-            txt.setData(0, 'ATTR_BODY'); txt.setZValue(-1)
-            txt.setFlag(QGraphicsItem.ItemIsSelectable, False); txt.setFlag(QGraphicsItem.ItemIsMovable, False)
+            pos = getattr(b, 'attribute_positions', {}).get(k, (b.x, b.y - b.height - row))
+            tm = TextModel(text=label, x=pos[0], y=pos[1], font_family=b.attribute_font.family, font_size_grid=b.attribute_font.size_grid, color=b.attribute_font.color)
+            tm.rotation = getattr(b, 'attribute_rotations', {}).get(k, 0.0)
+            tm.scale_x = getattr(b, 'attribute_scale_x', {}).get(k, 1.0)
+            tm.scale_y = getattr(b, 'attribute_scale_y', {}).get(k, 1.0)
+            tm.h_align = getattr(b, 'attribute_h_align', {}).get(k, 'left')
+            tm.v_align = getattr(b, 'attribute_v_align', {}).get(k, 'center')
+            tm._attribute_owner = b; tm._attribute_key = k
+            txt = TextItem(tm, self)
+            txt.setData(0, 'TEXT'); txt.setData(1, 'ATTR_BODY'); txt.setZValue(2)
             self.scene.addItem(txt)
             row += 1
 
@@ -486,6 +517,23 @@ class TemplateEditorDialog(QDialog):
         for item in self.scene.items():
             if item.data(0) in ('BODY','PIN','TEXT','GRAPHIC') and self.selection_enabled.get(item.data(0), True): item.setSelected(True)
         self.refresh_properties()
+    def set_selected_text_alignment(self, h_align=None, v_align=None):
+        self.push_undo_state()
+        for it in self.scene.selectedItems():
+            if it.data(0) == 'TEXT' and hasattr(it, 'model'):
+                if h_align is not None:
+                    it.model.h_align = h_align
+                if v_align is not None:
+                    it.model.v_align = v_align
+                owner = getattr(it.model, '_attribute_owner', None)
+                key = getattr(it.model, '_attribute_key', None)
+                if owner is not None and key:
+                    if not hasattr(owner, 'attribute_h_align') or owner.attribute_h_align is None: owner.attribute_h_align = {}
+                    if not hasattr(owner, 'attribute_v_align') or owner.attribute_v_align is None: owner.attribute_v_align = {}
+                    owner.attribute_h_align[key] = getattr(it.model, 'h_align', 'left')
+                    owner.attribute_v_align[key] = getattr(it.model, 'v_align', 'center')
+        self.schedule_scene_refresh(visual_only=True)
+
     def copy_selected(self):
         self.set_tool(DrawTool.SELECT.value)
         self.clipboard_is_cut = False
@@ -537,7 +585,7 @@ class TemplateEditorDialog(QDialog):
         kind = item.data(0)
         selectable = self.selection_enabled.get(kind, True)
         item.setFlag(QGraphicsItem.ItemIsSelectable, selectable)
-        item.setFlag(QGraphicsItem.ItemIsMovable, selectable and kind not in ('ATTR_REF_DES', 'ATTR_BODY'))
+        item.setFlag(QGraphicsItem.ItemIsMovable, selectable)
         # Disabled object classes must not intercept mouse clicks. This makes
         # Custom selection behave like the Template Canvas also in the Wizard.
         try:
@@ -815,11 +863,14 @@ class MainWindow(QMainWindow):
             if sc:
                 a.setShortcut(QKeySequence(sc))
             edit_menu.addAction(a)
+            if label in ('Redo', 'Paste', 'Delete'):
+                edit_menu.addSeparator()
 
         tools_menu = mb.addMenu('&Tools')
         a = QAction('Edit Symbol Templates', self)
         a.triggered.connect(self.edit_symbol_templates)
         tools_menu.addAction(a)
+        tools_menu.addSeparator()
 
         view_menu = mb.addMenu('&View')
         for label, fn, sc in [
@@ -1160,18 +1211,34 @@ class MainWindow(QMainWindow):
         b = u.body
         ref = b.attributes.get('RefDes', '')
         if b.visible_attributes.get('RefDes', False):
-            txt = TextItem(TextModel(text=(ref if str(ref).strip() else 'RefDes'), x=b.x, y=b.y + 1, font_family=b.refdes_font.family, font_size_grid=b.refdes_font.size_grid, color=b.refdes_font.color), self)
-            txt.setFlag(QGraphicsItem.ItemIsMovable, False); txt.setFlag(QGraphicsItem.ItemIsSelectable, False); txt.setZValue(-1)
-            txt.setData(0, 'ATTR_REF_DES')
+            pos = getattr(b, 'attribute_positions', {}).get('RefDes', (b.x, b.y + 1))
+            tm = TextModel(text=(ref if str(ref).strip() else 'RefDes'), x=pos[0], y=pos[1], font_family=b.refdes_font.family, font_size_grid=b.refdes_font.size_grid, color=b.refdes_font.color)
+            tm.rotation = getattr(b, 'attribute_rotations', {}).get('RefDes', 0.0)
+            tm.scale_x = getattr(b, 'attribute_scale_x', {}).get('RefDes', 1.0)
+            tm.scale_y = getattr(b, 'attribute_scale_y', {}).get('RefDes', 1.0)
+            tm.h_align = getattr(b, 'attribute_h_align', {}).get('RefDes', 'left')
+            tm.v_align = getattr(b, 'attribute_v_align', {}).get('RefDes', 'center')
+            tm._attribute_owner = b; tm._attribute_key = 'RefDes'
+            txt = TextItem(tm, self)
+            txt.setZValue(2)
+            txt.setData(0, 'TEXT'); txt.setData(1, 'ATTR_REF_DES')
             self.scene.addItem(txt)
         row = 1
         for k, v in b.attributes.items():
             if k == 'RefDes' or not b.visible_attributes.get(k, False):
                 continue
             label = f'{k}: {v}' if str(v).strip() else str(k)
-            txt = TextItem(TextModel(text=label, x=b.x, y=b.y - b.height - row, font_family=b.attribute_font.family, font_size_grid=b.attribute_font.size_grid, color=b.attribute_font.color), self)
-            txt.setFlag(QGraphicsItem.ItemIsMovable, False); txt.setFlag(QGraphicsItem.ItemIsSelectable, False); txt.setZValue(-1)
-            txt.setData(0, 'ATTR_BODY')
+            pos = getattr(b, 'attribute_positions', {}).get(k, (b.x, b.y - b.height - row))
+            tm = TextModel(text=label, x=pos[0], y=pos[1], font_family=b.attribute_font.family, font_size_grid=b.attribute_font.size_grid, color=b.attribute_font.color)
+            tm.rotation = getattr(b, 'attribute_rotations', {}).get(k, 0.0)
+            tm.scale_x = getattr(b, 'attribute_scale_x', {}).get(k, 1.0)
+            tm.scale_y = getattr(b, 'attribute_scale_y', {}).get(k, 1.0)
+            tm.h_align = getattr(b, 'attribute_h_align', {}).get(k, 'left')
+            tm.v_align = getattr(b, 'attribute_v_align', {}).get(k, 'center')
+            tm._attribute_owner = b; tm._attribute_key = k
+            txt = TextItem(tm, self)
+            txt.setZValue(2)
+            txt.setData(0, 'TEXT'); txt.setData(1, 'ATTR_BODY')
             self.scene.addItem(txt)
             row += 1
 
@@ -1180,7 +1247,7 @@ class MainWindow(QMainWindow):
         kind = item.data(0)
         selectable = self.selection_enabled.get(kind, True)
         item.setFlag(QGraphicsItem.ItemIsSelectable, selectable)
-        item.setFlag(QGraphicsItem.ItemIsMovable, selectable and kind not in ('ATTR_REF_DES', 'ATTR_BODY'))
+        item.setFlag(QGraphicsItem.ItemIsMovable, selectable)
         # Disabled object classes must not intercept mouse clicks. This makes
         # Custom selection behave like the Template Canvas also in the Wizard.
         try:
@@ -1681,7 +1748,7 @@ class MainWindow(QMainWindow):
         """Regenerate body-owned attribute text only; keeps normal objects selected and avoids stale text remnants."""
         selected_ids = self._capture_selection_ids()
         for item in list(self.scene.items()):
-            if item.data(0) in ('ATTR_REF_DES', 'ATTR_BODY'):
+            if item.data(1) in ('ATTR_REF_DES', 'ATTR_BODY'):
                 self.scene.removeItem(item)
         self.add_attribute_text_items(self.current_unit)
         for item in self.scene.items():

@@ -54,6 +54,13 @@ class SymbolView(QGraphicsView):
         menu.addAction('Rotate CW 15°', lambda: self.window.rotate_selected(15))
         menu.addAction('Flip Horizontal', self.window.flip_selected_horizontal)
         menu.addAction('Flip Vertical', self.window.flip_selected_vertical)
+        align_menu = menu.addMenu('Alignment')
+        h_menu = align_menu.addMenu('Horizontal')
+        for lab, val in [('Left', 'left'), ('Center', 'center'), ('Right', 'right')]:
+            h_menu.addAction(lab, lambda checked=False, v=val: self.window.set_selected_text_alignment(h_align=v))
+        v_menu = align_menu.addMenu('Vertical')
+        for lab, val in [('Upper', 'upper'), ('Center', 'center'), ('Lower', 'lower')]:
+            v_menu.addAction(lab, lambda checked=False, v=val: self.window.set_selected_text_alignment(v_align=v))
         menu.addSeparator()
         menu.addAction('Undo', self.window.undo)
         menu.addAction('Redo', self.window.redo)
