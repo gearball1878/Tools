@@ -145,7 +145,7 @@ Features:
 
 - Shows all pins across all split parts/units of a split symbol.
 - Filter by unit, pin number, pin name, pin function, pin type, inverted state, and visibility columns.
-- Column filters are embedded as the first table row directly under the matching column header.
+- Column filters are embedded as the first table row directly under the matching column header. Text columns use text fields; boolean columns such as **Inverted**, **Show #**, **Show Name**, and **Show Function** use dropdown filters.
 - Sort by clicking table headers.
 - Mark selected or filtered rows for batch operations.
 - Bulk-edit display visibility for:
@@ -178,6 +178,6 @@ Display visibility and edited Pin Function values are stored in the pin model. M
 
 ### Split Pin Manager: header filters and inverted pins
 
-Open **Tools → Split Pin Manager / Multi-Edit Pins** to review every pin of the current split symbol in one table. The global filter searches across Unit, Pin Number, Pin Name, Pin Function, Type, and Inverted state. In addition, every relevant table column has its own filter field in the first table row directly below that column header. Active column filters are combined, so you can narrow the table by unit, type, name fragment, visibility, or `yes`/`no` in the **Inverted** column. Use **Marked only** to restrict the result to already marked rows.
+Open **Tools → Split Pin Manager / Multi-Edit Pins** to review every pin of the current split symbol in one table. The global filter searches across Unit, Pin Number, Pin Name, Pin Function, Type, and Inverted state. In addition, every relevant table column has its own filter field in the first table row directly below that column header. Active column filters are combined, so you can narrow the table by unit, type, name fragment, visibility using **All / Shown / Hidden** dropdowns, or inverted pins using **All / Inverted / Not inverted** in the **Inverted** column. Use **Marked only** to restrict the result to already marked rows.
 
 The same dialog can bulk-edit visibility of Pin Number, Pin Name, and Pin Function, can bulk-edit Pin Function text, and can set pins to **Inverted** or **Not inverted** for marked, filtered, or all pins.

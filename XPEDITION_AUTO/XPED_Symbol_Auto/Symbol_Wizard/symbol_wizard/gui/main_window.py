@@ -260,14 +260,25 @@ class SplitPinManagerDialog(QDialog):
             self.table.setItem(0, col, item)
             if col == self.COL_MARK:
                 continue
-            edit = QLineEdit()
-            edit.setPlaceholderText(placeholders.get(col, ''))
-            edit.setClearButtonEnabled(True)
-            edit.setFrame(False)
-            edit.setContentsMargins(2, 0, 2, 0)
-            edit.textChanged.connect(self.apply_filter)
-            self.column_filters[col] = edit
-            self.table.setCellWidget(0, col, edit)
+            if col in (self.COL_INVERTED, self.COL_SHOW_NUMBER, self.COL_SHOW_NAME, self.COL_SHOW_FUNCTION):
+                combo = QComboBox()
+                combo.setFrame(False)
+                if col == self.COL_INVERTED:
+                    combo.addItems(['All', 'Inverted', 'Not inverted'])
+                else:
+                    combo.addItems(['All', 'Shown', 'Hidden'])
+                combo.currentTextChanged.connect(lambda *_: self.apply_filter())
+                self.column_filters[col] = combo
+                self.table.setCellWidget(0, col, combo)
+            else:
+                edit = QLineEdit()
+                edit.setPlaceholderText(placeholders.get(col, ''))
+                edit.setClearButtonEnabled(True)
+                edit.setFrame(False)
+                edit.setContentsMargins(2, 0, 2, 0)
+                edit.textChanged.connect(self.apply_filter)
+                self.column_filters[col] = edit
+                self.table.setCellWidget(0, col, edit)
 
     def _is_filter_row(self, row):
         return row == 0
@@ -404,8 +415,11 @@ class SplitPinManagerDialog(QDialog):
 
     def clear_filters(self):
         self.filter_edit.clear()
-        for edit in getattr(self, 'column_filters', {}).values():
-            edit.clear()
+        for widget in getattr(self, 'column_filters', {}).values():
+            if isinstance(widget, QComboBox):
+                widget.setCurrentIndex(0)
+            else:
+                widget.clear()
         self.only_marked.setChecked(False)
         self.apply_filter()
 
@@ -413,16 +427,31 @@ class SplitPinManagerDialog(QDialog):
         text = self.filter_edit.text().strip().lower()
         marked_only = self.only_marked.isChecked()
         column_terms = []
-        for col, edit in getattr(self, 'column_filters', {}).items():
-            term = edit.text().strip().lower()
-            if term:
-                column_terms.append((col, term))
+        bool_terms = []
+        for col, widget in getattr(self, 'column_filters', {}).items():
+            if isinstance(widget, QComboBox):
+                choice = widget.currentText().strip().lower()
+                if choice and choice != 'all':
+                    bool_terms.append((col, choice))
+            else:
+                term = widget.text().strip().lower()
+                if term:
+                    column_terms.append((col, term))
         for r in range(self.table.rowCount()):
             if self._is_filter_row(r):
                 self.table.setRowHidden(r, False)
                 continue
             text_ok = not text or text in self._row_text(r)
             column_ok = all(term in self._cell_text(r, col) for col, term in column_terms)
+            for col, choice in bool_terms:
+                cell = self._cell_text(r, col)
+                if col == self.COL_INVERTED:
+                    expected = 'yes' if choice == 'inverted' else 'no'
+                else:
+                    expected = 'yes' if choice == 'shown' else 'no'
+                if cell != expected:
+                    column_ok = False
+                    break
             marked_ok = not marked_only or self._is_marked(r)
             filter_ok = text_ok and column_ok
             ok = filter_ok and marked_ok
