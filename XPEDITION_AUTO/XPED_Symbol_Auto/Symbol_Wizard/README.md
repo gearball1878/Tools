@@ -151,9 +151,15 @@ Features:
   - Pin Number
   - Pin Name
   - Pin Function
+- Bulk-edit the **Pin Function Text** for marked, filtered, or all pins:
+  - `Unchanged` leaves existing functions untouched.
+  - `Set to text` writes the entered function text to every target pin.
+  - `Clear` removes the function text.
+  - `Copy from Pin Name` copies each pin's current Pin Name into Pin Function.
+  - `Copy from Pin Number` copies each pin's current Pin Number into Pin Function.
 - Apply bulk changes to marked pins, filtered pins, or all pins.
 - Double-click any row to jump to the corresponding split part and select the pin on the canvas.
-- The bulk editor at the bottom keeps every attribute label next to its matching dropdown: **Pin Number**, **Pin Name**, and **Pin Function** can each be set to `Unchanged`, `Show`, or `Hide`.
+- The bulk editor at the bottom keeps every attribute label next to its matching control. **Show #**, **Show Name**, and **Show Function** can each be set to `Unchanged`, `Show`, or `Hide`; **Pin Function Text** controls the actual function value.
 
 Typical workflow:
 
@@ -161,7 +167,8 @@ Typical workflow:
 2. Filter the table, for example by bank, unit name, `GROUND`, `POWER`, or a pin-name fragment.
 3. Mark selected rows or mark all filtered rows.
 4. Set the desired visibility dropdowns in the bulk area.
-5. Apply the change to marked, filtered, or all pins.
-6. Double-click a row whenever you want to jump back to that pin on the canvas.
+5. Optionally choose a **Pin Function Text** operation, for example `Copy from Pin Name` or `Set to text`.
+6. Apply the change to marked, filtered, or all pins.
+7. Double-click a row whenever you want to jump back to that pin on the canvas.
 
-This display visibility is stored in the pin model and is also respected by Mentor export/import workflows where applicable.
+Display visibility and edited Pin Function values are stored in the pin model. Mentor export writes the visible pin label as the native `L` record and writes Pin Function as an invisible pin `A ... PINFUNCTION=...` attribute using the Pin Name label coordinates.

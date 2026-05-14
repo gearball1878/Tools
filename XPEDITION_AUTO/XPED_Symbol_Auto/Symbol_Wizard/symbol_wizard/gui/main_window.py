@@ -166,15 +166,18 @@ class SplitPinManagerDialog(QDialog):
         mark_row.addStretch(1)
         layout.addLayout(mark_row)
 
-        bulk_box = QGroupBox('Bulk edit display attributes')
-        bulk = QHBoxLayout(bulk_box)
-        bulk.setContentsMargins(8, 8, 8, 8)
-        bulk.setSpacing(12)
+        bulk_box = QGroupBox('Bulk edit pins')
+        bulk_outer = QVBoxLayout(bulk_box)
+        bulk_outer.setContentsMargins(8, 8, 8, 8)
+        bulk_outer.setSpacing(8)
+
+        visibility_row = QHBoxLayout()
+        visibility_row.setSpacing(12)
         self.show_number_combo = self._tri_combo()
         self.show_name_combo = self._tri_combo()
         self.show_function_combo = self._tri_combo()
 
-        def add_bulk_pair(label_text, combo):
+        def add_bulk_pair(target_layout, label_text, combo):
             pair = QHBoxLayout()
             pair.setContentsMargins(0, 0, 0, 0)
             pair.setSpacing(4)
@@ -185,19 +188,35 @@ class SplitPinManagerDialog(QDialog):
             pair.addWidget(combo)
             container = QWidget()
             container.setLayout(pair)
-            bulk.addWidget(container)
+            target_layout.addWidget(container)
 
-        add_bulk_pair('Pin Number', self.show_number_combo)
-        add_bulk_pair('Pin Name', self.show_name_combo)
-        add_bulk_pair('Pin Function', self.show_function_combo)
-        bulk.addSpacing(10)
+        add_bulk_pair(visibility_row, 'Show #', self.show_number_combo)
+        add_bulk_pair(visibility_row, 'Show Name', self.show_name_combo)
+        add_bulk_pair(visibility_row, 'Show Function', self.show_function_combo)
+        visibility_row.addStretch(1)
+        bulk_outer.addLayout(visibility_row)
+
+        function_row = QHBoxLayout()
+        function_row.setSpacing(8)
+        self.function_edit_combo = QComboBox()
+        self.function_edit_combo.addItems(['Unchanged', 'Set to text', 'Clear', 'Copy from Pin Name', 'Copy from Pin Number'])
+        self.function_edit_combo.setMinimumWidth(180)
+        self.function_edit_text = QLineEdit()
+        self.function_edit_text.setPlaceholderText('New Pin Function')
+        self.function_edit_text.setMinimumWidth(260)
+        self.function_edit_text.setEnabled(False)
+        self.function_edit_combo.currentTextChanged.connect(lambda text: self.function_edit_text.setEnabled(text == 'Set to text'))
+        function_row.addWidget(QLabel('Pin Function Text'))
+        function_row.addWidget(self.function_edit_combo)
+        function_row.addWidget(self.function_edit_text, 1)
+        function_row.addSpacing(10)
         for label, slot in [
             ('Apply to marked', self.apply_bulk_marked),
             ('Apply to filtered', self.apply_bulk_filtered),
             ('Apply to all pins', self.apply_bulk_all),
         ]:
-            b = QPushButton(label); b.clicked.connect(slot); bulk.addWidget(b)
-        bulk.addStretch(1)
+            b = QPushButton(label); b.clicked.connect(slot); function_row.addWidget(b)
+        bulk_outer.addLayout(function_row)
         layout.addWidget(bulk_box)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Close)
@@ -343,9 +362,29 @@ class SplitPinManagerDialog(QDialog):
                 values[attr] = False
         return values
 
+    def _function_edit_mode(self):
+        try:
+            return self.function_edit_combo.currentText()
+        except Exception:
+            return 'Unchanged'
+
+    def _new_function_value(self, pin):
+        mode = self._function_edit_mode()
+        if mode == 'Set to text':
+            return self.function_edit_text.text()
+        if mode == 'Clear':
+            return ''
+        if mode == 'Copy from Pin Name':
+            return pin.name
+        if mode == 'Copy from Pin Number':
+            return pin.number
+        return None
+
     def _apply_bulk_to_rows(self, rows):
         values = self._bulk_values()
-        if not values:
+        function_mode = self._function_edit_mode()
+        function_change = function_mode != 'Unchanged'
+        if not values and not function_change:
             return
         pins = []
         for r in rows:
@@ -358,6 +397,8 @@ class SplitPinManagerDialog(QDialog):
         for pin in pins:
             for attr, value in values.items():
                 setattr(pin, attr, value)
+            if function_change:
+                pin.function = self._new_function_value(pin)
         self.reload()
         self.main.rebuild_scene(); self.main.rebuild_pin_table(); self.main.refresh_properties()
 
