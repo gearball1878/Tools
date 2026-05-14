@@ -21,7 +21,9 @@ class MainWindow(QMainWindow):
         self.draw_tool = DrawTool.SELECT.value
         self.clipboard: list[tuple[str, object]] = []
         self.suspend = False
+        self._selection_restore_ids: set[int] = set()
         self.default_color = (0, 0, 0)
+        self._refresh_visual_only = False
         self.refresh_timer = QTimer(self)
         self.refresh_timer.setSingleShot(True)
         self.refresh_timer.timeout.connect(self._scheduled_refresh)
@@ -273,21 +275,50 @@ class MainWindow(QMainWindow):
         self.add_unit_button.setEnabled(self.symbol.kind == SymbolKind.SPLIT.value)
         self.unit_tabs.blockSignals(False)
 
+    def _capture_selection_ids(self):
+        ids = set()
+        for item in self.scene.selectedItems():
+            model = getattr(item, 'model', None)
+            if model is not None:
+                ids.add(id(model))
+        return ids
+
+    def _restore_or_select_item(self, item, selected_ids):
+        model = getattr(item, 'model', None)
+        if model is not None and id(model) in selected_ids:
+            item.setSelected(True)
+
     def rebuild_scene(self):
+        selected_ids = self._selection_restore_ids or self._capture_selection_ids()
+        self._selection_restore_ids = set()
         self.scene.blockSignals(True)
         self.scene.clear()
         u = self.current_unit
         self.dock_pins_to_body(u)
-        self.scene.addItem(BodyItem(u.body, self))
+
+        body_item = BodyItem(u.body, self)
+        self.scene.addItem(body_item)
+        self._restore_or_select_item(body_item, selected_ids)
+
         self.add_attribute_text_items(u)
         for g in u.graphics:
-            self.scene.addItem(GraphicItem(g, self))
+            item = GraphicItem(g, self)
+            self.scene.addItem(item)
+            self._restore_or_select_item(item, selected_ids)
         for p in u.pins:
-            self.scene.addItem(PinItem(p, self))
+            item = PinItem(p, self)
+            self.scene.addItem(item)
+            self._restore_or_select_item(item, selected_ids)
         for t in u.texts:
-            self.scene.addItem(TextItem(t, self))
+            item = TextItem(t, self)
+            self.scene.addItem(item)
+            self._restore_or_select_item(item, selected_ids)
         self.scene.update()
         self.scene.blockSignals(False)
+        self.refresh_properties()
+
+    def select_model_after_rebuild(self, model):
+        self._selection_restore_ids = {id(model)}
 
     def add_attribute_text_items(self, u: SymbolUnitModel):
         b = u.body
@@ -510,13 +541,18 @@ class MainWindow(QMainWindow):
         self.rebuild_pin_table()
 
     def schedule_scene_refresh(self, visual_only=False):
+        # Keep selected canvas objects selected during deferred refreshes.
+        self._selection_restore_ids = self._capture_selection_ids()
+        self._refresh_visual_only = bool(visual_only)
         self.refresh_timer.start(35 if visual_only else 80)
 
     def _scheduled_refresh(self):
         self.enforce_symbol_size_limit(silent=True)
+        # Full rebuild is needed after property/model changes. Selection is restored by model id.
         self.rebuild_scene()
         self.rebuild_tree()
         self.rebuild_pin_table()
+        self._refresh_visual_only = False
 
     # ------------------------------------------------------------------ Grouping / constraints
     def move_current_unit_group(self, dx: float, dy: float, source_body=None):
@@ -616,11 +652,18 @@ class MainWindow(QMainWindow):
         p.x = self.current_unit.body.x if side == PinSide.LEFT.value else self.current_unit.body.x + self.current_unit.body.width
         self.current_unit.pins.append(p)
         self.validate_pins(silent=True)
+        self.select_model_after_rebuild(p)
         self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
 
     def add_graphic(self, tool, x, y):
         shape = {DrawTool.LINE.value: 'line', DrawTool.RECT.value: 'rect', DrawTool.ELLIPSE.value: 'ellipse'}[tool]
-        self.current_unit.graphics.append(GraphicModel(shape=shape, x=x, y=y, style=StyleModel(stroke=self.default_color, line_width=self.line_width.value(), line_style=self.line_style.currentText())))
+        if shape == 'line':
+            # Linien werden initial gerade eingefügt: horizontal, auf Raster, Länge 2 Grid.
+            model = GraphicModel(shape=shape, x=x, y=y, w=2.0, h=0.0, style=StyleModel(stroke=self.default_color, line_width=self.line_width.value(), line_style=self.line_style.currentText()))
+        else:
+            model = GraphicModel(shape=shape, x=x, y=y, style=StyleModel(stroke=self.default_color, line_width=self.line_width.value(), line_style=self.line_style.currentText()))
+        self.current_unit.graphics.append(model)
+        self.select_model_after_rebuild(model)
         self.rebuild_scene(); self.rebuild_tree()
 
     def rotate_selected(self, deg):
@@ -648,21 +691,30 @@ class MainWindow(QMainWindow):
         if not self.clipboard:
             return
         existing_pins = [p.number for u in self.symbol.units for p in u.pins]
+        pasted_models = []
         for kind, src in self.clipboard:
             m = copy.deepcopy(src)
-            if hasattr(m, 'x'): m.x += 1
-            if hasattr(m, 'y'): m.y -= 1
+            if hasattr(m, 'x'):
+                m.x += 1
+            if hasattr(m, 'y'):
+                m.y -= 1
             if kind == 'PIN':
+                # Doppelte Pinnummern bleiben verboten; Kopien bekommen automatisch freie Nummern.
                 m.number = next_pin_number(existing_pins)
                 existing_pins.append(m.number)
                 self.current_unit.pins.append(m)
+                pasted_models.append(m)
             elif kind == 'TEXT':
                 self.current_unit.texts.append(m)
+                pasted_models.append(m)
             elif kind == 'GRAPHIC':
                 self.current_unit.graphics.append(m)
+                pasted_models.append(m)
             elif kind == 'BODY':
                 self.current_unit.body = m
+                pasted_models.append(m)
         self.dock_pins_to_body(self.current_unit)
+        self._selection_restore_ids = {id(m) for m in pasted_models}
         self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
 
     def delete_selected(self):
