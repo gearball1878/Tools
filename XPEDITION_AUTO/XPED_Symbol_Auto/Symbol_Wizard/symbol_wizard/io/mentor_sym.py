@@ -212,36 +212,243 @@ def _json_payload(line: str) -> dict[str, Any] | None:
 
 
 def export_mentor_sym(path: str | Path, symbol: SymbolModel) -> None:
-    """Export a SymbolModel to a Mentor .sym bridge file.
+    """Export a SymbolModel to native Mentor/Xpedition/DxDesigner ASCII.
 
-    The file is line based and intentionally easy to diff.  Each record after
-    the tag is JSON, which avoids lossy quoting issues for pin names, attribute
-    values and text strings.
+    This writes the same family of files as the customer supplied reference ZIP:
+    ``V/K/F/D/Y/Z/i/U/b/T/P/L/A/E`` records.  Split handling happens in
+    :func:`export_mentor_symbol_bundle`; this function writes the unit(s) it is
+    given into one Mentor part file.  Because normal Xpedition ASCII symbols do
+    not carry RGB object colors, colors are intentionally not emitted.
     """
     p = Path(path)
-    lines: list[str] = [MAGIC]
-    header = {
-        "name": symbol.name,
-        "kind": symbol.kind,
-        "is_split": bool(symbol.is_split or symbol.kind == SymbolKind.SPLIT.value),
-        "grid_inch": symbol.grid_inch,
-        "sheet_format": symbol.sheet_format,
-        "origin": symbol.origin,
-        "template_name": symbol.template_name,
-    }
-    lines.append("SYMBOL\t" + json.dumps(header, ensure_ascii=False, separators=(",", ":")))
-    for unit in symbol.units:
-        lines.append("UNIT\t" + json.dumps({"name": unit.name}, ensure_ascii=False, separators=(",", ":")))
-        lines.append("BODY\t" + json.dumps(asdict(unit.body), ensure_ascii=False, separators=(",", ":")))
-        for pin in unit.pins:
-            lines.append("PIN\t" + json.dumps(asdict(pin), ensure_ascii=False, separators=(",", ":")))
-        for text in unit.texts:
-            lines.append("TEXT\t" + json.dumps(asdict(text), ensure_ascii=False, separators=(",", ":")))
-        for graphic in unit.graphics:
-            lines.append("GRAPHIC\t" + json.dumps(asdict(graphic), ensure_ascii=False, separators=(",", ":")))
-        lines.append("ENDUNIT")
-    lines.append("ENDSYMBOL")
-    p.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    unit = symbol.units[0] if symbol.units else SymbolUnitModel(name=p.name)
+    p.write_text(_export_xpedition_ascii_part(symbol, unit, p.stem), encoding='utf-8', newline='')
+
+
+def _fmt_num(v: float) -> str:
+    iv = int(round(v))
+    return str(iv)
+
+
+def _mentor_pintype(value: str) -> str:
+    v = (value or '').strip().upper()
+    if v == 'BIDI':
+        return 'BI'
+    if v == 'PASSIVE':
+        return 'BI'
+    return v or 'BI'
+
+
+def _mentor_text_align(h_align: str, v_align: str = 'center') -> int:
+    h = (h_align or '').lower()
+    if h == 'center':
+        return 5
+    if h == 'right':
+        return 8
+    return 2
+
+
+def _mentor_font_size_grid_to_ascii(size_grid: float, fallback: int = 10) -> int:
+    try:
+        # Wizard font sizes are stored in grid units.  The reference files use
+        # 10 for pin labels and 20 for headers; this mapping keeps the same
+        # visual proportions for imported/exported parts.
+        return max(1, int(round(float(size_grid) * 18)))
+    except Exception:
+        return fallback
+
+
+def _safe_mentor_name(name: str, default: str = 'symbol') -> str:
+    value = re.sub(r'[^A-Za-z0-9_.-]+', '_', str(name or default)).strip('_')
+    return value or default
+
+
+def _source_part_stem(unit: SymbolUnitModel, fallback: str) -> str:
+    raw = Path(unit.name or fallback).name
+    if raw.lower().endswith(MENTOR_TEXT_SUFFIXES) or re.search(r'\.\d+$', raw):
+        return Path(raw).stem
+    return _safe_mentor_name(raw or fallback)
+
+
+def _export_xpedition_ascii_part(symbol: SymbolModel, unit: SymbolUnitModel, part_stem: str) -> str:
+    # Native Mentor sample uses 0.1 inch Wizard grid -> 20 ASCII coordinate
+    # units and 2 grid pin length -> 40 ASCII units.  For symbols that were
+    # imported from the sample this recreates the same compact form; for newly
+    # drawn Wizard symbols it still produces valid, grid-aligned Xpedition ASCII.
+    raw_per_grid = 20.0
+    pin_len_default = 30.0
+    margin = 30.0
+
+    body = unit.body
+    # If this unit was imported from native Xpedition ASCII, the source body
+    # rectangle is stored as a rect graphic.  Use that rectangle to recover the
+    # original 30-unit Mentor margins and avoid exporting a second duplicate box.
+    body_rect_graphic = next((g for g in unit.graphics if (g.shape or '').lower() == 'rect' and abs(float(g.w)) > 4 and abs(float(g.h)) > 4), None)
+    if body_rect_graphic is not None:
+        raw_per_grid = 300.0 / max(1.0, abs(float(body_rect_graphic.w)))
+    left_pins = [pin for pin in unit.pins if (pin.side or '').lower() != 'right']
+    right_pins = [pin for pin in unit.pins if (pin.side or '').lower() == 'right']
+
+    # Body rectangle.  The reference format draws pin stubs outside the body:
+    # left pins 0->30, body 30->W-30, right pins W->W-30.
+    body_w = max(4.0, float(getattr(body, 'width', 18.0) or 18.0))
+    body_h = max(4.0, float(getattr(body, 'height', 10.0) or 10.0))
+    raw_w = max(120.0, round(body_w * raw_per_grid / 10.0) * 10.0)
+    raw_h = max(100.0, round(body_h * raw_per_grid / 10.0) * 10.0)
+
+    # Ensure enough height for all pins if the user built a very dense unit.
+    max_side_count = max(len(left_pins), len(right_pins), 1)
+    min_h_for_pins = margin * 2 + max_side_count * 20
+    raw_h = max(raw_h, float(min_h_for_pins))
+    raw_w = max(raw_w, 360.0)
+
+    if body_rect_graphic is not None:
+        raw_w = max(120.0, abs(float(body_rect_graphic.w)) * raw_per_grid + 2 * margin)
+        raw_h = max(float(min_h_for_pins), abs(float(body_rect_graphic.h)) * raw_per_grid + 2 * margin)
+
+    box_x1 = margin
+    box_x2 = raw_w - margin
+    box_y1 = margin
+    box_y2 = raw_h - margin
+
+    # Map Wizard y positions to Mentor y positions where useful.  If all pins
+    # are on regular Wizard rows this preserves their order.  Otherwise fallback
+    # to deterministic top-down placement per side.
+    all_pin_y = [float(pin.y) for pin in unit.pins]
+    if all_pin_y:
+        min_y, max_y = min(all_pin_y), max(all_pin_y)
+    else:
+        min_y, max_y = -1.0, 1.0
+    span_y = max(1e-6, max_y - min_y)
+
+    def pin_y_from_model(pin: PinModel, index: int, side_count: int) -> int:
+        # Imported symbols often have exact y values.  Use them when they produce
+        # sane in-body coordinates; otherwise row-pack top-down in 20-unit pitch.
+        y = margin + 20 + ((float(pin.y) - min_y) / span_y) * max(20.0, raw_h - 100.0)
+        if not (margin + 10 <= y <= raw_h - margin - 10) or side_count > 1 and span_y < 0.01:
+            y = raw_h - margin - 20 - index * 20
+        return int(round(y / 10.0) * 10)
+
+    lines: list[str] = []
+    name = _source_part_stem(unit, part_stem or symbol.name)
+    lines.append('V 53')
+    # Use a deterministic key instead of current time, so exports are diffable.
+    key = abs(hash((symbol.name, unit.name, len(unit.pins)))) % 2_000_000_000
+    lines.append(f'K {key} {name}')
+    lines.append('|R 0:00:00_4-16-19')
+    lines.append('F Case')
+    lines.append(f'D 0 {_fmt_num(raw_h)} {_fmt_num(raw_w)} 0')
+    lines.append('Y 1')
+    lines.append('Z 10')
+    lines.append(f'i {len(unit.pins) + 1}')
+
+    attrs = dict(getattr(body, 'attributes', {}) or {})
+    visible = dict(getattr(body, 'visible_attributes', {}) or {})
+    refdes = attrs.get('REFDES', attrs.get('RefDes', 'U?')) or 'U?'
+    if str(refdes).strip() == '?':
+        refdes = 'U?'
+    lines.append(f'U {_fmt_num(raw_w/2)} {_fmt_num(raw_h-8)} 16 0 5 3 REFDES={refdes.replace("U?", "?") if refdes == "U?" else refdes}')
+
+    # Emit the Mentor-style standard attributes first.  These are the fields the
+    # reference ZIP carries and they make exported parts usable in the existing
+    # library flow.  Additional Wizard attributes are appended afterwards.
+    standard = [
+        ('CASE', attrs.get('CASE', 'BAUFORM'), 30, 0, 10, 0, 3, 3),
+        ('CLASS', attrs.get('CLASS', ''), 80, 20, 10, 0, 3, 3),
+        ('PART_NAME', attrs.get('PART_NAME', attrs.get('Part Name', attrs.get('Value', 'TNR_LEG'))), 30, 20, 10, 0, 3, 3),
+        ('@XYCOORD', attrs.get('@XYCOORD', ''), 30, 20, 25400, 0, 3, 0),
+        ('LEON_Link', attrs.get('LEON_Link', ''), 30, 20, 25400, 0, 3, 0),
+        ('DEVICE', attrs.get('DEVICE', attrs.get('Device', attrs.get('Value', symbol.name))), 30, 20, 10, 0, 3, 0),
+        ('TYPE', attrs.get('TYPE', attrs.get('Type', 'TYPE')), 30, 10, 10, 0, 3, 3),
+        ('FORWARD_PCB', attrs.get('FORWARD_PCB', '1'), 0, 0, 10, 0, 1, 0),
+    ]
+    emitted = {'REFDES', 'RefDes'}
+    for key_name, val, x, y, size, rot, align, vis in standard:
+        lines.append(f'U {x} {y} {size} {rot} {align} {vis} {key_name}={val}')
+        emitted.add(key_name)
+    for key_name, val in attrs.items():
+        if key_name in emitted or key_name in {'Value', 'Package', 'Technology', 'Order Code', 'Frequency', 'Tolerance'}:
+            continue
+        vis = '3' if visible.get(key_name, False) else '0'
+        lines.append(f'U 30 20 10 0 3 {vis} {key_name}={val}')
+
+    lines.append(f'b {_fmt_num(box_x1)} {_fmt_num(box_y1)} {_fmt_num(box_x2)} {_fmt_num(box_y2)}')
+
+    title = attrs.get('Value') or attrs.get('DEVICE') or attrs.get('PART_NAME') or symbol.name
+    # For native imports the visible title/page labels are already stored as T
+    # records in unit.texts.  Only synthesize a title for symbols that do not
+    # have any explicit text objects.
+    if title and not unit.texts:
+        lines.append(f'T {_fmt_num(raw_w/2)} {_fmt_num(raw_h-28)} 20 0 5 {title}')
+
+    # Preserve user texts.  Title-like duplicate texts are harmless but avoid
+    # duplicating an exact title at nearly the same top position.
+    for text in unit.texts:
+        if not str(text.text).strip():
+            continue
+        x = raw_w/2 + float(text.x) * raw_per_grid
+        y = raw_h/2 + float(text.y) * raw_per_grid
+        if abs(x - raw_w/2) < 8 and abs(y - (raw_h-28)) < 25 and str(text.text) == str(title):
+            continue
+        size = _mentor_font_size_grid_to_ascii(text.font_size_grid, 10)
+        rot = 1 if abs(float(getattr(text, 'rotation', 0.0) or 0.0)) in (90.0, 270.0) else 0
+        align = _mentor_text_align(text.h_align, text.v_align)
+        lines.append(f'T {_fmt_num(x)} {_fmt_num(y)} {size} {rot} {align} {text.text}')
+
+    # Graphics: output rectangles and simple lines in the same ASCII family.
+    for graphic in unit.graphics:
+        if graphic is body_rect_graphic:
+            continue
+        shape = (graphic.shape or 'line').lower()
+        x1 = raw_w/2 + float(graphic.x) * raw_per_grid
+        y1 = raw_h/2 + float(graphic.y) * raw_per_grid
+        x2 = x1 + float(graphic.w) * raw_per_grid
+        y2 = y1 - float(graphic.h) * raw_per_grid
+        if shape == 'rect':
+            lines.append(f'b {_fmt_num(min(x1,x2))} {_fmt_num(min(y1,y2))} {_fmt_num(max(x1,x2))} {_fmt_num(max(y1,y2))}')
+        else:
+            lines.append(f'l 2 {_fmt_num(x1)} {_fmt_num(y1)} {_fmt_num(x2)} {_fmt_num(y2)}')
+
+    # Pins are sorted by side and y to produce stable reference-like output.
+    ordered: list[PinModel] = []
+    ordered.extend(sorted(left_pins, key=lambda p: (-float(p.y), str(p.number), str(p.name))))
+    ordered.extend(sorted(right_pins, key=lambda p: (-float(p.y), str(p.number), str(p.name))))
+
+    side_counts = {'left': len(left_pins), 'right': len(right_pins)}
+    side_index = {'left': 0, 'right': 0}
+    for pid, pin in enumerate(ordered, start=1):
+        side = 'right' if (pin.side or '').lower() == 'right' else 'left'
+        idx = side_index[side]
+        side_index[side] += 1
+        y = pin_y_from_model(pin, idx, side_counts[side])
+        if side == 'right':
+            x1, x2 = raw_w, raw_w - pin_len_default
+            side_code = 3
+            label_x = x2 - 5
+            label_align = 8
+            num_x = x2 + 10
+            num_align = 3
+            type_x = raw_w + 5
+            type_align = 2
+        else:
+            x1, x2 = 0, pin_len_default
+            side_code = 2
+            label_x = x2 + 5
+            label_align = 2
+            num_x = x2 - 5
+            num_align = 9
+            type_x = -5 if _mentor_pintype(pin.pin_type) == 'BI' else 10
+            type_align = 8 if type_x < 0 else 2
+        pin_name = str(pin.name or pin.function or pin.number or f'PIN_{pid}')
+        pin_number = str(pin.number or pid)
+        ptype = _mentor_pintype(pin.pin_type)
+        lines.append(f'P {pid} {_fmt_num(x1)} {_fmt_num(y)} {_fmt_num(x2)} {_fmt_num(y)} 0 {side_code} 0')
+        lines.append(f'L {_fmt_num(label_x)} {_fmt_num(y)} 10 0 {label_align} 0 1 0 {pin_name}')
+        lines.append(f'A {_fmt_num(num_x)} {_fmt_num(y)} 8 0 {num_align} 3 #={pin_number}')
+        lines.append(f'A {_fmt_num(type_x)} {_fmt_num(y)} 10 0 {type_align} 0 PINTYPE={ptype}')
+
+    lines.append('E')
+    return '\r\n'.join(lines) + '\r\n'
 
 
 def import_mentor_sym(path: str | Path) -> SymbolModel:
