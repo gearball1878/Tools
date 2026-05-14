@@ -94,10 +94,18 @@ Supported separators are comma, semicolon, pipe, and tab. If `Pin Function` is e
 
 New symbols place the symbol origin at the center of the symbol body by default. Pins and body attributes remain grouped with the body during moves/resizes. Pins are constrained to 0°/180° rotation and their length snaps to full grid units.
 
-## Mentor/Xpedition Split-Symbol I/O update
 
-- Split-Symbole werden als ZIP behandelt; jede Mentor-Datei im ZIP ist ein Split-Part.
-- Einzelsymbole werden als einzelne `.sym`/`.1` Datei importiert und exportiert.
-- Native Mentor-Dateien enthalten normalerweise keine RGB-Objektfarben. Beim Import wird deshalb eine semantische `pin_palette` im Wizard-Modell gesetzt und Pins werden nach `PINTYPE` eingefärbt. Beim nativen Mentor-Export werden diese Farben nicht in die `.sym` geschrieben, weil das Format die Darstellung über Editor-/Layer-Paletten steuert.
-- Mentor-Y-Koordinaten werden beim Import/Export gespiegelt, damit Symbol-Origin, Pins und Texte im Wizard korrekt zur Mentor-ASCII-Darstellung passen.
-- Body-/Rahmenkoordinaten werden auf das 0.100-inch-Wizard-Raster normalisiert; feinere grafische Objekte werden auf 0.050 inch gesnappt.
+## Mentor Import/Export
+
+- Split symbols are imported/exported as ZIP archives.
+- Each file in the ZIP becomes one split unit.
+- Single Mentor symbols use standalone `.sym`/`.1` files.
+- Mentor origin is preserved at the left pin anchor `(0,0)`.
+- Pin colors are generated semantically from `PINTYPE`.
+
+### File Menu
+
+- File -> Import -> Mentor Single Symbol
+- File -> Import -> Mentor Split ZIP
+- File -> Export -> Mentor Single Symbol
+- File -> Export -> Mentor Split ZIP

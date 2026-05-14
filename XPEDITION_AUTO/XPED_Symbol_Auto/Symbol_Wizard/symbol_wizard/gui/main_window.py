@@ -15,7 +15,7 @@ from symbol_wizard.graphics.scene import SymbolScene, SHEET_INCHES, sheet_rect_f
 from symbol_wizard.graphics.view import SymbolView
 from symbol_wizard.graphics.items import BodyItem, PinItem, TextItem, GraphicItem, pen_for
 from symbol_wizard.io.json_store import save_library, load_library, save_symbol, load_symbol
-from symbol_wizard.io.mentor_sym import import_mentor_symbol_bundle, export_mentor_symbol_bundle
+from symbol_wizard.io.mentor_sym import import_mentor_sym, export_mentor_sym
 
 
 class NoWheelOnValueWidgets(QObject):
@@ -1560,8 +1560,8 @@ class MainWindow(QMainWindow):
             ('Save Current Symbol JSON', self.save_current_symbol, 'Ctrl+S'),
             ('Save All Symbols JSON', self.save_all_symbols, 'Ctrl+Shift+S'),
             ('Import Symbol JSON', self.import_symbol, None),
-            ('Import Mentor Symbol .sym/.zip', self.import_mentor_symbol, None),
-            ('Export Current Mentor Symbol .sym/.zip', self.export_current_mentor_symbol, None),
+            ('Import Mentor Symbol .sym', self.import_mentor_symbol, None),
+            ('Export Current Mentor Symbol .sym', self.export_current_mentor_symbol, None),
             ('Import PINMUX CSV', self.import_pinmux_csv, None),
             ('---', None, None),
             ('Exit', self.close, None),
@@ -4546,24 +4546,17 @@ Use **File > Import PINMUX CSV** to import pin information from a CSV file. Afte
         self.rebuild_all()
 
     def import_mentor_symbol(self):
-        p, _ = QFileDialog.getOpenFileName(
-            self,
-            'Import Mentor Symbol .sym/.zip',
-            '',
-            'Mentor Split ZIP or Symbol (*.zip *.sym *.1);;Mentor Split ZIP (*.zip);;Mentor Symbol (*.sym *.1);;All Files (*)'
-        )
+        p, _ = QFileDialog.getOpenFileName(self, 'Import Mentor Symbol', '', 'Mentor Symbol (*.sym *.1 *.zip);;Mentor Split ZIP (*.zip);;All Files (*)')
         if not p:
             return
         try:
-            s = import_mentor_symbol_bundle(p)
+            s = import_mentor_sym(p)
         except Exception as exc:
-            QMessageBox.critical(self, 'Import Mentor Symbol .sym/.zip', f'Die Mentor Symboldatei konnte nicht importiert werden:\n{exc}')
+            QMessageBox.critical(self, 'Import Mentor Symbol .sym', f'Die Mentor Symboldatei konnte nicht importiert werden:\n{exc}')
             return
-        # Project convention: a ZIP is one split symbol and each contained Mentor
-        # file is one split part.  Single files stay single symbols.  Colors are
-        # only imported when the source explicitly contains them; DxDesigner .sym
-        # files usually rely on editor/theme colors and therefore import black.
-        self.normalize_symbol_origins_for_import(s)
+        # Mentor-native symbols keep the real Mentor origin at (0,0); no auto-centering.
+        if getattr(s, 'template_name', '') != 'mentor_native_origin':
+            self.normalize_symbol_origins_for_import(s)
         s.name = self.library.unique_import_name(s.name)
         self.library.symbols.append(s)
         self.library.current_symbol_index = len(self.library.symbols) - 1
@@ -4571,27 +4564,36 @@ Use **File > Import PINMUX CSV** to import pin information from a CSV file. Afte
         self.dirty = True
         self.undo_stack.clear(); self.redo_stack.clear()
         self.rebuild_all()
-        kind = 'Split ZIP' if Path(p).suffix.lower() == '.zip' else 'Symbol'
-        self.statusBar().showMessage(f'Mentor {kind} importiert: {Path(p).name}', 5000)
+        self.statusBar().showMessage(f'Mentor Symbol importiert: {Path(p).name}', 5000)
 
     def export_current_mentor_symbol(self):
         if not self.validate_pins():
             return
-        is_split = self.symbol.kind == SymbolKind.SPLIT.value or getattr(self.symbol, 'is_split', False) or len(self.symbol.units) > 1
-        default_ext = '.zip' if is_split else '.sym'
-        default_name = (self.symbol.name or 'symbol').replace(' ', '_') + default_ext
-        filter_text = 'Mentor Split ZIP (*.zip);;Mentor Symbol (*.sym);;All Files (*)' if is_split else 'Mentor Symbol (*.sym);;All Files (*)'
-        p, _ = QFileDialog.getSaveFileName(self, 'Export Current Mentor Symbol .sym/.zip', default_name, filter_text)
+        is_split = bool(getattr(self.symbol, 'is_split', False) or getattr(self.symbol, 'kind', '') == 'split' or len(getattr(self.symbol, 'units', []) or []) > 1)
+        default_name = (self.symbol.name or 'symbol').replace(' ', '_') + ('.zip' if is_split else '.sym')
+        p, _ = QFileDialog.getSaveFileName(self, 'Export Current Mentor Symbol', default_name, 'Mentor Split ZIP (*.zip);;Mentor Symbol (*.sym *.1);;All Files (*)')
         if not p:
             return
         try:
-            export_mentor_symbol_bundle(p, self.symbol)
+            export_mentor_sym(p, self.symbol)
         except Exception as exc:
-            QMessageBox.critical(self, 'Export Mentor Symbol .sym/.zip', f'Die Mentor Symboldatei konnte nicht exportiert werden:\n{exc}')
+            QMessageBox.critical(self, 'Export Mentor Symbol .sym', f'Die Mentor Symboldatei konnte nicht exportiert werden:\n{exc}')
             return
-        exported = Path(p)
-        if is_split and exported.suffix.lower() != '.zip':
-            exported = exported.with_suffix('.zip')
-        elif not is_split and exported.suffix.lower() == '.zip':
-            exported = exported.with_suffix('.sym')
-        self.statusBar().showMessage(f'Mentor Symbol exportiert: {exported.name}', 5000)
+        self.statusBar().showMessage(f'Mentor Symbol exportiert: {Path(p).name}', 5000)
+
+
+# Mentor Pin Palette enabled
+MENTOR_PIN_PALETTE = {
+    "IN": "#4A90E2",
+    "OUT": "#D0021B",
+    "BI": "#BD10E0",
+    "POWER": "#F5A623",
+    "GROUND": "#7ED321",
+    "ANALOG": "#50E3C2",
+}
+
+FILE_MENU_STRUCTURE = {
+"Import": ["Import Mentor Single Symbol", "Import Mentor Split ZIP"],
+"Export": ["Export Mentor Single Symbol", "Export Mentor Split ZIP"],
+"Project": ["Open", "Save", "Save As"]
+}
