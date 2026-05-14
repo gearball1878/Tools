@@ -1,6 +1,7 @@
 from __future__ import annotations
 import copy
 import csv
+import re
 from PySide6.QtCore import Qt, QTimer, QRectF
 from PySide6.QtGui import QAction, QColor, QKeySequence, QFontDatabase
 from PySide6.QtWidgets import *
@@ -46,6 +47,7 @@ class MainWindow(QMainWindow):
         self._selection_restore_ids: set[int] = set()
         self.default_color = (0, 0, 0)
         self._refresh_visual_only = False
+        self.body_edit = False
         self.symbol_type_config = load_symbol_type_config()
         self.refresh_timer = QTimer(self)
         self.refresh_timer.setSingleShot(True)
@@ -183,7 +185,22 @@ class MainWindow(QMainWindow):
             table.setColumnWidth(col, max(table.columnWidth(col) + 18, 90))
 
     def _fill_pin_table(self, table: QTableWidget, rows):
+        """Fill the pin table with editable columns and stable dropdown widgets.
+
+        The first three columns are normal text cells. Pin Type, Side and
+        Inverted are QComboBox cell widgets only; no underlying text item is
+        installed in those cells, preventing Qt text/widget overpainting.
+        """
         table.blockSignals(True)
+        self.suspend = True
+        # Remove old widgets explicitly before clearing, otherwise Qt can keep
+        # stale editors around on some Windows/PySide combinations.
+        for rr in range(table.rowCount()):
+            for cc in range(table.columnCount()):
+                w = table.cellWidget(rr, cc)
+                if w is not None:
+                    table.removeCellWidget(rr, cc)
+                    w.deleteLater()
         table.clearContents()
         table.setRowCount(len(rows))
         pin_types = [x.value for x in PinType]
@@ -196,33 +213,28 @@ class MainWindow(QMainWindow):
                 it.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
                 table.setItem(r, c, it)
 
-            # Dropdown columns are real widgets, but with no underlying text item.
-            # This avoids the Qt overlap bug from text + persistent editor rendering.
             meta = (si, ui, pi)
             cb_type = QComboBox(table)
             cb_type.addItems(pin_types)
             cb_type.setCurrentText(pin.pin_type if pin.pin_type in pin_types else PinType.BIDI.value)
+            cb_type.setProperty('pin_meta', meta)
             cb_type.currentTextChanged.connect(lambda v, m=meta: self.pin_table_combo_changed(m, 3, v))
             table.setCellWidget(r, 3, cb_type)
 
             cb_side = QComboBox(table)
             cb_side.addItems(sides)
             cb_side.setCurrentText(pin.side if pin.side in sides else PinSide.LEFT.value)
+            cb_side.setProperty('pin_meta', meta)
             cb_side.currentTextChanged.connect(lambda v, m=meta: self.pin_table_combo_changed(m, 4, v))
             table.setCellWidget(r, 4, cb_side)
 
             cb_inv = QComboBox(table)
             cb_inv.addItems(['no', 'yes'])
             cb_inv.setCurrentText('yes' if pin.inverted else 'no')
+            cb_inv.setProperty('pin_meta', meta)
             cb_inv.currentTextChanged.connect(lambda v, m=meta: self.pin_table_combo_changed(m, 5, v))
             table.setCellWidget(r, 5, cb_inv)
-
-            # Hidden metadata item for row selection/click handling.
-            for c in (3, 4, 5):
-                hidden = QTableWidgetItem('')
-                hidden.setData(Qt.UserRole, (si, ui, pi, c))
-                hidden.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
-                table.setItem(r, c, hidden)
+        self.suspend = False
         table.blockSignals(False)
         self._autosize_table(table)
 
@@ -315,6 +327,18 @@ class MainWindow(QMainWindow):
         zoom_btn = QPushButton('Zoom Fit')
         zoom_btn.clicked.connect(self.zoom_to_fit_symbol)
         tb.addWidget(zoom_btn)
+
+        tb.addSeparator()
+        tb.addWidget(QLabel('Select filter:'))
+        self.select_filter_combo = QComboBox()
+        self.select_filter_combo.addItems(['All', 'Body', 'Pins', 'Graphics', 'Text'])
+        self.select_filter_combo.currentTextChanged.connect(self.apply_canvas_select_filter)
+        tb.addWidget(self.select_filter_combo)
+
+        self.body_edit_button = QPushButton('Body Edit: OFF')
+        self.body_edit_button.setCheckable(True)
+        self.body_edit_button.toggled.connect(self.set_body_edit_mode)
+        tb.addWidget(self.body_edit_button)
 
         tb.addSeparator()
         tb.addWidget(QLabel('Style target:'))
@@ -539,9 +563,11 @@ class MainWindow(QMainWindow):
                 if a not in clean_attrs:
                     clean_attrs.append(a)
             prefix = subdata.get('prefix', data.get('prefix', 'U'))
+            old_refdes = body.attributes.get('RefDes', '')
             existing = dict(body.attributes)
             body.attributes = {a: existing.get(a, '') for a in clean_attrs}
-            body.attributes['RefDes'] = existing.get('RefDes') if existing.get('RefDes') else f'{prefix}?'
+            body.attributes['RefDes'] = old_refdes or f'{prefix}?'
+            self.update_refdes_prefix(body, prefix)
             body.visible_attributes = {a: (a in global_attrs) for a in clean_attrs}
             body.visible_attributes['RefDes'] = True
             # Keep existing pins unless there are none or caller requests template replacement.
@@ -674,6 +700,7 @@ class MainWindow(QMainWindow):
             item = TextItem(t, self)
             self.scene.addItem(item)
             self._restore_or_select_item(item, selected_ids)
+        self.apply_canvas_select_filter()
         self.scene.update()
         self.scene.blockSignals(False)
         self.refresh_properties()
@@ -759,7 +786,7 @@ class MainWindow(QMainWindow):
                 graphics = QTreeWidgetItem(['Graphics', str(len(u.graphics))])
                 unit_item.addChild(graphics)
                 for gi, g in enumerate(u.graphics):
-                    gr_item = QTreeWidgetItem([g.shape, f'{g.w:g} x {g.h:g}'])
+                    gr_item = QTreeWidgetItem([g.shape, f'{g.w:g} x {g.h:g}' + (' / body' if getattr(g, 'body_attached', False) else '')])
                     gr_item.setData(0, Qt.UserRole, ('single_graphic', si, ui, gi))
                     graphics.addChild(gr_item)
         tree.expandAll()
@@ -797,7 +824,7 @@ class MainWindow(QMainWindow):
             graphics = QTreeWidgetItem(['Graphics', str(len(u.graphics))])
             unit.addChild(graphics)
             for gi, g in enumerate(u.graphics):
-                gr = QTreeWidgetItem([g.shape, f'{g.w:g} x {g.h:g}'])
+                gr = QTreeWidgetItem([g.shape, f'{g.w:g} x {g.h:g}' + (' / body' if getattr(g, 'body_attached', False) else '')])
                 gr.setData(0, Qt.UserRole, ('graphic', ui, gi))
                 graphics.addChild(gr)
         tree.expandAll()
@@ -864,8 +891,17 @@ class MainWindow(QMainWindow):
                 self.form.addRow(QLabel(f'{len(pins)} selected pin(s)'))
                 side = QComboBox(); side.addItems([x.value for x in PinSide])
                 self.form.addRow('Pin Side', side)
-                b = QPushButton('Assign side to selected pins')
-                b.clicked.connect(lambda: self.set_selected_pins_side(side.currentText()))
+                ptype = QComboBox(); ptype.addItems([x.value for x in PinType])
+                self.form.addRow('Pin Type', ptype)
+                func = QLineEdit('')
+                self.form.addRow('Pin Function', func)
+                length = self._dbl(2.0, lambda v: None, 1, 100, 1)
+                self.form.addRow('Length [grid]', length)
+                b = QPushButton('Apply geometry/function/type to selected pins')
+                b.clicked.connect(lambda: self.apply_pin_bulk_to_selected(side.currentText(), ptype.currentText(), func.text(), length.value()))
+                self.form.addRow('', b)
+                b = QPushButton('Apply first selected pin geometry/function to ALL pins')
+                b.clicked.connect(self.apply_first_selected_pin_to_all)
                 self.form.addRow('', b)
                 b = QPushButton('Distribute selected pins vertically')
                 b.clicked.connect(self.distribute_selected_pins_vertical)
@@ -924,7 +960,13 @@ class MainWindow(QMainWindow):
         body_form.addRow('Height [grid]', self._dbl(m.height, lambda v: self.set_body_dim(item, 'height', v), 1, 300, 1))
         body_form.addRow('Line style', self._combo([x.value for x in LineStyle], m.line_style, lambda v: self.set_and_refresh(m, 'line_style', v)))
         body_form.addRow('Line width [grid]', self._dbl(m.line_width, lambda v: self.set_and_refresh(m, 'line_width', v), .01, 1, .01))
-        body_form.addRow('Body shape', self._combo(['rect','resistor','capacitor','inductor','diode','battery','transformer','transistor','fuse','connector','opamp','circle'], getattr(m, 'body_shape', 'rect'), lambda v: self.set_and_refresh(m, 'body_shape', v)))
+        body_form.addRow('Body shape', self._combo(['rect','resistor','capacitor','inductor','diode','battery','transformer','transistor','fuse','connector','opamp','circle','custom'], getattr(m, 'body_shape', 'rect'), lambda v: self.set_and_refresh(m, 'body_shape', v)))
+        eb = QPushButton('Enable Body Edit Mode')
+        eb.clicked.connect(lambda: self.set_body_edit_mode(True))
+        body_form.addRow('', eb)
+        ab = QPushButton('Attach selected graphics to body')
+        ab.clicked.connect(self.attach_selected_graphics_to_body)
+        body_form.addRow('', ab)
         body_form.addRow('Rotation [deg]', self.rotation_combo(getattr(m, 'rotation', 0), lambda v: self.set_and_refresh(m, 'rotation', float(v))))
         b = QPushButton('Body Line Color RGB')
         b.clicked.connect(lambda: self.color_model(m))
@@ -977,6 +1019,9 @@ class MainWindow(QMainWindow):
         self.font_props('Pin number font', m.number_font)
         self.font_props('Pin label font', m.label_font)
         b = QPushButton('Color RGB'); b.clicked.connect(lambda: self.color_model(m)); self.form.addRow('Color', b)
+        b = QPushButton('Apply this pin geometry/function to ALL pins')
+        b.clicked.connect(lambda: self.apply_pin_model_to_all(m))
+        self.form.addRow('', b)
 
     def text_props(self, item):
         m = item.model
@@ -1014,6 +1059,109 @@ class MainWindow(QMainWindow):
         combo.setCurrentText(str(int(round(float(value) / 90.0) * 90) % 360))
         combo.currentTextChanged.connect(fn)
         return combo
+
+    # ------------------------------------------------------------------ Canvas selection / body edit / bulk pins
+    def set_body_edit_mode(self, enabled: bool):
+        self.body_edit = bool(enabled)
+        if hasattr(self, 'body_edit_button'):
+            self.body_edit_button.blockSignals(True)
+            self.body_edit_button.setChecked(self.body_edit)
+            self.body_edit_button.setText('Body Edit: ON' if self.body_edit else 'Body Edit: OFF')
+            self.body_edit_button.blockSignals(False)
+        if self.body_edit:
+            self.set_tool(DrawTool.SELECT.value)
+            self.statusBar().showMessage('Body Edit Mode: newly drawn graphics are attached to the body.', 6000)
+
+    def apply_canvas_select_filter(self, *_):
+        if not hasattr(self, 'select_filter_combo'):
+            return
+        filt = self.select_filter_combo.currentText()
+        allowed = {
+            'All': {'BODY', 'PIN', 'GRAPHIC', 'TEXT', 'ORIGIN'},
+            'Body': {'BODY', 'ORIGIN'},
+            'Pins': {'PIN'},
+            'Graphics': {'GRAPHIC'},
+            'Text': {'TEXT'},
+        }.get(filt, {'BODY', 'PIN', 'GRAPHIC', 'TEXT', 'ORIGIN'})
+        for it in self.scene.items():
+            kind = it.data(0)
+            if kind in ('ATTR_REF_DES', 'ATTR_BODY'):
+                it.setFlag(QGraphicsItem.ItemIsSelectable, False)
+                it.setFlag(QGraphicsItem.ItemIsMovable, False)
+                continue
+            selectable = kind in allowed
+            it.setFlag(QGraphicsItem.ItemIsSelectable, selectable)
+            if not selectable and it.isSelected():
+                it.setSelected(False)
+        self.scene.update()
+
+    def attach_selected_graphics_to_body(self):
+        changed = False
+        for it in self.scene.selectedItems():
+            if it.data(0) == 'GRAPHIC':
+                it.model.body_attached = True
+                changed = True
+        if changed:
+            self.current_unit.body.body_shape = 'custom'
+            self.rebuild_tree()
+            self.schedule_scene_refresh()
+            self.statusBar().showMessage('Selected graphics attached to body.', 5000)
+
+    def iter_symbol_pins(self, symbol=None):
+        symbol = symbol or self.symbol
+        for u in symbol.units:
+            for p in u.pins:
+                yield u, p
+
+    def apply_pin_bulk_to_selected(self, side: str, pin_type: str, function: str, length: float):
+        selected = [it for it in self.scene.selectedItems() if it.data(0) == 'PIN']
+        for it in selected:
+            p = it.model
+            p.side = side
+            p.pin_type = pin_type
+            if function.strip():
+                p.function = function.strip()
+            p.length = max(1.0, round(float(length)))
+        self.dock_pins_to_body(self.current_unit)
+        self.validate_pins(silent=True)
+        self.schedule_scene_refresh()
+
+    def apply_pin_model_to_all(self, ref_pin: PinModel):
+        for u, p in self.iter_symbol_pins(self.symbol):
+            if p is ref_pin:
+                continue
+            p.function = ref_pin.function
+            p.pin_type = ref_pin.pin_type
+            p.side = ref_pin.side
+            p.length = ref_pin.length
+            p.rotation = (round(float(getattr(ref_pin, 'rotation', 0.0)) / 90.0) * 90) % 360
+            p.inverted = ref_pin.inverted
+            p.line_style = ref_pin.line_style
+            p.line_width = ref_pin.line_width
+            p.color = ref_pin.color
+            p.visible_number = ref_pin.visible_number
+            p.visible_name = ref_pin.visible_name
+            p.visible_function = ref_pin.visible_function
+            p.number_font = copy.deepcopy(ref_pin.number_font)
+            p.label_font = copy.deepcopy(ref_pin.label_font)
+            self.dock_pins_to_body(u)
+        self.validate_pins(silent=True)
+        self.schedule_scene_refresh()
+
+    def apply_first_selected_pin_to_all(self):
+        pins = [it for it in self.scene.selectedItems() if it.data(0) == 'PIN']
+        if not pins:
+            return
+        self.apply_pin_model_to_all(pins[0].model)
+
+    def update_refdes_prefix(self, body: SymbolBodyModel, prefix: str):
+        prefix = str(prefix or 'U')
+        cur = str(body.attributes.get('RefDes', '') or '')
+        m = re.match(r'^([A-Za-z]+)(.*)$', cur)
+        suffix = m.group(2) if m else '?'
+        if suffix == '':
+            suffix = '?'
+        body.attributes['RefDes'] = f'{prefix}{suffix}'
 
     # ------------------------------------------------------------------ Model updates
     def set_font_attr(self, f, a, v, refresh_attrs=False):
@@ -1224,6 +1372,7 @@ class MainWindow(QMainWindow):
         self.rebuild_tree()
         self.rebuild_pin_table()
         self._refresh_visual_only = False
+        self.body_edit = False
         self.symbol_type_config = load_symbol_type_config()
 
     # ------------------------------------------------------------------ Grouping / constraints
@@ -1336,22 +1485,25 @@ class MainWindow(QMainWindow):
     def apply_line_defaults(self):
         style = self.line_style.currentText(); width = self.line_width.value(); color = self.default_color
         target = self.style_target_combo.currentText() if hasattr(self, 'style_target_combo') else 'Selection'
-        targets = []
         if target == 'Selection':
             targets = self.scene.selectedItems()
+            for it in targets:
+                if it.data(0) == 'PIN':
+                    it.model.line_style = style; it.model.line_width = width; it.model.color = color
+                elif it.data(0) == 'GRAPHIC':
+                    it.model.style.line_style = style; it.model.style.line_width = width; it.model.style.stroke = color
+                elif it.data(0) == 'BODY':
+                    it.model.line_style = style; it.model.line_width = width; it.model.color = color
         elif target == 'Body':
-            targets = [it for it in self.scene.items() if it.data(0) == 'BODY']
+            for u in self.symbol.units:
+                u.body.line_style = style; u.body.line_width = width; u.body.color = color
         elif target == 'Pins':
-            targets = [it for it in self.scene.items() if it.data(0) == 'PIN']
+            for u, p in self.iter_symbol_pins(self.symbol):
+                p.line_style = style; p.line_width = width; p.color = color
         elif target == 'Graphics':
-            targets = [it for it in self.scene.items() if it.data(0) == 'GRAPHIC']
-        for it in targets:
-            if it.data(0) == 'PIN':
-                it.model.line_style = style; it.model.line_width = width; it.model.color = color
-            elif it.data(0) == 'GRAPHIC':
-                it.model.style.line_style = style; it.model.style.line_width = width; it.model.style.stroke = color
-            elif it.data(0) == 'BODY':
-                it.model.line_style = style; it.model.line_width = width; it.model.color = color
+            for u in self.symbol.units:
+                for gr in u.graphics:
+                    gr.style.line_style = style; gr.style.line_width = width; gr.style.stroke = color
         self.schedule_scene_refresh()
 
     def add_pin(self, side, x=None, y=None):
@@ -1372,6 +1524,9 @@ class MainWindow(QMainWindow):
             model = GraphicModel(shape=shape, x=x, y=y, w=2.0, h=0.0, style=StyleModel(stroke=self.default_color, line_width=self.line_width.value(), line_style=self.line_style.currentText()))
         else:
             model = GraphicModel(shape=shape, x=x, y=y, style=StyleModel(stroke=self.default_color, line_width=self.line_width.value(), line_style=self.line_style.currentText()))
+        if getattr(self, 'body_edit', False):
+            model.body_attached = True
+            self.current_unit.body.body_shape = 'custom'
         self.current_unit.graphics.append(model)
         self.select_model_after_rebuild(model)
         self.rebuild_scene(); self.rebuild_tree()
@@ -1561,7 +1716,7 @@ class MainWindow(QMainWindow):
             p.inverted = str(value).lower() in ('1', 'true', 'yes', 'ja', 'x')
         self.validate_pins(silent=True)
         if si == self.library.current_symbol_index:
-            self.rebuild_scene(); self.rebuild_tree()
+            self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
 
     def pin_table_changed(self, r, c):
         table = self.sender()
@@ -1595,7 +1750,7 @@ class MainWindow(QMainWindow):
             p.inverted = str(val).lower() in ('1', 'true', 'yes', 'ja', 'x')
         self.validate_pins(silent=True)
         if si == self.library.current_symbol_index:
-            self.rebuild_scene(); self.rebuild_tree()
+            self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
 
     def pin_table_clicked(self, r, c):
         table = self.sender()

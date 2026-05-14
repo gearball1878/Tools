@@ -47,6 +47,10 @@ class GraphicModel(TransformModel):
     shape: str='line'
     x: float=0.0; y: float=0.0; w: float=2.0; h: float=2.0
     style: StyleModel=field(default_factory=StyleModel)
+    # When True, this graphic belongs to the body drawing/template. It is
+    # still selectable/editable, but move/resize operations keep it grouped
+    # with the body.
+    body_attached: bool=False
 
 @dataclass
 class PinModel(TransformModel):
