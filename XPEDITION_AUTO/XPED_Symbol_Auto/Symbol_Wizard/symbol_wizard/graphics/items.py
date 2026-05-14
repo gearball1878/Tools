@@ -21,6 +21,16 @@ def pen_for(color, width_grid, style, grid_px):
     return p
 
 
+def qfont_for(family, size_pt):
+    try:
+        pt = float(size_pt)
+    except (TypeError, ValueError):
+        pt = 7.2
+    font = QFont(family or 'Arial')
+    font.setPointSizeF(max(1.0, pt))
+    return font
+
+
 class TransformMixin:
     handle_size_factor = .22
 
@@ -67,10 +77,10 @@ class TransformMixin:
         self.update()
 
     def scale_selected(self, factor):
-        if hasattr(self.model, 'font_size_grid'):
-            self.model.font_size_grid = max(.1, self.model.font_size_grid * factor)
-            g = self.scene().grid_px
-            self.setFont(QFont(self.model.font_family, max(6, int(g * self.model.font_size_grid * .45))))
+        if hasattr(self.model, 'font_size_pt'):
+            self.model.font_size_pt = max(1.0, self.model.font_size_pt * factor)
+            self.model.font_size_grid = round(self.model.font_size_pt / 7.2, 3)
+            self.setFont(qfont_for(self.model.font_family, self.model.font_size_pt))
         elif hasattr(self.model, 'length'):
             self.model.length = max(.1, self.model.length * factor)
         self.update()
@@ -275,7 +285,7 @@ class PinItem(TransformMixin, QGraphicsItem):
             r = .18 * g
             painter.drawEllipse(QPointF((-r if m.side == PinSide.LEFT.value else r), 0), r, r)
         painter.setPen(pen_for(m.number_font.color, m.line_width, m.line_style, g))
-        painter.setFont(QFont(m.number_font.family, max(6, int(g * m.number_font.size_grid * .45))))
+        painter.setFont(qfont_for(m.number_font.family, m.number_font.size_pt))
         if m.visible_number:
             painter.drawText(QRectF(min(x1, x2), -.85 * g, abs(x2 - x1), .5 * g), Qt.AlignCenter, m.number)
         # Display rule: if a dedicated function exists, show function; otherwise show pin name.
@@ -289,7 +299,7 @@ class PinItem(TransformMixin, QGraphicsItem):
         label = ' / '.join([x for x in parts if x])
         if label:
             painter.setPen(pen_for(m.label_font.color, m.line_width, m.line_style, g))
-            painter.setFont(QFont(m.label_font.family, max(8, int(g * m.label_font.size_grid * .45))))
+            painter.setFont(qfont_for(m.label_font.family, m.label_font.size_pt))
             if m.side == PinSide.LEFT.value:
                 painter.drawText(QRectF(.25 * g, -.35 * g, 6 * g, .7 * g), Qt.AlignVCenter | Qt.AlignLeft, label)
             else:
@@ -326,7 +336,7 @@ class TextItem(TransformMixin, QGraphicsTextItem):
         g = window.grid_px
         self.setPos(model.x * g, -model.y * g)
         self.setDefaultTextColor(rgb(model.color))
-        self.setFont(QFont(model.font_family, max(6, int(g * model.font_size_grid * .45))))
+        self.setFont(qfont_for(model.font_family, model.font_size_pt))
         self.common_flags()
         # Text remains movable/selectable in edit mode. Text editing starts only on double click.
         self.setTextInteractionFlags(Qt.NoTextInteraction)
@@ -357,13 +367,9 @@ class TextItem(TransformMixin, QGraphicsTextItem):
         super().keyPressEvent(event)
 
     def focusOutEvent(self, e):
-        # When the user clicks out of a canvas text item, commit the text and
-        # immediately return the item to normal canvas-object mode so it can be
-        # selected, moved, copied and transformed again.
+        # Commit current text and return to movable/selectable canvas mode.
         self.model.text = self.toPlainText()
         self.setTextInteractionFlags(Qt.NoTextInteraction)
-        self.common_flags()
-        self.scene().window.live_refresh()
         super().focusOutEvent(e)
 
     def update_model_pos(self):
@@ -405,16 +411,7 @@ class GraphicItem(TransformMixin, QGraphicsItem):
         return self._rect().adjusted(-.35 * g, -.35 * g, .35 * g, .35 * g)
 
     def _handles(self):
-        s = self.window.grid_px * self.handle_size_factor
-        if self.model.shape == 'line':
-            g = self.window.grid_px
-            start = QPointF(0, 0)
-            end = QPointF(self.model.w * g, self.model.h * g)
-            return {
-                'l': QRectF(start.x() - s / 2, start.y() - s / 2, s, s),
-                'r': QRectF(end.x() - s / 2, end.y() - s / 2, s, s),
-            }
-        return _corner_handles(self._rect(), s)
+        return _corner_handles(self._rect(), self.window.grid_px * self.handle_size_factor)
 
     def paint(self, painter, option, widget=None):
         g, m = self.window.grid_px, self.model
@@ -455,29 +452,6 @@ class GraphicItem(TransformMixin, QGraphicsItem):
             g = self.window.grid_px
             p = QPointF(snap(event.scenePos().x(), g), snap(event.scenePos().y(), g))
             st = self._resize_start
-
-            if self.model.shape == 'line':
-                start_scene = QPointF(st['x'] * g, -st['y'] * g)
-                end_scene = QPointF(start_scene.x() + st['w'] * g, start_scene.y() + st['h'] * g)
-                if self._resizing == 'r':
-                    # Move the right/end point freely on the grid; start stays fixed.
-                    self.model.w = round((p.x() - start_scene.x()) / g * 2) / 2
-                    self.model.h = round((p.y() - start_scene.y()) / g * 2) / 2
-                    self.setPos(start_scene)
-                    self.model.x = st['x']; self.model.y = st['y']
-                elif self._resizing == 'l':
-                    # Move the left/start point freely on the grid; end stays fixed.
-                    self.setPos(p)
-                    self.model.x = round(p.x() / g * 2) / 2
-                    self.model.y = round(-p.y() / g * 2) / 2
-                    self.model.w = round((end_scene.x() - p.x()) / g * 2) / 2
-                    self.model.h = round((end_scene.y() - p.y()) / g * 2) / 2
-                self.prepareGeometryChange()
-                self.window.live_refresh()
-                self.update()
-                event.accept()
-                return
-
             left = st['x'] * g
             top = -st['y'] * g
             right = left + st['w'] * g
@@ -493,28 +467,29 @@ class GraphicItem(TransformMixin, QGraphicsItem):
             if self._resizing in ('b', 'bl', 'br'):
                 bottom = p.y()
 
-            min_size = g * .25
-            if right < left:
-                left, right = right, left
-            if bottom < top:
-                top, bottom = bottom, top
-            if right - left < min_size:
-                if self._resizing in ('l', 'tl', 'bl'):
-                    left = right - min_size
-                else:
-                    right = left + min_size
-            if bottom - top < min_size:
-                if self._resizing in ('t', 'tl', 'tr'):
-                    top = bottom - min_size
-                else:
-                    bottom = top + min_size
+            if self.model.shape != 'line':
+                min_size = g * .25
+                if right < left:
+                    left, right = right, left
+                if bottom < top:
+                    top, bottom = bottom, top
+                if right - left < min_size:
+                    if self._resizing in ('l', 'tl', 'bl'):
+                        left = right - min_size
+                    else:
+                        right = left + min_size
+                if bottom - top < min_size:
+                    if self._resizing in ('t', 'tl', 'tr'):
+                        top = bottom - min_size
+                    else:
+                        bottom = top + min_size
 
             self.prepareGeometryChange()
             self.setPos(left, top)
-            self.model.x = round(left / g * 2) / 2
-            self.model.y = round(-top / g * 2) / 2
-            self.model.w = round((right - left) / g * 2) / 2
-            self.model.h = round((bottom - top) / g * 2) / 2
+            self.model.x = left / g
+            self.model.y = -top / g
+            self.model.w = (right - left) / g
+            self.model.h = (bottom - top) / g
             self.window.live_refresh()
             self.update()
             event.accept()

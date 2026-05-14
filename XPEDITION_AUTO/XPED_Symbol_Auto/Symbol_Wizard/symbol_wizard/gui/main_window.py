@@ -2,8 +2,9 @@ from __future__ import annotations
 import copy
 import csv
 from PySide6.QtCore import Qt, QTimer, QRectF
-from PySide6.QtGui import QAction, QColor, QKeySequence
+from PySide6.QtGui import QAction, QColor, QKeySequence, QFontDatabase
 from PySide6.QtWidgets import *
+from symbol_wizard.config import load_symbol_type_config
 
 from symbol_wizard.models.document import *
 from symbol_wizard.rules.grid import PX_PER_INCH, duplicate_pin_numbers, next_pin_number
@@ -14,48 +15,24 @@ from symbol_wizard.graphics.items import BodyItem, PinItem, TextItem, GraphicIte
 from symbol_wizard.io.json_store import save_library, load_library, save_symbol, load_symbol
 
 
-class PinComboDelegate(QStyledItemDelegate):
-    """Dropdown delegate for pin table cells without persistent cell widgets.
-
-    This avoids Qt rendering text underneath always-visible QComboBox widgets.
-    The cell is painted as a combo box, but the editor widget only exists while
-    the user edits the cell.
-    """
-    def __init__(self, values: list[str], parent=None):
+class ComboBoxDelegate(QStyledItemDelegate):
+    def __init__(self, items, parent=None):
         super().__init__(parent)
-        self.values = values
+        self.items = [str(x) for x in items]
 
     def createEditor(self, parent, option, index):
         combo = QComboBox(parent)
-        combo.addItems(self.values)
-        combo.setFrame(False)
-        combo.activated.connect(lambda *_: self.commitData.emit(combo))
-        combo.activated.connect(lambda *_: self.closeEditor.emit(combo, QAbstractItemDelegate.NoHint))
+        combo.addItems(self.items)
+        combo.setEditable(False)
         return combo
 
     def setEditorData(self, editor, index):
         value = str(index.data(Qt.EditRole) or index.data(Qt.DisplayRole) or '')
         i = editor.findText(value)
-        editor.setCurrentIndex(i if i >= 0 else 0)
+        editor.setCurrentIndex(max(0, i))
 
     def setModelData(self, editor, model, index):
         model.setData(index, editor.currentText(), Qt.EditRole)
-
-    def updateEditorGeometry(self, editor, option, index):
-        editor.setGeometry(option.rect)
-
-    def paint(self, painter, option, index):
-        # Paint a clean combo look and do NOT call the default item painter,
-        # otherwise some Qt styles draw the text twice.
-        opt = QStyleOptionComboBox()
-        opt.rect = option.rect.adjusted(1, 1, -1, -1)
-        opt.currentText = str(index.data(Qt.DisplayRole) or '')
-        opt.state = option.state
-        opt.editable = False
-        widget = option.widget
-        style = widget.style() if widget else QApplication.style()
-        style.drawComplexControl(QStyle.CC_ComboBox, opt, painter, widget)
-        style.drawControl(QStyle.CE_ComboBoxLabel, opt, painter, widget)
 
 
 class MainWindow(QMainWindow):
@@ -69,6 +46,7 @@ class MainWindow(QMainWindow):
         self._selection_restore_ids: set[int] = set()
         self.default_color = (0, 0, 0)
         self._refresh_visual_only = False
+        self.symbol_type_config = load_symbol_type_config()
         self.refresh_timer = QTimer(self)
         self.refresh_timer.setSingleShot(True)
         self.refresh_timer.timeout.connect(self._scheduled_refresh)
@@ -78,7 +56,6 @@ class MainWindow(QMainWindow):
         self.resize(1600, 980)
         self._build_ui()
         self.rebuild_all()
-        QTimer.singleShot(0, self.zoom_to_fit_symbol)
 
     @property
     def symbol(self) -> SymbolModel:
@@ -107,11 +84,13 @@ class MainWindow(QMainWindow):
         self._ribbon()
 
         self.single_tabs = QTabWidget()
-        self.single_tabs.setMaximumHeight(38)
         self.single_tabs.currentChanged.connect(lambda i: self.change_symbol_from_tab(SymbolKind.SINGLE.value, i))
+        self.single_tabs.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.single_tabs.customContextMenuRequested.connect(lambda pos: self.symbol_tab_context_menu(SymbolKind.SINGLE.value, pos))
         self.split_tabs = QTabWidget()
-        self.split_tabs.setMaximumHeight(38)
         self.split_tabs.currentChanged.connect(lambda i: self.change_symbol_from_tab(SymbolKind.SPLIT.value, i))
+        self.split_tabs.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.split_tabs.customContextMenuRequested.connect(lambda pos: self.symbol_tab_context_menu(SymbolKind.SPLIT.value, pos))
 
         # Pin overview for the Symbols workspace. The complete object hierarchy stays
         # in the lower Object Tree; the upper area is now a compact pin table.
@@ -119,18 +98,24 @@ class MainWindow(QMainWindow):
 
         self.unit_tabs = QTabWidget()
         self.unit_tabs.currentChanged.connect(self.change_unit)
+        self.unit_tabs.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.unit_tabs.customContextMenuRequested.connect(self.unit_tab_context_menu)
         self.add_unit_button = QPushButton('Add Unit / Split Part')
         self.add_unit_button.clicked.connect(self.add_unit)
 
         self.object_tree = QTreeWidget()
         self.object_tree.setHeaderLabels(['Object', 'Info'])
         self.object_tree.itemClicked.connect(self.tree_clicked)
+        self.object_tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.object_tree.customContextMenuRequested.connect(lambda pos: self.tree_context_menu(self.object_tree, pos))
 
         self.split_pin_table = self._create_pin_overview_table()
 
         self.split_object_tree = QTreeWidget()
         self.split_object_tree.setHeaderLabels(['Object', 'Info'])
         self.split_object_tree.itemClicked.connect(self.tree_clicked)
+        self.split_object_tree.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.split_object_tree.customContextMenuRequested.connect(lambda pos: self.tree_context_menu(self.split_object_tree, pos))
 
         single_page = QWidget()
         single_layout = QVBoxLayout(single_page)
@@ -164,6 +149,9 @@ class MainWindow(QMainWindow):
 
         self.props = QWidget()
         self.form = QFormLayout(self.props)
+        self.props_scroll = QScrollArea()
+        self.props_scroll.setWidgetResizable(True)
+        self.props_scroll.setWidget(self.props)
 
         self.canvas_tabs = QTabWidget()
         self.canvas_tabs.currentChanged.connect(self.change_symbol_from_canvas_tab)
@@ -172,7 +160,7 @@ class MainWindow(QMainWindow):
         splitter = QSplitter()
         splitter.addWidget(left_tabs)
         splitter.addWidget(self.canvas_tabs)
-        splitter.addWidget(self.props)
+        splitter.addWidget(self.props_scroll)
         splitter.setSizes([360, 900, 380])
         self.setCentralWidget(splitter)
         self.scene.selectionChanged.connect(self.refresh_properties)
@@ -180,59 +168,26 @@ class MainWindow(QMainWindow):
     def _create_pin_overview_table(self):
         table = QTableWidget(0, 6)
         table.setHorizontalHeaderLabels(['Pin Number', 'Pin Name', 'Pin Function', 'Pin Type', 'Side', 'Inverted'])
-
-        # Use delegates instead of setCellWidget(). This prevents the old bug where
-        # cell text and combo boxes were painted on top of each other.
-        table.setItemDelegateForColumn(3, PinComboDelegate([x.value for x in PinType], table))
-        table.setItemDelegateForColumn(4, PinComboDelegate([x.value for x in PinSide], table))
-        table.setItemDelegateForColumn(5, PinComboDelegate(['yes', 'no'], table))
-
         table.cellChanged.connect(self.pin_table_changed)
         table.cellClicked.connect(self.pin_table_clicked)
         table.setSelectionBehavior(QAbstractItemView.SelectRows)
         table.setSelectionMode(QAbstractItemView.ExtendedSelection)
-        table.setEditTriggers(
-            QAbstractItemView.DoubleClicked
-            | QAbstractItemView.SelectedClicked
-            | QAbstractItemView.EditKeyPressed
-        )
-        table.setWordWrap(False)
         table.horizontalHeader().setStretchLastSection(False)
         table.verticalHeader().setVisible(False)
-        table.verticalHeader().setDefaultSectionSize(26)
         return table
 
     def _autosize_table(self, table: QTableWidget):
         table.resizeColumnsToContents()
         table.resizeRowsToContents()
-        minimums = {0: 100, 1: 110, 2: 130, 3: 120, 4: 105, 5: 110}
         for col in range(table.columnCount()):
-            table.setColumnWidth(col, max(table.columnWidth(col) + 24, minimums.get(col, 90)))
-
-    def _clear_pin_table_widgets(self, table: QTableWidget):
-        for row in range(table.rowCount()):
-            for col in range(table.columnCount()):
-                w = table.cellWidget(row, col)
-                if w is not None:
-                    table.removeCellWidget(row, col)
-                    w.deleteLater()
-
-    def _pin_combo(self, values: list[str], current: str, payload):
-        combo = QComboBox()
-        combo.addItems(values)
-        combo.setCurrentText(str(current))
-        combo.setProperty('pin_payload', payload)
-        combo.currentTextChanged.connect(self.pin_combo_changed)
-        combo.setMinimumWidth(100)
-        return combo
+            table.setColumnWidth(col, max(table.columnWidth(col) + 18, 90))
 
     def _fill_pin_table(self, table: QTableWidget, rows):
         table.blockSignals(True)
-        self._clear_pin_table_widgets(table)
-        table.clearSelection()
         table.clearContents()
-        table.setRowCount(0)
         table.setRowCount(len(rows))
+        pin_types = [x.value for x in PinType]
+        sides = [x.value for x in PinSide]
         for r, (si, ui, pi, pin) in enumerate(rows):
             values = [pin.number, pin.name, pin.function]
             for c, v in enumerate(values):
@@ -240,13 +195,36 @@ class MainWindow(QMainWindow):
                 it.setData(Qt.UserRole, (si, ui, pi, c))
                 it.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsEditable)
                 table.setItem(r, c, it)
-            # Always-visible, clean dropdowns. No QTableWidgetItem underneath, so no text overlap.
-            table.setCellWidget(r, 3, self._pin_combo([x.value for x in PinType], pin.pin_type, (si, ui, pi, 3)))
-            table.setCellWidget(r, 4, self._pin_combo([x.value for x in PinSide], pin.side, (si, ui, pi, 4)))
-            table.setCellWidget(r, 5, self._pin_combo(['yes', 'no'], 'yes' if pin.inverted else 'no', (si, ui, pi, 5)))
+
+            # Dropdown columns are real widgets, but with no underlying text item.
+            # This avoids the Qt overlap bug from text + persistent editor rendering.
+            meta = (si, ui, pi)
+            cb_type = QComboBox(table)
+            cb_type.addItems(pin_types)
+            cb_type.setCurrentText(pin.pin_type if pin.pin_type in pin_types else PinType.BIDI.value)
+            cb_type.currentTextChanged.connect(lambda v, m=meta: self.pin_table_combo_changed(m, 3, v))
+            table.setCellWidget(r, 3, cb_type)
+
+            cb_side = QComboBox(table)
+            cb_side.addItems(sides)
+            cb_side.setCurrentText(pin.side if pin.side in sides else PinSide.LEFT.value)
+            cb_side.currentTextChanged.connect(lambda v, m=meta: self.pin_table_combo_changed(m, 4, v))
+            table.setCellWidget(r, 4, cb_side)
+
+            cb_inv = QComboBox(table)
+            cb_inv.addItems(['no', 'yes'])
+            cb_inv.setCurrentText('yes' if pin.inverted else 'no')
+            cb_inv.currentTextChanged.connect(lambda v, m=meta: self.pin_table_combo_changed(m, 5, v))
+            table.setCellWidget(r, 5, cb_inv)
+
+            # Hidden metadata item for row selection/click handling.
+            for c in (3, 4, 5):
+                hidden = QTableWidgetItem('')
+                hidden.setData(Qt.UserRole, (si, ui, pi, c))
+                hidden.setFlags(Qt.ItemIsSelectable | Qt.ItemIsEnabled)
+                table.setItem(r, c, hidden)
         table.blockSignals(False)
         self._autosize_table(table)
-        table.viewport().update()
 
     def _menu(self):
         mb = self.menuBar()
@@ -335,7 +313,8 @@ class MainWindow(QMainWindow):
         tb.addSeparator()
         tb.addWidget(QLabel('Style target:'))
         self.style_target_combo = QComboBox()
-        self.style_target_combo.addItems(['Body', 'Pins', 'Graphics'])
+        self.style_target_combo.addItems(['Selection', 'Body', 'Pins', 'Graphics'])
+        self.style_target_combo.currentTextChanged.connect(self.update_style_controls_from_target)
         tb.addWidget(self.style_target_combo)
         tb.addWidget(QLabel('Line:'))
         self.line_style = QComboBox()
@@ -345,10 +324,8 @@ class MainWindow(QMainWindow):
         self.line_width = QDoubleSpinBox()
         self.line_width.setRange(.01, 1)
         self.line_width.setSingleStep(.01)
-        self.line_width.setDecimals(3)
         self.line_width.setValue(.03)
         tb.addWidget(self.line_width)
-        self.style_target_combo.currentTextChanged.connect(self.read_style_for_target)
         self.line_style.currentTextChanged.connect(self.apply_line_defaults)
         self.line_width.valueChanged.connect(self.apply_line_defaults)
 
@@ -361,6 +338,17 @@ class MainWindow(QMainWindow):
         self.symbol_name_edit.setMinimumWidth(180)
         self.symbol_name_edit.editingFinished.connect(self.apply_symbol_name_from_edit)
         tb.addWidget(self.symbol_name_edit)
+
+        tb.addWidget(QLabel('Type:'))
+        self.symbol_type_combo = QComboBox()
+        self.symbol_type_combo.addItems(sorted(self.symbol_type_config.get('types', {}).keys()))
+        self.symbol_type_combo.currentTextChanged.connect(self.symbol_type_changed)
+        tb.addWidget(self.symbol_type_combo)
+        tb.addWidget(QLabel('Subtype:'))
+        self.symbol_subtype_combo = QComboBox()
+        self.symbol_subtype_combo.currentTextChanged.connect(self.symbol_subtype_changed)
+        tb.addWidget(self.symbol_subtype_combo)
+
         tb.addWidget(QLabel('Unit/Part:'))
         self.unit_name_edit = QLineEdit()
         self.unit_name_edit.setMinimumWidth(140)
@@ -370,13 +358,14 @@ class MainWindow(QMainWindow):
         tb.addSeparator()
 
         for label, fn in [
-            ('⟲ 15°', lambda: self.rotate_selected(-15)),
-            ('⟳ 15°', lambda: self.rotate_selected(15)),
-            ('Scale +', lambda: self.scale_selected(1.1)),
-            ('Scale -', lambda: self.scale_selected(1 / 1.1)),
-            ('Mirror X', lambda: self.mirror_selected('x')),
-            ('Mirror Y', lambda: self.mirror_selected('y')),
+            ('⟲ 90°', lambda: self.rotate_selected(-90)),
+            ('⟳ 90°', lambda: self.rotate_selected(90)),
         ]:
+            b = QPushButton(label)
+            b.clicked.connect(fn)
+            tb.addWidget(b)
+
+        for label, fn in [('Mirror X', lambda: self.mirror_selected('x')), ('Mirror Y', lambda: self.mirror_selected('y'))]:
             b = QPushButton(label)
             b.clicked.connect(fn)
             tb.addWidget(b)
@@ -407,6 +396,7 @@ class MainWindow(QMainWindow):
         self.format_combo.blockSignals(True)
         self.format_combo.setCurrentText(getattr(self.symbol, 'sheet_format', SheetFormat.A3.value))
         self.format_combo.blockSignals(False)
+        self.update_symbol_type_controls()
         self.update_name_editors()
         self.left_tabs.setCurrentIndex(1 if self.symbol.kind == SymbolKind.SPLIT.value else 0)
 
@@ -465,6 +455,112 @@ class MainWindow(QMainWindow):
         self.canvas_tabs.setCurrentIndex(cur)
         self.canvas_tabs.blockSignals(False)
 
+    def update_symbol_type_controls(self):
+        if not hasattr(self, 'symbol_type_combo'):
+            return
+        types = self.symbol_type_config.get('types', {})
+        self.symbol_type_combo.blockSignals(True)
+        self.symbol_subtype_combo.blockSignals(True)
+        if self.symbol_type_combo.count() == 0:
+            self.symbol_type_combo.addItems(sorted(types.keys()))
+        typ = getattr(self.symbol, 'symbol_type', 'IC')
+        if typ not in types and types:
+            typ = sorted(types.keys())[0]
+            self.symbol.symbol_type = typ
+        self.symbol_type_combo.setCurrentText(typ)
+        self.populate_subtypes_for_type(typ)
+        self.symbol_subtype_combo.setCurrentText(getattr(self.symbol, 'symbol_subtype', ''))
+        self.symbol_subtype_combo.blockSignals(False)
+        self.symbol_type_combo.blockSignals(False)
+
+    def populate_subtypes_for_type(self, typ: str):
+        self.symbol_subtype_combo.clear()
+        data = self.symbol_type_config.get('types', {}).get(typ, {})
+        subtypes = data.get('subtypes', {})
+        names = list(subtypes.keys()) or ['Generic']
+        self.symbol_subtype_combo.addItems(names)
+
+    def symbol_type_changed(self, typ: str):
+        if self.suspend or not typ:
+            return
+        self.symbol.symbol_type = typ
+        self.populate_subtypes_for_type(typ)
+        subtype = self.symbol_subtype_combo.currentText() or 'Generic'
+        self.symbol.symbol_subtype = subtype
+        self.apply_symbol_template(typ, subtype)
+
+    def symbol_subtype_changed(self, subtype: str):
+        if self.suspend or not subtype:
+            return
+        typ = self.symbol_type_combo.currentText() or getattr(self.symbol, 'symbol_type', 'IC')
+        self.symbol.symbol_type = typ
+        self.symbol.symbol_subtype = subtype
+        self.apply_symbol_template(typ, subtype)
+
+    def _profile_for(self, typ: str, subtype: str):
+        types = self.symbol_type_config.get('types', {})
+        data = dict(types.get(typ, {}))
+        subdata = data.get('subtypes', {}).get(subtype, {}) or {}
+        return data, subdata
+
+    def apply_symbol_template(self, typ: str, subtype: str, reset_pins: bool = False):
+        data, subdata = self._profile_for(typ, subtype)
+        if not data:
+            return
+        for u in self.symbol.units:
+            body = u.body
+            body_tpl = data.get('body', {})
+            old_w, old_h = body.width, body.height
+            body.width = float(body_tpl.get('width', body.width))
+            body.height = float(body_tpl.get('height', body.height))
+            body.x = -body.width / 2.0
+            body.y = body.height / 2.0
+            global_attrs = self.symbol_type_config.get('global_attributes', ['RefDes', 'Package', 'Order Code', 'Value'])
+            attrs = []
+            attrs.extend(global_attrs)
+            attrs.extend(data.get('attributes', []))
+            attrs.extend(subdata.get('attributes', []))
+            clean_attrs = []
+            for a in attrs:
+                if a not in clean_attrs:
+                    clean_attrs.append(a)
+            prefix = subdata.get('prefix', data.get('prefix', 'U'))
+            existing = dict(body.attributes)
+            body.attributes = {a: existing.get(a, '') for a in clean_attrs}
+            body.attributes['RefDes'] = existing.get('RefDes') if existing.get('RefDes') else f'{prefix}?'
+            body.visible_attributes = {a: (a in global_attrs) for a in clean_attrs}
+            body.visible_attributes['RefDes'] = True
+            # Keep existing pins unless there are none or caller requests template replacement.
+            if reset_pins or not u.pins:
+                u.pins.clear()
+                pins = list(data.get('default_pins', []))
+                # 4-pin crystal shortcut if subtype declares pins=4.
+                if typ == 'Quartz' and int(subdata.get('pins', 2)) == 4:
+                    pins = [
+                        {'number':'1','name':'XTAL1','type':'PASSIVE','side':'left'},
+                        {'number':'2','name':'GND','type':'GROUND','side':'left'},
+                        {'number':'3','name':'XTAL2','type':'PASSIVE','side':'right'},
+                        {'number':'4','name':'GND_2','type':'GROUND','side':'right'},
+                    ]
+                for i, pd in enumerate(pins):
+                    side = pd.get('side', 'left')
+                    x = body.x if side == 'left' else body.x + body.width
+                    y = body.y - 2 - i * 2
+                    u.pins.append(PinModel(
+                        number=str(pd.get('number', i + 1)),
+                        name=str(pd.get('name', f'PIN{i+1}')),
+                        function=str(pd.get('function', pd.get('name', f'PIN{i+1}'))),
+                        pin_type=str(pd.get('type', 'BIDI')),
+                        side=side,
+                        x=x,
+                        y=y,
+                    ))
+            self.dock_pins_to_body(u)
+            self.ensure_unique_pin_names(self.symbol)
+        self.rebuild_scene()
+        self.rebuild_tree()
+        self.rebuild_pin_table()
+        self.refresh_properties()
     def update_name_editors(self):
         if hasattr(self, 'symbol_name_edit'):
             self.symbol_name_edit.blockSignals(True)
@@ -572,7 +668,7 @@ class MainWindow(QMainWindow):
         b = u.body
         ref = b.attributes.get('RefDes', '')
         if b.visible_attributes.get('RefDes', False) and ref:
-            txt = TextItem(TextModel(text=ref, x=b.x, y=b.y + 1, font_family=b.refdes_font.family, font_size_grid=b.refdes_font.size_grid, color=b.refdes_font.color), self)
+            txt = TextItem(TextModel(text=ref, x=b.x, y=b.y + 1, font_family=b.refdes_font.family, font_size_pt=b.refdes_font.size_pt, font_size_grid=b.refdes_font.size_grid, color=b.refdes_font.color), self)
             txt.setFlag(QGraphicsItem.ItemIsMovable, False)
             txt.setData(0, 'ATTR_REF_DES')
             self.scene.addItem(txt)
@@ -580,7 +676,7 @@ class MainWindow(QMainWindow):
         for k, v in b.attributes.items():
             if k == 'RefDes' or not b.visible_attributes.get(k, False) or not v:
                 continue
-            txt = TextItem(TextModel(text=f'{k}: {v}', x=b.x, y=b.y - b.height - row, font_family=b.attribute_font.family, font_size_grid=b.attribute_font.size_grid, color=b.attribute_font.color), self)
+            txt = TextItem(TextModel(text=f'{k}: {v}', x=b.x, y=b.y - b.height - row, font_family=b.attribute_font.family, font_size_pt=b.attribute_font.size_pt, font_size_grid=b.attribute_font.size_grid, color=b.attribute_font.color), self)
             txt.setFlag(QGraphicsItem.ItemIsMovable, False)
             txt.setData(0, 'ATTR_BODY')
             self.scene.addItem(txt)
@@ -627,7 +723,7 @@ class MainWindow(QMainWindow):
                 texts = QTreeWidgetItem(['Text', str(len(u.texts))])
                 unit_item.addChild(texts)
                 for ti, t in enumerate(u.texts):
-                    text_item = QTreeWidgetItem([t.text[:30], f'{t.font_family} {t.font_size_grid:g}'])
+                    text_item = QTreeWidgetItem([t.text[:30], f'{t.font_family} {getattr(t, 'font_size_pt', 7.2):g} pt'])
                     text_item.setData(0, Qt.UserRole, ('single_text', si, ui, ti))
                     texts.addChild(text_item)
 
@@ -666,7 +762,7 @@ class MainWindow(QMainWindow):
             texts = QTreeWidgetItem(['Text', str(len(u.texts))])
             unit.addChild(texts)
             for ti, t in enumerate(u.texts):
-                text = QTreeWidgetItem([t.text[:30], f'{t.font_family} {t.font_size_grid:g}'])
+                text = QTreeWidgetItem([t.text[:30], f'{t.font_family} {getattr(t, 'font_size_pt', 7.2):g} pt'])
                 text.setData(0, Qt.UserRole, ('text', ui, ti))
                 texts.addChild(text)
             graphics = QTreeWidgetItem(['Graphics', str(len(u.graphics))])
@@ -729,7 +825,6 @@ class MainWindow(QMainWindow):
     def refresh_properties(self):
         self.clear_properties()
         selected = [i for i in self.scene.selectedItems() if i.data(0) not in ('ATTR_REF_DES', 'ATTR_BODY')]
-        self.update_style_controls_from_selection(selected)
         if not selected:
             self.form.addRow(QLabel('No selection'))
             return
@@ -777,14 +872,50 @@ class MainWindow(QMainWindow):
         w.currentTextChanged.connect(fn)
         return w
 
+    def font_family_combo(self, val, fn):
+        w = QComboBox()
+        families = list(QFontDatabase.families())
+        preferred = ['Arial', 'Calibri', 'Segoe UI', 'Tahoma', 'Verdana', 'Times New Roman', 'Courier New']
+        ordered = []
+        for f in preferred + families:
+            if f and f not in ordered:
+                ordered.append(f)
+        w.addItems(ordered)
+        if val in ordered:
+            w.setCurrentText(val)
+        w.currentTextChanged.connect(fn)
+        return w
+
     def body_props(self, item):
         m = item.model
-        self.form.addRow('Width [grid]', self._dbl(m.width, lambda v: self.set_body_dim(item, 'width', v), 1, 300))
-        self.form.addRow('Height [grid]', self._dbl(m.height, lambda v: self.set_body_dim(item, 'height', v), 1, 300))
-        self.form.addRow('Line style', self._combo([x.value for x in LineStyle], m.line_style, lambda v: self.set_and_refresh(m, 'line_style', v)))
-        self.form.addRow('Line width', self._dbl(m.line_width, lambda v: self.set_and_refresh(m, 'line_width', v), .01, 1, .01))
-        self.font_props('RefDes font', m.refdes_font, refresh_attrs=True)
-        self.font_props('Attribute font', m.attribute_font, refresh_attrs=True)
+
+        body_group = QGroupBox('Body')
+        body_form = QFormLayout(body_group)
+        body_form.addRow('Width [grid]', self._dbl(m.width, lambda v: self.set_body_dim(item, 'width', v), 1, 300, 1))
+        body_form.addRow('Height [grid]', self._dbl(m.height, lambda v: self.set_body_dim(item, 'height', v), 1, 300, 1))
+        body_form.addRow('Line style', self._combo([x.value for x in LineStyle], m.line_style, lambda v: self.set_and_refresh(m, 'line_style', v)))
+        body_form.addRow('Line width [grid]', self._dbl(m.line_width, lambda v: self.set_and_refresh(m, 'line_width', v), .01, 1, .01))
+        body_form.addRow('Rotation [deg]', self.rotation_combo(getattr(m, 'rotation', 0), lambda v: self.set_and_refresh(m, 'rotation', float(v))))
+        b = QPushButton('Body Line Color RGB')
+        b.clicked.connect(lambda: self.color_model(m))
+        body_form.addRow('Color', b)
+        self.form.addRow(body_group)
+
+        attr_group = QGroupBox('Attributes')
+        attr_outer = QVBoxLayout(attr_group)
+        attr_font_row = QFormLayout()
+        attr_font_row.addRow('Font family', self.font_family_combo(m.attribute_font.family, lambda v: self.set_font_attr(m.attribute_font, 'family', v, True)))
+        attr_font_row.addRow('Font size [pt]', self._dbl(getattr(m.attribute_font, 'size_pt', 7.2), lambda v: self.set_font_attr(m.attribute_font, 'size_pt', v, True), 1, 72, .5))
+        fb = QPushButton('Font Color RGB')
+        fb.clicked.connect(lambda: self.color_font(m.attribute_font, True))
+        attr_font_row.addRow('Font color', fb)
+        attr_outer.addLayout(attr_font_row)
+
+        attr_scroll = QScrollArea()
+        attr_scroll.setWidgetResizable(True)
+        attr_scroll.setMinimumHeight(220)
+        attr_widget = QWidget()
+        attr_form = QFormLayout(attr_widget)
         for k in list(m.attributes.keys()):
             row = QWidget()
             l = QHBoxLayout(row)
@@ -796,12 +927,10 @@ class MainWindow(QMainWindow):
             ed.returnPressed.connect(lambda key=k, editor=ed: self.set_attr_val(m, key, editor.text()))
             l.addWidget(cb)
             l.addWidget(ed)
-            self.form.addRow(k, row)
-        self.transform_props(m)
-        b = QPushButton('Color RGB')
-        b.clicked.connect(lambda: self.color_model(m))
-        self.form.addRow('Color', b)
-
+            attr_form.addRow(k, row)
+        attr_scroll.setWidget(attr_widget)
+        attr_outer.addWidget(attr_scroll)
+        self.form.addRow(attr_group)
     def pin_props(self, item):
         m = item.model
         for label, attr in [('Pin Number', 'number'), ('Pin Name', 'name'), ('Pin Function', 'function')]:
@@ -821,8 +950,8 @@ class MainWindow(QMainWindow):
     def text_props(self, item):
         m = item.model
         self.form.addRow('Text', self._line(m.text, lambda v: self.set_text_attr(item, 'text', v)))
-        self.form.addRow('Font', self._line(m.font_family, lambda v: self.set_text_attr(item, 'font_family', v)))
-        self.form.addRow('Size grid', self._dbl(m.font_size_grid, lambda v: self.set_text_attr(item, 'font_size_grid', v), .1, 5, .1))
+        self.form.addRow('Font', self.font_family_combo(m.font_family, lambda v: self.set_text_attr(item, 'font_family', v)))
+        self.form.addRow('Size [pt]', self._dbl(getattr(m, 'font_size_pt', 7.2), lambda v: self.set_text_attr(item, 'font_size_pt', v), 1, 72, .5))
         self.transform_props(m)
         b = QPushButton('Color RGB'); b.clicked.connect(lambda: self.color_model(m)); self.form.addRow('Color', b)
 
@@ -838,20 +967,35 @@ class MainWindow(QMainWindow):
 
     def font_props(self, title, f, refresh_attrs=False):
         self.form.addRow(QLabel(title))
-        self.form.addRow('Family', self._line(f.family, lambda v: self.set_font_attr(f, 'family', v, refresh_attrs)))
-        self.form.addRow('Size [grid]', self._dbl(f.size_grid, lambda v: self.set_font_attr(f, 'size_grid', v, refresh_attrs), .1, 5, .1))
+        self.form.addRow('Family', self.font_family_combo(f.family, lambda v: self.set_font_attr(f, 'family', v, refresh_attrs)))
+        self.form.addRow('Size [pt]', self._dbl(getattr(f, 'size_pt', 7.2), lambda v: self.set_font_attr(f, 'size_pt', v, refresh_attrs), 1, 72, .5))
         b = QPushButton('Font Color RGB')
         b.clicked.connect(lambda: self.color_font(f, refresh_attrs))
         self.form.addRow('Font color', b)
 
     def transform_props(self, m):
-        self.form.addRow('Rotation [deg]', self._dbl(getattr(m, 'rotation', 0), lambda v: self.set_and_refresh(m, 'rotation', v), -360, 360, 15))
-        self.form.addRow('Scale X', self._dbl(getattr(m, 'scale_x', 1), lambda v: self.set_and_refresh(m, 'scale_x', v), .1, 10, .1))
-        self.form.addRow('Scale Y', self._dbl(getattr(m, 'scale_y', 1), lambda v: self.set_and_refresh(m, 'scale_y', v), .1, 10, .1))
+        self.form.addRow('Rotation [deg]', self.rotation_combo(getattr(m, 'rotation', 0), lambda v: self.set_and_refresh(m, 'rotation', float(v))))
+
+    def rotation_combo(self, value, fn):
+        combo = QComboBox()
+        vals = ['0', '90', '180', '270']
+        combo.addItems(vals)
+        combo.setCurrentText(str(int(round(float(value) / 90.0) * 90) % 360))
+        combo.currentTextChanged.connect(fn)
+        return combo
 
     # ------------------------------------------------------------------ Model updates
     def set_font_attr(self, f, a, v, refresh_attrs=False):
-        setattr(f, a, v)
+        if a == 'size_pt':
+            v = float(v)
+            f.size_pt = v
+            f.size_grid = round(v / 7.2, 3)
+        elif a == 'size_grid':
+            v = float(v)
+            f.size_grid = v
+            f.size_pt = round(v * 7.2, 2)
+        else:
+            setattr(f, a, v)
         if refresh_attrs:
             self.update_attribute_items_for_unit()
         self.schedule_scene_refresh()
@@ -897,6 +1041,8 @@ class MainWindow(QMainWindow):
 
     def set_pin_attr(self, m, a, v):
         setattr(m, a, v)
+        if a == 'name':
+            self.ensure_unique_pin_names(self.symbol)
         if a == 'side':
             self.dock_pins_to_body(self.current_unit)
         dup = duplicate_pin_numbers(self.symbol)
@@ -914,9 +1060,25 @@ class MainWindow(QMainWindow):
         self.schedule_scene_refresh()
 
     def set_text_attr(self, item, a, v):
-        setattr(item.model, a, v)
-        if a == 'text':
-            item.setPlainText(v)
+        if a == 'font_size_pt':
+            v = float(v)
+            item.model.font_size_pt = v
+            item.model.font_size_grid = round(v / 7.2, 3)
+            from symbol_wizard.graphics.items import qfont_for
+            item.setFont(qfont_for(item.model.font_family, item.model.font_size_pt))
+        elif a == 'font_size_grid':
+            v = float(v)
+            item.model.font_size_grid = v
+            item.model.font_size_pt = round(v * 7.2, 2)
+            from symbol_wizard.graphics.items import qfont_for
+            item.setFont(qfont_for(item.model.font_family, item.model.font_size_pt))
+        else:
+            setattr(item.model, a, v)
+            if a == 'text':
+                item.setPlainText(v)
+            if a == 'font_family':
+                from symbol_wizard.graphics.items import qfont_for
+                item.setFont(qfont_for(item.model.font_family, getattr(item.model, 'font_size_pt', 7.2)))
         self.schedule_scene_refresh()
 
     def color_model(self, m, attr='color'):
@@ -950,6 +1112,11 @@ class MainWindow(QMainWindow):
                 item.setPos(model.x * g, -model.y * g)
             elif kind == 'TEXT':
                 item.setPos(model.x * g, -model.y * g)
+                try:
+                    from symbol_wizard.graphics.items import qfont_for
+                    item.setFont(qfont_for(model.font_family, getattr(model, 'font_size_pt', 7.2)))
+                except Exception:
+                    pass
             elif kind == 'GRAPHIC':
                 item.setPos(model.x * g, -model.y * g)
             item.update()
@@ -1010,6 +1177,7 @@ class MainWindow(QMainWindow):
         self.rebuild_tree()
         self.rebuild_pin_table()
         self._refresh_visual_only = False
+        self.symbol_type_config = load_symbol_type_config()
 
     # ------------------------------------------------------------------ Grouping / constraints
     def move_current_unit_group(self, dx: float, dy: float, source_body=None):
@@ -1091,85 +1259,52 @@ class MainWindow(QMainWindow):
             self.default_color = (c.red(), c.green(), c.blue())
             self.apply_line_defaults()
 
-    def _style_units_scope(self):
-        # Style synchronization is per logical symbol. For split symbols this means
-        # every split part/unit; for single symbols it is the current symbol.
-        return list(self.symbol.units)
-
-    def read_style_for_target(self):
-        if not hasattr(self, 'style_target_combo'):
+    def update_style_controls_from_target(self):
+        target = self.style_target_combo.currentText() if hasattr(self, 'style_target_combo') else 'Selection'
+        model = None
+        if target == 'Body':
+            model = self.current_unit.body
+            style = getattr(model, 'line_style', None); width = getattr(model, 'line_width', None)
+        elif target == 'Pins' and self.current_unit.pins:
+            model = self.current_unit.pins[0]
+            style = getattr(model, 'line_style', None); width = getattr(model, 'line_width', None)
+        elif target == 'Graphics' and self.current_unit.graphics:
+            model = self.current_unit.graphics[0].style
+            style = getattr(model, 'line_style', None); width = getattr(model, 'line_width', None)
+        elif self.scene.selectedItems():
+            it = self.scene.selectedItems()[0]
+            if it.data(0) == 'GRAPHIC':
+                model = it.model.style; style = model.line_style; width = model.line_width
+            else:
+                model = it.model; style = getattr(model, 'line_style', None); width = getattr(model, 'line_width', None)
+        else:
             return
-        target = self.style_target_combo.currentText()
-        style = None
-        color = None
-        units = self._style_units_scope()
-        if target == 'Body' and units:
-            b = units[0].body
-            style = (b.line_style, b.line_width); color = b.color
-        elif target == 'Pins':
-            pins = [p for u in units for p in u.pins]
-            if pins:
-                style = (pins[0].line_style, pins[0].line_width); color = pins[0].color
-        elif target == 'Graphics':
-            graphics = [g for u in units for g in u.graphics]
-            if graphics:
-                style = (graphics[0].style.line_style, graphics[0].style.line_width); color = graphics[0].style.stroke
+        self.line_style.blockSignals(True); self.line_width.blockSignals(True)
         if style:
-            self.line_style.blockSignals(True); self.line_width.blockSignals(True)
-            self.line_style.setCurrentText(style[0])
-            self.line_width.setValue(float(style[1]))
-            self.line_style.blockSignals(False); self.line_width.blockSignals(False)
-        if color:
-            self.default_color = color
-
-    def update_style_controls_from_selection(self, selected=None):
-        if not hasattr(self, 'style_target_combo'):
-            return
-        selected = selected if selected is not None else [i for i in self.scene.selectedItems() if i.data(0) not in ('ATTR_REF_DES','ATTR_BODY')]
-        if not selected:
-            return
-        item = selected[0]
-        kind = item.data(0)
-        self.style_target_combo.blockSignals(True); self.line_style.blockSignals(True); self.line_width.blockSignals(True)
-        if kind == 'BODY':
-            self.style_target_combo.setCurrentText('Body')
-            self.line_style.setCurrentText(item.model.line_style)
-            self.line_width.setValue(float(item.model.line_width))
-            self.default_color = item.model.color
-        elif kind == 'PIN':
-            self.style_target_combo.setCurrentText('Pins')
-            self.line_style.setCurrentText(item.model.line_style)
-            self.line_width.setValue(float(item.model.line_width))
-            self.default_color = item.model.color
-        elif kind == 'GRAPHIC':
-            self.style_target_combo.setCurrentText('Graphics')
-            self.line_style.setCurrentText(item.model.style.line_style)
-            self.line_width.setValue(float(item.model.style.line_width))
-            self.default_color = item.model.style.stroke
-        self.style_target_combo.blockSignals(False); self.line_style.blockSignals(False); self.line_width.blockSignals(False)
+            self.line_style.setCurrentText(style)
+        if width is not None:
+            self.line_width.setValue(float(width))
+        self.line_style.blockSignals(False); self.line_width.blockSignals(False)
 
     def apply_line_defaults(self):
-        if not hasattr(self, 'style_target_combo'):
-            return
-        target = self.style_target_combo.currentText()
-        line_style = self.line_style.currentText()
-        line_width = self.line_width.value()
-        color = self.default_color
-        for u in self._style_units_scope():
-            if target == 'Body':
-                u.body.line_style = line_style
-                u.body.line_width = line_width
-                u.body.color = color
-            elif target == 'Pins':
-                for p in u.pins:
-                    p.line_style = line_style
-                    p.line_width = line_width
-                    p.color = color
-            elif target == 'Graphics':
-                for g in u.graphics:
-                    g.style.line_style = line_style
-                    g.style.line_width = line_width
-                    g.style.stroke = color
+        style = self.line_style.currentText(); width = self.line_width.value(); color = self.default_color
+        target = self.style_target_combo.currentText() if hasattr(self, 'style_target_combo') else 'Selection'
+        targets = []
+        if target == 'Selection':
+            targets = self.scene.selectedItems()
+        elif target == 'Body':
+            targets = [it for it in self.scene.items() if it.data(0) == 'BODY']
+        elif target == 'Pins':
+            targets = [it for it in self.scene.items() if it.data(0) == 'PIN']
+        elif target == 'Graphics':
+            targets = [it for it in self.scene.items() if it.data(0) == 'GRAPHIC']
+        for it in targets:
+            if it.data(0) == 'PIN':
+                it.model.line_style = style; it.model.line_width = width; it.model.color = color
+            elif it.data(0) == 'GRAPHIC':
+                it.model.style.line_style = style; it.model.style.line_width = width; it.model.style.stroke = color
+            elif it.data(0) == 'BODY':
+                it.model.line_style = style; it.model.line_width = width; it.model.color = color
         self.schedule_scene_refresh()
 
     def add_pin(self, side, x=None, y=None):
@@ -1208,39 +1343,20 @@ class MainWindow(QMainWindow):
         self.schedule_scene_refresh(visual_only=True)
 
     def mirror_selected(self, axis: str):
-        selected = [it for it in self.scene.selectedItems() if it.data(0) in ('PIN', 'TEXT', 'GRAPHIC', 'BODY')]
-        if not selected:
-            return
-        b = self.current_unit.body
-        cx = b.x + b.width / 2
-        cy = b.y - b.height / 2
-        for it in selected:
-            kind = it.data(0)
-            m = it.model
-            if kind == 'PIN':
-                if axis == 'x':
-                    m.side = PinSide.RIGHT.value if m.side == PinSide.LEFT.value else PinSide.LEFT.value
-                    m.x = b.x if m.side == PinSide.LEFT.value else b.x + b.width
-                else:
-                    m.y = round((2 * cy - m.y) * 2) / 2
-            elif kind == 'TEXT':
-                if axis == 'x':
-                    m.x = round((2 * cx - m.x) * 2) / 2
-                else:
-                    m.y = round((2 * cy - m.y) * 2) / 2
-            elif kind == 'GRAPHIC':
-                if axis == 'x':
-                    m.x = round((2 * cx - (m.x + m.w)) * 2) / 2
-                    m.w = -m.w if m.shape == 'line' else m.w
-                else:
-                    m.y = round((2 * cy - (m.y + m.h)) * 2) / 2
-                    m.h = -m.h if m.shape == 'line' else m.h
-            elif kind == 'BODY':
-                # Body is the local symbol frame. Mirroring it alone would be ambiguous;
-                # mirror child objects instead.
+        # Simple grid-aware mirror around the current body/origin.
+        body = self.current_unit.body
+        cx = body.x + body.width / 2
+        cy = body.y + body.height / 2
+        for it in self.scene.selectedItems():
+            m = getattr(it, 'model', None)
+            if m is None or not hasattr(m, 'x') or not hasattr(m, 'y'):
                 continue
-        self.dock_pins_to_body(self.current_unit)
-        self._selection_restore_ids = {id(getattr(it, 'model', None)) for it in selected if getattr(it, 'model', None) is not None}
+            if axis == 'x':
+                m.x = round(cx - (m.x - cx))
+            else:
+                m.y = round(cy - (m.y - cy))
+            if it.data(0) == 'PIN':
+                m.side = PinSide.RIGHT.value if m.side == PinSide.LEFT.value else PinSide.LEFT.value
         self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
 
     def copy_selected(self):
@@ -1267,7 +1383,7 @@ class MainWindow(QMainWindow):
                 m.number = next_pin_number(existing_pins)
                 existing_pins.append(m.number)
                 self.current_unit.pins.append(m)
-                self.make_pin_name_unique(m, self.symbol)
+                self.ensure_unique_pin_names(self.symbol)
                 pasted_models.append(m)
             elif kind == 'TEXT':
                 self.current_unit.texts.append(m)
@@ -1292,57 +1408,25 @@ class MainWindow(QMainWindow):
             elif it.data(0) == 'GRAPHIC': u.graphics = [g for g in u.graphics if g is not it.model]
         self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
 
-    def _pin_scope(self, symbol: SymbolModel | None = None):
-        """All pins that belong to the logical symbol.
-
-        For split symbols the uniqueness scope is the whole split component,
-        therefore all split parts/units are checked together. For single
-        symbols this is effectively the selected symbol.
-        """
-        symbol = symbol or self.symbol
-        return [pin for unit in symbol.units for pin in unit.pins]
-
-    @staticmethod
-    def _unique_with_suffix(base: str, existing: set[str]) -> str:
-        base = (base or 'PIN').strip() or 'PIN'
-        if base not in existing:
-            return base
-        i = 2
-        while f'{base}_{i}' in existing:
-            i += 1
-        return f'{base}_{i}'
-
-    def make_pin_name_unique(self, pin: PinModel, symbol: SymbolModel | None = None) -> bool:
-        symbol = symbol or self.symbol
-        existing = {str(p.name).strip() for p in self._pin_scope(symbol) if p is not pin and str(p.name).strip()}
-        new_name = self._unique_with_suffix(str(pin.name).strip() or 'PIN', existing)
-        changed = new_name != pin.name
-        pin.name = new_name
-        return changed
-
-    def enforce_unique_pin_names(self, symbol: SymbolModel | None = None) -> bool:
-        symbol = symbol or self.symbol
-        changed = False
-        existing: set[str] = set()
-        for pin in self._pin_scope(symbol):
-            base = str(pin.name).strip() or 'PIN'
-            unique = self._unique_with_suffix(base, existing)
-            if pin.name != unique:
-                pin.name = unique
-                changed = True
-            existing.add(pin.name)
-        return changed
+    def ensure_unique_pin_names(self, symbol: SymbolModel):
+        used = set()
+        for u in symbol.units:
+            for p in u.pins:
+                base = (p.name or 'PIN').strip() or 'PIN'
+                name = base
+                i = 2
+                while name in used:
+                    name = f'{base}_{i}'
+                    i += 1
+                p.name = name
+                used.add(name)
 
     def validate_pins(self, silent=False):
-        renamed = self.enforce_unique_pin_names(self.symbol)
         dup = duplicate_pin_numbers(self.symbol)
         if dup and not silent:
             QMessageBox.warning(self, 'Pin validation', 'Doppelte Pinnummern im Symbol sind verboten: ' + ', '.join(dup))
         elif not dup and not silent:
-            msg = 'Keine doppelten Pinnummern gefunden.'
-            if renamed:
-                msg += '\nDoppelte Pin-Namen wurden automatisch mit _2, _3, ... eindeutig gemacht.'
-            QMessageBox.information(self, 'Pin validation', msg)
+            QMessageBox.information(self, 'Pin validation', 'Keine doppelten Pinnummern gefunden.')
         return not dup
 
     def zoom_to_fit_symbol(self):
@@ -1405,12 +1489,10 @@ class MainWindow(QMainWindow):
         self.refresh_properties()
 
     # ------------------------------------------------------------------ Navigation / tables
-    def pin_combo_changed(self, value: str):
-        combo = self.sender()
-        payload = combo.property('pin_payload') if isinstance(combo, QComboBox) else None
-        if not payload:
+    def pin_table_combo_changed(self, meta, col, value):
+        if self.suspend:
             return
-        si, ui, pi, col = payload
+        si, ui, pi = meta
         if si >= len(self.library.symbols):
             return
         sym = self.library.symbols[si]
@@ -1418,20 +1500,27 @@ class MainWindow(QMainWindow):
             return
         p = sym.units[ui].pins[pi]
         if col == 3:
-            p.pin_type = value if value in [x.value for x in PinType] else PinType.BIDI.value
+            allowed = [x.value for x in PinType]
+            if value in allowed:
+                p.pin_type = value
         elif col == 4:
-            p.side = value if value in [x.value for x in PinSide] else p.side
+            allowed = [x.value for x in PinSide]
+            if value in allowed:
+                p.side = value
+                # Keep pin docked on selected side.
+                body = sym.units[ui].body
+                p.x = body.x if p.side == PinSide.LEFT.value else body.x + body.width
         elif col == 5:
             p.inverted = str(value).lower() in ('1', 'true', 'yes', 'ja', 'x')
-        if col == 4 and si == self.library.current_symbol_index:
-            self.dock_pins_to_body(self.current_unit)
         self.validate_pins(silent=True)
         if si == self.library.current_symbol_index:
-            self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
+            self.rebuild_scene(); self.rebuild_tree()
 
     def pin_table_changed(self, r, c):
         table = self.sender()
         if self.suspend or not isinstance(table, QTableWidget):
+            return
+        if c >= 3:
             return
         it = table.item(r, c)
         if not it:
@@ -1447,19 +1536,19 @@ class MainWindow(QMainWindow):
         if col == 0:
             p.number = val
         elif col == 1:
-            p.name = val or 'PIN'
-            self.make_pin_name_unique(p, sym)
+            p.name = val
+            self.ensure_unique_pin_names(sym)
         elif col == 2:
             p.function = val
         elif col == 3:
-            p.pin_type = val if val in [x.value for x in PinType] else PinType.BIDI.value
+            p.pin_type = val if val in [x.value for x in PinType] else p.pin_type
         elif col == 4:
             p.side = val if val in [x.value for x in PinSide] else p.side
         elif col == 5:
-            p.inverted = val.lower() in ('1', 'true', 'yes', 'ja', 'x')
+            p.inverted = str(val).lower() in ('1', 'true', 'yes', 'ja', 'x')
         self.validate_pins(silent=True)
         if si == self.library.current_symbol_index:
-            self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
+            self.rebuild_scene(); self.rebuild_tree()
 
     def pin_table_clicked(self, r, c):
         table = self.sender()
@@ -1473,6 +1562,109 @@ class MainWindow(QMainWindow):
         self.current_unit_index = ui
         self.rebuild_symbol_tabs(); self.rebuild_canvas_tabs(); self.rebuild_unit_tabs(); self.rebuild_scene(); self.rebuild_tree(); self.update_name_editors()
         self.select_model_in_scene(self.symbol.units[ui].pins[pi])
+
+    def symbol_tab_context_menu(self, kind: str, pos):
+        tabs = self.single_tabs if kind == SymbolKind.SINGLE.value else self.split_tabs
+        tab_index = tabs.tabBar().tabAt(pos)
+        indices = self._symbol_indices(kind)
+        if tab_index < 0 or tab_index >= len(indices):
+            return
+        symbol_index = indices[tab_index]
+        menu = QMenu(self)
+        act_delete = menu.addAction('Delete Symbol')
+        act = menu.exec(tabs.mapToGlobal(pos))
+        if act == act_delete:
+            self.delete_symbol_at(symbol_index)
+
+    def unit_tab_context_menu(self, pos):
+        tab_index = self.unit_tabs.tabBar().tabAt(pos)
+        if tab_index < 0:
+            return
+        menu = QMenu(self)
+        act_delete = menu.addAction('Delete Unit / Split Part')
+        act = menu.exec(self.unit_tabs.mapToGlobal(pos))
+        if act == act_delete:
+            self.delete_unit_at(tab_index)
+
+    def tree_context_menu(self, tree: QTreeWidget, pos):
+        item = tree.itemAt(pos)
+        if item is None:
+            return
+        data = item.data(0, Qt.UserRole)
+        if not data:
+            return
+        menu = QMenu(self)
+        action = None
+        if data[0] == 'symbol':
+            action = menu.addAction('Delete Symbol')
+        elif data[0] in ('single_unit', 'split_unit'):
+            action = menu.addAction('Delete Unit / Split Part')
+        elif data[0] in ('single_pin', 'split_pin'):
+            action = menu.addAction('Delete Pin')
+        elif data[0] in ('text', 'graphic'):
+            action = menu.addAction('Delete Object')
+        if action is None:
+            return
+        chosen = menu.exec(tree.mapToGlobal(pos))
+        if chosen != action:
+            return
+        kind = data[0]
+        if kind == 'symbol':
+            self.delete_symbol_at(data[1])
+        elif kind in ('single_unit', 'split_unit'):
+            self.library.current_symbol_index = data[1]
+            self.delete_unit_at(data[2])
+        elif kind in ('single_pin', 'split_pin'):
+            self.library.current_symbol_index = data[1]
+            self.delete_pin_at(data[1], data[2], data[3])
+        elif kind == 'text':
+            ui, ti = data[1], data[2]
+            if ui < len(self.symbol.units) and ti < len(self.symbol.units[ui].texts):
+                self.symbol.units[ui].texts.pop(ti)
+            self.rebuild_scene(); self.rebuild_tree()
+        elif kind == 'graphic':
+            ui, gi = data[1], data[2]
+            if ui < len(self.symbol.units) and gi < len(self.symbol.units[ui].graphics):
+                self.symbol.units[ui].graphics.pop(gi)
+            self.rebuild_scene(); self.rebuild_tree()
+
+    def delete_symbol_at(self, symbol_index: int):
+        if len(self.library.symbols) <= 1:
+            QMessageBox.information(self, 'Delete Symbol', 'Das letzte Symbol kann nicht gelöscht werden.')
+            return
+        sym = self.library.symbols[symbol_index]
+        if QMessageBox.question(self, 'Delete Symbol', f'Symbol "{sym.name}" wirklich löschen?') != QMessageBox.Yes:
+            return
+        self.library.symbols.pop(symbol_index)
+        self.library.current_symbol_index = max(0, min(self.library.current_symbol_index, len(self.library.symbols) - 1))
+        self.current_unit_index = 0
+        self.rebuild_all()
+
+    def delete_unit_at(self, unit_index: int):
+        sym = self.symbol
+        if len(sym.units) <= 1:
+            QMessageBox.information(self, 'Delete Unit', 'Die letzte Unit / der letzte Split Part kann nicht gelöscht werden.')
+            return
+        if unit_index < 0 or unit_index >= len(sym.units):
+            return
+        name = sym.units[unit_index].name
+        if QMessageBox.question(self, 'Delete Unit', f'Unit / Split Part "{name}" wirklich löschen?') != QMessageBox.Yes:
+            return
+        sym.units.pop(unit_index)
+        self.current_unit_index = max(0, min(self.current_unit_index, len(sym.units) - 1))
+        self.rebuild_all()
+
+    def delete_pin_at(self, si: int, ui: int, pi: int):
+        if si >= len(self.library.symbols):
+            return
+        sym = self.library.symbols[si]
+        if ui >= len(sym.units) or pi >= len(sym.units[ui].pins):
+            return
+        pin = sym.units[ui].pins[pi]
+        if QMessageBox.question(self, 'Delete Pin', f'Pin {pin.number} / {pin.name} wirklich löschen?') != QMessageBox.Yes:
+            return
+        sym.units[ui].pins.pop(pi)
+        self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
 
     def tree_clicked(self, item, col):
         data = item.data(0, Qt.UserRole)
@@ -1547,7 +1739,6 @@ class MainWindow(QMainWindow):
         self.library.current_symbol_index = tab_index
         self.current_unit_index = 0
         self.rebuild_all()
-        QTimer.singleShot(0, self.zoom_to_fit_symbol)
 
     def change_symbol_from_tab(self, kind: str, tab_index: int):
         if tab_index < 0: return
@@ -1568,15 +1759,15 @@ class MainWindow(QMainWindow):
     def new_single_symbol(self):
         self.library.add_symbol('Symbol', SymbolKind.SINGLE.value)
         self.current_unit_index = 0
+        self.apply_symbol_template(getattr(self.symbol, 'symbol_type', 'IC'), getattr(self.symbol, 'symbol_subtype', 'Generic IC'))
         self.rebuild_all()
-        QTimer.singleShot(0, self.zoom_to_fit_symbol)
 
     def new_split_symbol(self):
         s = self.library.add_symbol('Split Symbol', SymbolKind.SPLIT.value)
         s.units = [SymbolUnitModel(name=f'{s.name}_1'), SymbolUnitModel(name=f'{s.name}_2')]
         self.current_unit_index = 0
+        self.apply_symbol_template(getattr(self.symbol, 'symbol_type', 'IC'), getattr(self.symbol, 'symbol_subtype', 'Generic IC'))
         self.rebuild_all()
-        QTimer.singleShot(0, self.zoom_to_fit_symbol)
 
     def add_unit(self):
         if self.symbol.kind != SymbolKind.SPLIT.value:
@@ -1641,7 +1832,6 @@ class MainWindow(QMainWindow):
                     pin.visible_name = not bool(function)
                     pin.visible_function = bool(function)
                     self.current_unit.pins.append(pin)
-                    self.make_pin_name_unique(pin, self.symbol)
                     existing.append(number)
                     imported += 1
         except Exception as exc:
@@ -1676,17 +1866,14 @@ class MainWindow(QMainWindow):
             for s in self.library.symbols:
                 if not getattr(s, 'kind', None):
                     s.kind = SymbolKind.SPLIT.value if getattr(s, 'is_split', False) else SymbolKind.SINGLE.value
-                self.enforce_unique_pin_names(s)
             self.current_unit_index = 0
             self.rebuild_all()
-            QTimer.singleShot(0, self.zoom_to_fit_symbol)
 
     def import_symbol(self):
         p, _ = QFileDialog.getOpenFileName(self, 'Import Symbol JSON', '', 'JSON (*.json)')
         if not p: return
         s = load_symbol(p)
         s.name = self.library.unique_import_name(s.name)
-        self.enforce_unique_pin_names(s)
         self.library.symbols.append(s)
         self.library.current_symbol_index = len(self.library.symbols) - 1
         self.current_unit_index = 0

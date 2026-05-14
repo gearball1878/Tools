@@ -2,8 +2,21 @@ import json
 from pathlib import Path
 from symbol_wizard.models.document import *
 
-def _font(d, size=.75):
-    return FontModel(**d) if isinstance(d, dict) else FontModel(size_grid=size)
+def _font(d, size=1.0):
+    if not isinstance(d, dict):
+        return FontModel(size_grid=size, size_pt=round(size * 7.2, 2))
+    d = dict(d)
+    if 'size_pt' not in d:
+        try:
+            d['size_pt'] = round(float(d.get('size_grid', size)) * 7.2, 2)
+        except (TypeError, ValueError):
+            d['size_pt'] = round(size * 7.2, 2)
+    if 'size_grid' not in d:
+        try:
+            d['size_grid'] = round(float(d.get('size_pt', 7.2)) / 7.2, 3)
+        except (TypeError, ValueError):
+            d['size_grid'] = size
+    return FontModel(**d)
 def _style(d): return StyleModel(**d) if isinstance(d, dict) else StyleModel()
 def _graphic(d):
     d = _coerce_transform(d)
@@ -23,7 +36,19 @@ def _pin(d):
     d['number_font']=_font(d.get('number_font', {}), .45)
     d['label_font']=_font(d.get('label_font', {}), .55)
     return PinModel(**d)
-def _text(d): return TextModel(**_coerce_transform(d))
+def _text(d):
+    d = _coerce_transform(d)
+    if 'font_size_pt' not in d:
+        try:
+            d['font_size_pt'] = round(float(d.get('font_size_grid', 1.0)) * 7.2, 2)
+        except (TypeError, ValueError):
+            d['font_size_pt'] = 7.2
+    if 'font_size_grid' not in d:
+        try:
+            d['font_size_grid'] = round(float(d.get('font_size_pt', 7.2)) / 7.2, 3)
+        except (TypeError, ValueError):
+            d['font_size_grid'] = 1.0
+    return TextModel(**d)
 def _body(d):
     raw = dict(d or {})
     d=_coerce_transform(raw)

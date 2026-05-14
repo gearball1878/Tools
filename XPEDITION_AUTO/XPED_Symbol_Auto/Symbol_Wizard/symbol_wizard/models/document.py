@@ -4,7 +4,7 @@ from enum import Enum
 from typing import Dict, List, Tuple
 
 class PinType(str, Enum):
-    IN='IN'; OUT='OUT'; BIDI='BIDI'; POWER='POWER'; GROUND='GROUND'; ANALOG='ANALOG'
+    IN='IN'; OUT='OUT'; BIDI='BIDI'; POWER='POWER'; GROUND='GROUND'; ANALOG='ANALOG'; PASSIVE='PASSIVE'; NC='NC'
 class PinSide(str, Enum):
     LEFT='left'; RIGHT='right'
 class OriginMode(str, Enum):
@@ -22,7 +22,10 @@ class LineStyle(str, Enum):
 @dataclass
 class FontModel:
     family: str='Arial'
-    size_grid: float=0.75
+    # Font sizes are stored in common point units. size_grid is kept for
+    # backwards compatibility with older JSON files. 0.100 inch grid => 7.2 pt.
+    size_pt: float=7.2
+    size_grid: float=1.0
     color: Tuple[int,int,int]=(0,0,0)
 
 @dataclass
@@ -52,13 +55,13 @@ class PinModel(TransformModel):
     inverted: bool=False; color: Tuple[int,int,int]=(0,0,0)
     visible_number: bool=True; visible_name: bool=True; visible_function: bool=True
     line_width: float=0.03; line_style: str=LineStyle.SOLID.value
-    number_font: FontModel=field(default_factory=lambda: FontModel(size_grid=0.45))
-    label_font: FontModel=field(default_factory=lambda: FontModel(size_grid=0.55))
+    number_font: FontModel=field(default_factory=lambda: FontModel(size_pt=4.0, size_grid=0.55))
+    label_font: FontModel=field(default_factory=lambda: FontModel(size_pt=7.2, size_grid=1.0))
 
 @dataclass
 class TextModel(TransformModel):
     text: str='Text'; x: float=0.0; y: float=0.0
-    font_family: str='Arial'; font_size_grid: float=0.9; color: Tuple[int,int,int]=(0,0,0)
+    font_family: str='Arial'; font_size_pt: float=7.2; font_size_grid: float=1.0; color: Tuple[int,int,int]=(0,0,0)
 
 @dataclass
 class SymbolBodyModel(TransformModel):
@@ -67,8 +70,8 @@ class SymbolBodyModel(TransformModel):
     # extends downward from (x, y), therefore x=-width/2 and y=height/2.
     x: float=-8.0; y: float=12.0; width: float=16.0; height: float=24.0
     color: Tuple[int,int,int]=(0,0,0); line_width: float=0.03; line_style: str=LineStyle.SOLID.value
-    attribute_font: FontModel=field(default_factory=lambda: FontModel(size_grid=0.75))
-    refdes_font: FontModel=field(default_factory=lambda: FontModel(size_grid=0.9))
+    attribute_font: FontModel=field(default_factory=lambda: FontModel(size_pt=7.2, size_grid=1.0))
+    refdes_font: FontModel=field(default_factory=lambda: FontModel(size_pt=7.2, size_grid=1.0))
     attributes: Dict[str,str]=field(default_factory=lambda:{'Order Code':'','Package':'','RefDes':'U?','Value':'','Frequency':'','Tolerance':'','Technology':''})
     visible_attributes: Dict[str,bool]=field(default_factory=lambda:{'Order Code':False,'Package':True,'RefDes':True,'Value':True,'Frequency':False,'Tolerance':False,'Technology':False})
     refdes_align: str='left'; body_attr_align: str='left'
@@ -84,6 +87,8 @@ class SymbolUnitModel:
 @dataclass
 class SymbolModel:
     name: str='Symbol 1'
+    symbol_type: str='IC'
+    symbol_subtype: str='Generic IC'
     kind: str=SymbolKind.SINGLE.value
     is_split: bool=False  # legacy compatibility; kind is authoritative
     grid_inch: float=0.100
