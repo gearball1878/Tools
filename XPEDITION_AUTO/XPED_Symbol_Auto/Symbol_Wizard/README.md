@@ -68,3 +68,17 @@ This is still an MVP. The next useful step is replacing the simple corner handle
 - Mouse wheel pans vertically; `Shift + mouse wheel` pans horizontally.
 - Text objects are movable by default and enter text editing only on double-click.
 - Resize handling no longer rebuilds the whole scene during drag, which makes scaling smoother and avoids stale drawing remnants.
+
+## PINMUX CSV Import
+
+Menu: `File -> Import PINMUX CSV`
+
+Expected columns:
+
+```csv
+Pin Name|Pin Type|Pin Function|Pin Number
+VDD|POWER||1
+PA0|BIDI|ADC_IN0|A1
+```
+
+Supported separators are comma, semicolon, pipe, and tab. If `Pin Function` is empty, the editor displays `Pin Name`; otherwise it displays `Pin Function`.

@@ -1,5 +1,6 @@
 from __future__ import annotations
 import copy
+import csv
 from PySide6.QtCore import Qt, QTimer, QRectF
 from PySide6.QtGui import QAction, QColor, QKeySequence
 from PySide6.QtWidgets import *
@@ -107,9 +108,13 @@ class MainWindow(QMainWindow):
         self.props = QWidget()
         self.form = QFormLayout(self.props)
 
+        self.canvas_tabs = QTabWidget()
+        self.canvas_tabs.currentChanged.connect(self.change_symbol_from_canvas_tab)
+        self.canvas_tabs.addTab(self.view, self.symbol.name)
+
         splitter = QSplitter()
         splitter.addWidget(left_tabs)
-        splitter.addWidget(self.view)
+        splitter.addWidget(self.canvas_tabs)
         splitter.addWidget(self.props)
         splitter.setSizes([360, 900, 380])
         self.setCentralWidget(splitter)
@@ -125,6 +130,7 @@ class MainWindow(QMainWindow):
             ('Save Current Symbol JSON', self.save_current_symbol, 'Ctrl+S'),
             ('Save All Symbols JSON', self.save_all_symbols, 'Ctrl+Shift+S'),
             ('Import Symbol JSON', self.import_symbol, None),
+            ('Import PINMUX CSV', self.import_pinmux_csv, None),
             ('Exit', self.close, None),
         ]
         for label, fn, sc in entries:
@@ -216,6 +222,18 @@ class MainWindow(QMainWindow):
         color.clicked.connect(self.pick_default_color)
         tb.addWidget(color)
         tb.addSeparator()
+        tb.addWidget(QLabel('Symbol Name:'))
+        self.symbol_name_edit = QLineEdit()
+        self.symbol_name_edit.setMinimumWidth(180)
+        self.symbol_name_edit.editingFinished.connect(self.apply_symbol_name_from_edit)
+        tb.addWidget(self.symbol_name_edit)
+        tb.addWidget(QLabel('Unit/Part:'))
+        self.unit_name_edit = QLineEdit()
+        self.unit_name_edit.setMinimumWidth(140)
+        self.unit_name_edit.editingFinished.connect(self.apply_unit_name_from_edit)
+        tb.addWidget(self.unit_name_edit)
+
+        tb.addSeparator()
 
         for label, fn in [
             ('⟲ 15°', lambda: self.rotate_selected(-15)),
@@ -230,6 +248,7 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------ Rebuilds
     def rebuild_all(self):
         self.rebuild_symbol_tabs()
+        self.rebuild_canvas_tabs()
         self.rebuild_unit_tabs()
         self.rebuild_scene()
         self.rebuild_tree()
@@ -240,6 +259,7 @@ class MainWindow(QMainWindow):
         self.format_combo.blockSignals(True)
         self.format_combo.setCurrentText(getattr(self.symbol, 'sheet_format', SheetFormat.A3.value))
         self.format_combo.blockSignals(False)
+        self.update_name_editors()
         self.left_tabs.setCurrentIndex(1 if self.symbol.kind == SymbolKind.SPLIT.value else 0)
 
     def _symbol_indices(self, kind: str):
@@ -264,6 +284,74 @@ class MainWindow(QMainWindow):
         self.single_tabs.blockSignals(False)
         self.split_tabs.blockSignals(False)
 
+    def rebuild_canvas_tabs(self):
+        """Top-level canvas tabs. Each symbol gets its own canvas tab name; switching changes the model shown in the canvas."""
+        if not hasattr(self, 'canvas_tabs'):
+            return
+        self.canvas_tabs.blockSignals(True)
+        current_widget = self.view
+        # Remove all tabs without deleting the view widget.
+        while self.canvas_tabs.count():
+            self.canvas_tabs.removeTab(0)
+        for s in self.library.symbols:
+            self.canvas_tabs.addTab(current_widget if self.canvas_tabs.count() == self.library.current_symbol_index else QWidget(), s.name)
+        # Make sure the real canvas widget is placed at the current symbol index.
+        cur = self.library.current_symbol_index
+        for i in range(self.canvas_tabs.count()):
+            if self.canvas_tabs.widget(i) is current_widget and i != cur:
+                self.canvas_tabs.removeTab(i)
+                self.canvas_tabs.insertTab(i, QWidget(), self.library.symbols[i].name)
+                break
+        if self.canvas_tabs.widget(cur) is not current_widget:
+            self.canvas_tabs.removeTab(cur)
+            self.canvas_tabs.insertTab(cur, current_widget, self.symbol.name)
+        self.canvas_tabs.setCurrentIndex(cur)
+        self.canvas_tabs.blockSignals(False)
+
+    def update_name_editors(self):
+        if hasattr(self, 'symbol_name_edit'):
+            self.symbol_name_edit.blockSignals(True)
+            self.symbol_name_edit.setText(self.symbol.name)
+            self.symbol_name_edit.blockSignals(False)
+        if hasattr(self, 'unit_name_edit'):
+            self.unit_name_edit.blockSignals(True)
+            self.unit_name_edit.setText(self.current_unit.name)
+            self.unit_name_edit.setEnabled(self.symbol.kind == SymbolKind.SPLIT.value)
+            self.unit_name_edit.blockSignals(False)
+
+    def apply_symbol_name_from_edit(self):
+        name = self.symbol_name_edit.text().strip() or self.symbol.name
+        self.rename_current_symbol(name)
+
+    def apply_unit_name_from_edit(self):
+        if self.symbol.kind != SymbolKind.SPLIT.value:
+            return
+        base = self.unit_name_edit.text().strip() or self.current_unit.name
+        self.current_unit.name = base
+        self.rebuild_unit_tabs()
+        self.rebuild_tree()
+        self.update_name_editors()
+
+    def rename_current_symbol(self, desired: str):
+        cur = self.library.current_symbol_index
+        existing = {s.name for i, s in enumerate(self.library.symbols) if i != cur}
+        name = desired
+        if name in existing:
+            i = 2
+            while f'{name}_{i}' in existing:
+                i += 1
+            name = f'{name}_{i}'
+        self.symbol.name = name
+        if self.symbol.kind == SymbolKind.SPLIT.value:
+            # Split parts use the symbol name plus running suffix.
+            for i, u in enumerate(self.symbol.units, start=1):
+                u.name = f'{name}_{i}'
+        self.rebuild_symbol_tabs()
+        self.rebuild_canvas_tabs()
+        self.rebuild_unit_tabs()
+        self.rebuild_tree()
+        self.update_name_editors()
+
     def rebuild_unit_tabs(self):
         self.unit_tabs.blockSignals(True)
         self.unit_tabs.clear()
@@ -274,6 +362,7 @@ class MainWindow(QMainWindow):
         self.unit_tabs.setEnabled(self.symbol.kind == SymbolKind.SPLIT.value)
         self.add_unit_button.setEnabled(self.symbol.kind == SymbolKind.SPLIT.value)
         self.unit_tabs.blockSignals(False)
+        self.update_name_editors()
 
     def _capture_selection_ids(self):
         ids = set()
@@ -853,13 +942,23 @@ class MainWindow(QMainWindow):
         elif idx == 1 and self._symbol_indices(SymbolKind.SPLIT.value):
             self.change_symbol_from_tab(SymbolKind.SPLIT.value, self.split_tabs.currentIndex())
 
+    def change_symbol_from_canvas_tab(self, tab_index: int):
+        if tab_index < 0 or tab_index >= len(self.library.symbols):
+            return
+        if tab_index == self.library.current_symbol_index:
+            return
+        self.library.current_symbol_index = tab_index
+        self.current_unit_index = 0
+        self.rebuild_all()
+
     def change_symbol_from_tab(self, kind: str, tab_index: int):
         if tab_index < 0: return
         indices = self._symbol_indices(kind)
         if tab_index >= len(indices): return
         self.library.current_symbol_index = indices[tab_index]
         self.current_unit_index = 0
-        self.rebuild_unit_tabs(); self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
+        self.rebuild_canvas_tabs(); self.rebuild_unit_tabs(); self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
+        self.update_name_editors()
         self.grid_spin.blockSignals(True); self.grid_spin.setValue(self.symbol.grid_inch); self.grid_spin.blockSignals(False)
         self.format_combo.blockSignals(True); self.format_combo.setCurrentText(getattr(self.symbol, 'sheet_format', SheetFormat.A3.value)); self.format_combo.blockSignals(False)
 
@@ -874,8 +973,8 @@ class MainWindow(QMainWindow):
         self.rebuild_all()
 
     def new_split_symbol(self):
-        s = self.library.add_symbol('Symbol', SymbolKind.SPLIT.value)
-        s.units = [SymbolUnitModel(name='Unit 1'), SymbolUnitModel(name='Unit 2')]
+        s = self.library.add_symbol('Split Symbol', SymbolKind.SPLIT.value)
+        s.units = [SymbolUnitModel(name=f'{s.name}_1'), SymbolUnitModel(name=f'{s.name}_2')]
         self.current_unit_index = 0
         self.rebuild_all()
 
@@ -883,7 +982,7 @@ class MainWindow(QMainWindow):
         if self.symbol.kind != SymbolKind.SPLIT.value:
             QMessageBox.information(self, 'Split Symbol', 'Units können nur in Split Symbols angelegt werden. Bitte lege ein New Split Symbol an.')
             return
-        self.symbol.units.append(SymbolUnitModel(name=f'Unit {len(self.symbol.units) + 1}'))
+        self.symbol.units.append(SymbolUnitModel(name=f'{self.symbol.name}_{len(self.symbol.units) + 1}'))
         self.current_unit_index = len(self.symbol.units) - 1
         self.rebuild_unit_tabs(); self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
 
@@ -896,6 +995,63 @@ class MainWindow(QMainWindow):
         self.enforce_symbol_size_limit()
         self.scene.update()
         self.schedule_scene_refresh()
+
+    def import_pinmux_csv(self):
+        p, _ = QFileDialog.getOpenFileName(self, 'Import PINMUX CSV', '', 'CSV (*.csv);;Text (*.txt);;All Files (*)')
+        if not p:
+            return
+        imported = 0
+        errors = []
+        existing = [pin.number for unit in self.symbol.units for pin in unit.pins]
+        try:
+            with open(p, newline='', encoding='utf-8-sig') as f:
+                sample = f.read(4096)
+                f.seek(0)
+                dialect = csv.Sniffer().sniff(sample, delimiters=',;|\t') if sample.strip() else csv.excel
+                reader = csv.DictReader(f, dialect=dialect)
+                # Accepted headers: Pin Name | Pin Type | Pin Function | Pin Number
+                normalized = {h.strip().lower().replace(' ', '_'): h for h in (reader.fieldnames or [])}
+                def get(row, key):
+                    h = normalized.get(key)
+                    return (row.get(h, '') if h else '').strip()
+                required = ['pin_name', 'pin_type', 'pin_function', 'pin_number']
+                if not all(k in normalized for k in required):
+                    QMessageBox.warning(self, 'PINMUX CSV', 'Erwartete Header: Pin Name | Pin Type | Pin Function | Pin Number')
+                    return
+                for row_no, row in enumerate(reader, start=2):
+                    number = get(row, 'pin_number')
+                    name = get(row, 'pin_name')
+                    pin_type = (get(row, 'pin_type') or PinType.BIDI.value).upper()
+                    function = get(row, 'pin_function')
+                    if not number:
+                        errors.append(f'Zeile {row_no}: Pin Number fehlt')
+                        continue
+                    if number in existing:
+                        errors.append(f'Zeile {row_no}: doppelte Pin Number {number}')
+                        continue
+                    if pin_type not in [x.value for x in PinType]:
+                        pin_type = PinType.BIDI.value
+                    side = PinSide.RIGHT.value if pin_type in (PinType.OUT.value, PinType.POWER.value) else PinSide.LEFT.value
+                    pin = create_auto_pin(self.symbol, self.current_unit, side)
+                    pin.number = number
+                    pin.name = name or function or number
+                    pin.function = function
+                    pin.pin_type = pin_type
+                    # If no dedicated function exists, show name; otherwise show function.
+                    pin.visible_name = not bool(function)
+                    pin.visible_function = bool(function)
+                    self.current_unit.pins.append(pin)
+                    existing.append(number)
+                    imported += 1
+        except Exception as exc:
+            QMessageBox.critical(self, 'PINMUX CSV', f'Import fehlgeschlagen:\n{exc}')
+            return
+        self.dock_pins_to_body(self.current_unit)
+        self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
+        msg = f'{imported} Pins importiert.'
+        if errors:
+            msg += '\n\nNicht importiert:\n' + '\n'.join(errors[:20])
+        QMessageBox.information(self, 'PINMUX CSV Import', msg)
 
     # ------------------------------------------------------------------ File IO
     def save_current_symbol(self):

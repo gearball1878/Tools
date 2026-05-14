@@ -272,9 +272,14 @@ class PinItem(TransformMixin, QGraphicsItem):
         painter.setFont(QFont('Arial', max(6, int(g * .28))))
         if m.visible_number:
             painter.drawText(QRectF(min(x1, x2), -.85 * g, abs(x2 - x1), .5 * g), Qt.AlignCenter, m.number)
+        # Display rule: if a dedicated function exists, show function; otherwise show pin name.
+        # Visibility flags can still hide either part explicitly.
+        has_function = bool(str(m.function or '').strip())
         parts = []
-        if m.visible_name: parts.append(m.name)
-        if m.visible_function: parts.append(m.function)
+        if has_function:
+            if m.visible_function: parts.append(m.function)
+        else:
+            if m.visible_name: parts.append(m.name)
         label = ' / '.join([x for x in parts if x])
         if label:
             painter.setFont(QFont('Arial', max(8, int(g * .35))))
@@ -315,7 +320,7 @@ class TextItem(TransformMixin, QGraphicsTextItem):
         self.setTextInteractionFlags(Qt.TextEditorInteraction)
         self.setFocus(Qt.MouseFocusReason)
         cursor = self.textCursor()
-        cursor.select(cursor.WordUnderCursor)
+        cursor.select(QTextCursor.Document)
         self.setTextCursor(cursor)
         event.accept()
 
@@ -325,6 +330,11 @@ class TextItem(TransformMixin, QGraphicsTextItem):
             self.setTextInteractionFlags(Qt.NoTextInteraction)
             self.clearFocus()
             self.scene().window.live_refresh()
+            event.accept()
+            return
+        if self.textInteractionFlags() != Qt.NoTextInteraction:
+            # Prevent canvas shortcuts such as E/R rotation while typing.
+            QGraphicsTextItem.keyPressEvent(self, event)
             event.accept()
             return
         super().keyPressEvent(event)

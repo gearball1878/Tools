@@ -42,6 +42,10 @@ class SymbolView(QGraphicsView):
         event.accept()
 
     def keyPressEvent(self, event):
+        focus_item = self.scene().focusItem()
+        if focus_item is not None and hasattr(focus_item, 'textInteractionFlags') and focus_item.textInteractionFlags() != Qt.NoTextInteraction:
+            super().keyPressEvent(event)
+            return
         selected = self.scene().selectedItems()
         if selected:
             if event.key() in (Qt.Key_R, Qt.Key_E):
