@@ -1680,45 +1680,39 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
 
         self.dock_pins_to_body(u)
 
-        # Always add the logical BODY item.  For imported/template symbols
-        # the visible BODY is still the real imported artwork, but this item is
-        # the same interaction/handle surface used by native Symbol 1.  Its
-        # paint() method suppresses the proxy rectangle for Mentor/template
-        # bodies and draws only selection handles when selected.  This keeps
-        # canvas scaling unified without reintroducing a visible helper frame.
-        body_item = BodyItem(u.body, self)
-        if graphics_as_body:
-            body_item.setZValue(0.05)
-            body_item.setBrush(QBrush(Qt.NoBrush))
-            try:
-                body_item.setData(0, 'BODY')
-            except Exception:
-                pass
-        self.apply_item_selectability(body_item)
-        self.scene.addItem(body_item)
-        self._restore_or_select_item(body_item, selected_ids)
+        # Native Symbol-1 bodies use a real BodyItem.  Template/Mentor-import
+        # bodies do not get a proxy/highlight rectangle at all: their real
+        # BODY-owned graphics are the selectable representation and receive the
+        # same BODY semantics below via BODY_GRAPHIC.  This prevents the helper
+        # rectangle from driving scale/rotate operations.
+        if not graphics_as_body:
+            body_item = BodyItem(u.body, self)
+            self.apply_item_selectability(body_item)
+            self.scene.addItem(body_item)
+            self._restore_or_select_item(body_item, selected_ids)
 
         self.add_attribute_text_items(u)
         for g in u.graphics:
             item = GraphicItem(g, self)
             self.apply_item_selectability(item)
             if getattr(g, 'locked_to_body', False) and graphics_as_body and not getattr(self, 'is_template_editor', False):
-                # This primitive is part of the BODY artwork.  It remains a real
-                # GraphicItem for painting, but selection is redirected to BODY
-                # semantics. It is never movable/editable as a separate graphic.
+                # This primitive is part of the real BODY artwork.  There is no
+                # logical proxy/highlight box for imported/template bodies.
+                # Clicking a BODY_GRAPHIC selects the BODY semantically; the
+                # primitive itself remains non-movable so only the central BODY
+                # transform pipeline can change geometry.
                 item.setData(0, 'BODY_GRAPHIC')
                 item._body_model = u.body
-                # BODY-owned artwork is highlight/paint only. It is not a
-                # selection object; the logical BodyItem owns selection and
-                # handles. This keeps imports/templates identical to Symbol 1.
-                item.setFlag(QGraphicsItem.ItemIsSelectable, False)
+                item.setFlag(QGraphicsItem.ItemIsSelectable, True)
                 item.setFlag(QGraphicsItem.ItemIsMovable, False)
                 item.setFlag(QGraphicsItem.ItemIsFocusable, False)
                 try:
-                    item.setAcceptedMouseButtons(Qt.NoButton)
+                    item.setAcceptedMouseButtons(Qt.AllButtons)
                 except Exception:
                     pass
+                item.setAcceptHoverEvents(True)
                 item.setZValue(0.2)
+                self._restore_or_select_item(item, selected_ids)
             elif not getattr(g, 'locked_to_body', False):
                 self._restore_or_select_item(item, selected_ids)
             else:
@@ -18628,5 +18622,1737 @@ try:
         TemplateEditorDialog._set_body_height_grid = _sw98_set_body_height_grid
         TemplateEditorDialog.scale_selected_grid = _sw98_scale_selected_grid
         TemplateEditorDialog.scale_selected = _sw98_scale_selected
+except Exception:
+    pass
+
+# ---------------------------------------------------------------------------
+# SW99 final geometry consolidation
+# ---------------------------------------------------------------------------
+# The historical patch stack still contained two behaviours that made imported /
+# template BODY artwork diverge from the internally-created Symbol 1 body:
+#   1) BODY graphics were re-normalized to the selected origin on every scene
+#      rebuild.  That changed the coordinate base after scale/rotate/flip.
+#   2) Scale +/- changed width/height from the current top-left anchor and also
+#      scaled/redocked pins as if they were part of the BODY geometry.
+#
+# This final override makes the rules explicit:
+#   * Template/import BODY normalization runs once after load/import or explicitly
+#     through Origin Reset, never during every repaint.
+#   * BODY scale keeps the BODY centre stable, uses one Symbol-1-compatible mapping
+#     for native and template/import BODY graphics, and preserves graphic vector
+#     signs to avoid counter-running template lines.
+#   * Auto-docked pins stay on their BODY edge at the same relative edge position;
+#     loose pins remain independent; pin length/font is not scaled by BODY scale.
+#   * Selection is restored after the operation.
+
+try:
+    _sw99_prev_normalize_unit_body_anchor = MainWindow._normalize_unit_body_anchor_to_symbol_origin
+except Exception:
+    _sw99_prev_normalize_unit_body_anchor = None
+try:
+    _sw99_prev_reset_origin_to_selected_anchor = MainWindow.reset_origin_to_selected_anchor
+except Exception:
+    _sw99_prev_reset_origin_to_selected_anchor = None
+try:
+    _sw99_prev_transform_unit_as_body_group = MainWindow._transform_unit_as_body_group
+except Exception:
+    _sw99_prev_transform_unit_as_body_group = None
+
+
+def _sw99_float(v, default=0.0):
+    try:
+        return float(v)
+    except Exception:
+        return float(default)
+
+
+def _sw99_clean(v):
+    try:
+        v = round(float(v), 9)
+        return 0.0 if abs(v) < 1e-9 else v
+    except Exception:
+        return v
+
+
+def _sw99_step(self):
+    try:
+        return max(0.001, float(self._edit_grid_step()))
+    except Exception:
+        return 1.0
+
+
+def _sw99_snap(self, v, minimum=None):
+    step = _sw99_step(self)
+    try:
+        out = round(float(v) / step) * step
+    except Exception:
+        out = float(minimum if minimum is not None else 0.0)
+    if minimum is not None:
+        out = max(float(minimum), out)
+    return _sw99_clean(out)
+
+
+def _sw99_unit(self):
+    try:
+        return self.current_unit
+    except Exception:
+        return getattr(self, 'unit', None)
+
+
+def _sw99_is_body_graphic(gr):
+    try:
+        role = str(getattr(gr, 'graphic_role', '') or '').lower()
+        raw = str(getattr(gr, 'mentor_raw', '') or '')
+        if raw == '__USER_GRAPHIC__' or role == 'user_graphic':
+            return False
+        return bool(getattr(gr, 'locked_to_body', False)) or role in ('body', 'template_body', 'imported_body')
+    except Exception:
+        return False
+
+
+def _sw99_selection_ids(self):
+    ids = set()
+    try:
+        for item in self.scene.selectedItems():
+            m = getattr(item, 'model', None)
+            if m is not None:
+                ids.add(id(m))
+    except Exception:
+        pass
+    return ids
+
+
+def _sw99_restore_selection(self, ids):
+    if not ids:
+        return
+    try:
+        self._selection_restore_ids = set(ids)
+    except Exception:
+        pass
+    try:
+        self.scene.blockSignals(True)
+        self.scene.clearSelection()
+        for item in self.scene.items():
+            m = getattr(item, 'model', None)
+            if m is not None and id(m) in ids:
+                item.setSelected(True)
+    except Exception:
+        pass
+    finally:
+        try:
+            self.scene.blockSignals(False)
+        except Exception:
+            pass
+
+
+def _sw99_move_pin_texts(pin, dx, dy):
+    for ax, ay in (('label_x', 'label_y'), ('number_x', 'number_y')):
+        try:
+            if getattr(pin, ax, None) is not None and getattr(pin, ay, None) is not None:
+                setattr(pin, ax, _sw99_clean(_sw99_float(getattr(pin, ax)) + dx))
+                setattr(pin, ay, _sw99_clean(_sw99_float(getattr(pin, ay)) + dy))
+        except Exception:
+            pass
+    for tm in (getattr(pin, 'attribute_texts', {}) or {}).values():
+        try:
+            tm.x = _sw99_clean(_sw99_float(tm.x) + dx)
+            tm.y = _sw99_clean(_sw99_float(tm.y) + dy)
+        except Exception:
+            pass
+
+
+def _sw99_capture_resize_state(self, body=None, unit=None):
+    u = unit or _sw99_unit(self)
+    b = body or getattr(u, 'body', None)
+    if u is None or b is None:
+        return {}
+    x = _sw99_float(getattr(b, 'x', 0.0))
+    y = _sw99_float(getattr(b, 'y', 0.0))
+    w = max(1e-9, abs(_sw99_float(getattr(b, 'width', 1.0), 1.0)))
+    h = max(1e-9, abs(_sw99_float(getattr(b, 'height', 1.0), 1.0)))
+    return {
+        'x': x, 'y': y, 'w': w, 'h': h,
+        'pins': [(p, _sw99_float(getattr(p, 'x', 0.0)), _sw99_float(getattr(p, 'y', 0.0)),
+                  _sw99_float(getattr(p, 'length', 1.0), 1.0), str(getattr(p, 'side', PinSide.LEFT.value) or PinSide.LEFT.value),
+                  bool(getattr(p, 'auto_dock', True))) for p in getattr(u, 'pins', []) or []],
+        'texts': [(t, _sw99_float(getattr(t, 'x', 0.0)), _sw99_float(getattr(t, 'y', 0.0))) for t in getattr(u, 'texts', []) or []],
+        'attributes': [(t, _sw99_float(getattr(t, 'x', 0.0)), _sw99_float(getattr(t, 'y', 0.0))) for t in (getattr(b, 'attribute_texts', {}) or {}).values()],
+        'graphics': [(g, _sw99_float(getattr(g, 'x', 0.0)), _sw99_float(getattr(g, 'y', 0.0)),
+                      _sw99_float(getattr(g, 'w', 0.0)), _sw99_float(getattr(g, 'h', 0.0)),
+                      getattr(g, 'ctrl_x', None), getattr(g, 'ctrl_y', None),
+                      _sw99_float(getattr(g, 'curve_radius', 0.0), 0.0), _sw99_is_body_graphic(g))
+                     for g in getattr(u, 'graphics', []) or []],
+    }
+
+
+def _sw99_apply_resize_state(self, start_state, body):
+    u = _sw99_unit(self)
+    if u is None or body is None:
+        return
+    st = start_state if isinstance(start_state, dict) else _sw99_capture_resize_state(self, body, u)
+    old_x = _sw99_float(st.get('x', getattr(body, 'x', 0.0)))
+    old_y = _sw99_float(st.get('y', getattr(body, 'y', 0.0)))
+    old_w = max(1e-9, abs(_sw99_float(st.get('w', getattr(body, 'width', 1.0)), 1.0)))
+    old_h = max(1e-9, abs(_sw99_float(st.get('h', getattr(body, 'height', 1.0)), 1.0)))
+    new_x = _sw99_snap(self, getattr(body, 'x', old_x))
+    new_y = _sw99_snap(self, getattr(body, 'y', old_y))
+    new_w = _sw99_snap(self, abs(_sw99_float(getattr(body, 'width', old_w), old_w)), _sw99_step(self))
+    new_h = _sw99_snap(self, abs(_sw99_float(getattr(body, 'height', old_h), old_h)), _sw99_step(self))
+    body.x, body.y, body.width, body.height = new_x, new_y, new_w, new_h
+    sx = new_w / old_w
+    sy = new_h / old_h
+
+    def mx(x):
+        return _sw99_snap(self, new_x + (_sw99_float(x) - old_x) * sx)
+
+    def my(y):
+        return _sw99_snap(self, new_y + (_sw99_float(y) - old_y) * sy)
+
+    # BODY-owned graphics are the template/import BODY. User graphics are not
+    # silently scaled by BODY resize unless they are explicitly selected/edited.
+    for gr, gx, gy, gw, gh, cx, cy, cr, body_owned in st.get('graphics', []) or []:
+        if not body_owned:
+            continue
+        try:
+            gr.x = mx(gx)
+            gr.y = my(gy)
+            gr.w = _sw99_clean(_sw99_float(gw) * sx)
+            gr.h = _sw99_clean(_sw99_float(gh) * sy)
+            if cx is not None:
+                gr.ctrl_x = _sw99_clean(_sw99_float(cx) * sx)
+            if cy is not None:
+                gr.ctrl_y = _sw99_clean(_sw99_float(cy) * sy)
+            gr.curve_radius = _sw99_clean(_sw99_float(cr) * ((abs(sx) + abs(sy)) / 2.0))
+        except Exception:
+            pass
+
+    # Pins are not scaled as geometry.  Only auto-docked pins are reattached to
+    # the moved BODY edge, preserving their relative edge position. Loose pins
+    # intentionally remain where the user placed/transformed them.
+    for p, px, py, plen, side, docked in st.get('pins', []) or []:
+        try:
+            if not bool(getattr(p, 'auto_dock', docked)):
+                continue
+            old_px, old_py = _sw99_float(getattr(p, 'x', px)), _sw99_float(getattr(p, 'y', py))
+            side = str(getattr(p, 'side', side) or side).lower()
+            if side == PinSide.RIGHT.value:
+                nx, ny = new_x + new_w, my(py)
+            elif side == PinSide.TOP.value:
+                nx, ny = mx(px), new_y
+            elif side == PinSide.BOTTOM.value:
+                nx, ny = mx(px), new_y - new_h
+            else:
+                side = PinSide.LEFT.value
+                try: p.side = side
+                except Exception: pass
+                nx, ny = new_x, my(py)
+            p.x = _sw99_snap(self, nx)
+            p.y = _sw99_snap(self, ny)
+            p.length = _sw99_clean(plen)
+            _sw99_move_pin_texts(p, p.x - old_px, p.y - old_py)
+        except Exception:
+            pass
+
+    # Body attributes and free text keep their font size and readable rotation;
+    # their anchor follows the Symbol-1 BODY mapping.
+    for t, tx, ty in st.get('attributes', []) or []:
+        try:
+            t.x = mx(tx)
+            t.y = my(ty)
+        except Exception:
+            pass
+    for t, tx, ty in st.get('texts', []) or []:
+        try:
+            t.x = mx(tx)
+            t.y = my(ty)
+        except Exception:
+            pass
+
+    try:
+        self._invalidate_body_group_transform_cache(u)
+    except Exception:
+        pass
+
+
+def _sw99_resize_body_like_symbol1(self, body, new_w=None, new_h=None, *, keep_aspect=False, push_undo=True, refresh=True):
+    if body is None:
+        return
+    old_w = max(_sw99_step(self), abs(_sw99_float(getattr(body, 'width', 1.0), 1.0)))
+    old_h = max(_sw99_step(self), abs(_sw99_float(getattr(body, 'height', 1.0), 1.0)))
+    cx = _sw99_float(getattr(body, 'x', 0.0)) + old_w / 2.0
+    cy = _sw99_float(getattr(body, 'y', 0.0)) - old_h / 2.0
+    if keep_aspect:
+        if new_w is not None:
+            f = _sw99_float(new_w, old_w) / old_w
+        elif new_h is not None:
+            f = _sw99_float(new_h, old_h) / old_h
+        else:
+            f = 1.0
+        new_w, new_h = old_w * f, old_h * f
+    else:
+        new_w = old_w if new_w is None else _sw99_float(new_w, old_w)
+        new_h = old_h if new_h is None else _sw99_float(new_h, old_h)
+    new_w = _sw99_snap(self, new_w, _sw99_step(self))
+    new_h = _sw99_snap(self, new_h, _sw99_step(self))
+    if abs(new_w - old_w) < 1e-9 and abs(new_h - old_h) < 1e-9:
+        return
+    if push_undo:
+        try: self.push_undo_state()
+        except Exception: pass
+    ids = _sw99_selection_ids(self)
+    st = _sw99_capture_resize_state(self, body)
+    # Symbol-1 behaviour: scale grows/shrinks from the centre so both sides move.
+    body.x = _sw99_snap(self, cx - new_w / 2.0)
+    body.y = _sw99_snap(self, cy + new_h / 2.0)
+    body.width = new_w
+    body.height = new_h
+    _sw99_apply_resize_state(self, st, body)
+    try: self.dirty = True
+    except Exception: pass
+    if refresh:
+        try: self.update_current_unit_canvas_positions()
+        except Exception: pass
+        try: self.update_attribute_items_for_unit()
+        except Exception: pass
+        try: self.rebuild_tree(); self.rebuild_pin_table()
+        except Exception: pass
+        _sw99_restore_selection(self, ids)
+        try: QTimer.singleShot(0, self.refresh_properties)
+        except Exception: pass
+
+
+def _sw99_set_body_width_grid(self, body, value):
+    return _sw99_resize_body_like_symbol1(self, body, new_w=value, new_h=getattr(body, 'height', None), keep_aspect=False)
+
+
+def _sw99_set_body_height_grid(self, body, value):
+    return _sw99_resize_body_like_symbol1(self, body, new_w=getattr(body, 'width', None), new_h=value, keep_aspect=False)
+
+
+def _sw99_scale_selected_grid(self, direction:int):
+    try: self.set_tool(DrawTool.SELECT.value)
+    except Exception: pass
+    try: body_selected = bool(self._selected_body_active())
+    except Exception: body_selected = False
+    if body_selected:
+        body = _sw99_unit(self).body
+        step = _sw99_step(self)
+        old_w = max(step, abs(_sw99_float(getattr(body, 'width', 1.0), 1.0)))
+        target_w = max(step, old_w + (step if int(direction) > 0 else -step))
+        return _sw99_resize_body_like_symbol1(self, body, new_w=target_w, keep_aspect=True)
+    try:
+        return _sw98_prev_scale_selected_grid(self, direction)
+    except Exception:
+        return None
+
+
+def _sw99_scale_selected(self, factor):
+    try: self.set_tool(DrawTool.SELECT.value)
+    except Exception: pass
+    try: body_selected = bool(self._selected_body_active())
+    except Exception: body_selected = False
+    if body_selected:
+        body = _sw99_unit(self).body
+        old_w = max(_sw99_step(self), abs(_sw99_float(getattr(body, 'width', 1.0), 1.0)))
+        return _sw99_resize_body_like_symbol1(self, body, new_w=old_w * _sw99_float(factor, 1.0), keep_aspect=True)
+    try:
+        return _sw98_prev_scale_selected(self, factor)
+    except Exception:
+        return None
+
+
+def _sw99_transform_unit_as_body_group(self, op, value=None, refresh=True):
+    if op in ('scale', 'scale_x_to', 'scale_y_to'):
+        body = getattr(_sw99_unit(self), 'body', None)
+        if body is None:
+            return None
+        if op == 'scale_x_to':
+            return _sw99_resize_body_like_symbol1(self, body, new_w=value, new_h=getattr(body, 'height', None), keep_aspect=False, push_undo=False, refresh=refresh)
+        if op == 'scale_y_to':
+            return _sw99_resize_body_like_symbol1(self, body, new_w=getattr(body, 'width', None), new_h=value, keep_aspect=False, push_undo=False, refresh=refresh)
+        old_w = max(_sw99_step(self), abs(_sw99_float(getattr(body, 'width', 1.0), 1.0)))
+        return _sw99_resize_body_like_symbol1(self, body, new_w=old_w * _sw99_float(value, 1.0), keep_aspect=True, push_undo=False, refresh=refresh)
+    if _sw99_prev_transform_unit_as_body_group is not None:
+        return _sw99_prev_transform_unit_as_body_group(self, op, value, refresh)
+    return None
+
+
+def _sw99_normalize_unit_body_anchor_to_symbol_origin(self, unit=None):
+    u = unit or _sw99_unit(self)
+    if u is None:
+        return
+    # Prevent rebuild_scene from re-basing template/import geometry every time.
+    # A forced flag is used by Origin Reset and initial template loads.
+    force = bool(getattr(u, '_sw99_force_origin_normalize', False))
+    done = bool(getattr(u, '_sw99_origin_normalized', False))
+    if done and not force:
+        try:
+            self._sync_imported_body_model_to_body_graphics(u)
+        except Exception:
+            pass
+        return
+    try:
+        if _sw99_prev_normalize_unit_body_anchor is not None:
+            _sw99_prev_normalize_unit_body_anchor(self, u)
+        else:
+            try: self._sync_imported_body_model_to_body_graphics(u)
+            except Exception: pass
+    finally:
+        try: u._sw99_origin_normalized = True
+        except Exception: pass
+        try: u._sw99_force_origin_normalize = False
+        except Exception: pass
+
+
+def _sw99_reset_origin_to_selected_anchor(self, mode=None):
+    # Explicit Origin Reset is the only place where already-normalized BODY
+    # graphics may be re-based to the crosshair.
+    try:
+        units = list(getattr(getattr(self, 'symbol', None), 'units', []) or [])
+        if not units:
+            units = [_sw99_unit(self)]
+        for u in units:
+            try:
+                u._sw99_origin_normalized = False
+                u._sw99_force_origin_normalize = True
+            except Exception:
+                pass
+    except Exception:
+        pass
+    if _sw99_prev_reset_origin_to_selected_anchor is not None:
+        return _sw99_prev_reset_origin_to_selected_anchor(self, mode)
+
+try:
+    for _sw99_cls in (MainWindow, TemplateEditorDialog if 'TemplateEditorDialog' in globals() else MainWindow):
+        _sw99_cls._snapshot_body_resize_state = _sw99_capture_resize_state
+        _sw99_cls._resize_body_like_symbol1 = _sw99_resize_body_like_symbol1
+        _sw99_cls.scale_current_unit_children_from_body_resize = _sw99_apply_resize_state
+        _sw99_cls._set_body_width_grid = _sw99_set_body_width_grid
+        _sw99_cls._set_body_height_grid = _sw99_set_body_height_grid
+        _sw99_cls.scale_selected_grid = _sw99_scale_selected_grid
+        _sw99_cls.scale_selected = _sw99_scale_selected
+        _sw99_cls._transform_unit_as_body_group = _sw99_transform_unit_as_body_group
+        _sw99_cls._normalize_unit_body_anchor_to_symbol_origin = _sw99_normalize_unit_body_anchor_to_symbol_origin
+        _sw99_cls.reset_origin_to_selected_anchor = _sw99_reset_origin_to_selected_anchor
+except Exception:
+    pass
+
+# ---------------------------------------------------------------------------
+# SW100: synchronize Symbol 1 and template/import BODY scaling pipelines.
+# ---------------------------------------------------------------------------
+# The previous SW99 resize path only scaled GraphicModel primitives when they
+# were already marked locked_to_body/template_body/imported_body.  Some cached
+# templates/imports still carry only BODY-level flags and unmarked graphics, so
+# the logical BodyItem/highlight box scaled while the real template artwork did
+# not.  This patch makes BODY ownership a unit-level decision: when the unit BODY
+# declares template/import graphics-as-body, every graphic except explicit
+# user_graphic is treated as BODY artwork and is resized with the same Symbol-1
+# pipeline.
+
+def _sw100_unit_body_has_graphics_as_body(unit):
+    try:
+        attrs = getattr(getattr(unit, 'body', None), 'attributes', {}) or {}
+        flags = (
+            'MENTOR_GRAPHICS_AS_BODY',
+            'MENTOR_BODY_GRAPHICS_LOCKED',
+            'MENTOR_HAS_BODY',
+            'TEMPLATE_GRAPHICS_AS_BODY',
+            'TEMPLATE_BODY_GRAPHICS_LOCKED',
+        )
+        return any(str(attrs.get(k, '0')) == '1' for k in flags)
+    except Exception:
+        return False
+
+
+def _sw100_is_explicit_user_graphic(gr):
+    try:
+        role = str(getattr(gr, 'graphic_role', '') or '').lower()
+        raw = str(getattr(gr, 'mentor_raw', '') or '')
+        return raw == '__USER_GRAPHIC__' or role == 'user_graphic' or role.startswith('user_graphic_group')
+    except Exception:
+        return False
+
+
+def _sw100_is_body_graphic_for_unit(unit, gr):
+    try:
+        if _sw100_is_explicit_user_graphic(gr):
+            return False
+        role = str(getattr(gr, 'graphic_role', '') or '').lower()
+        raw = str(getattr(gr, 'mentor_raw', '') or '')
+        if bool(getattr(gr, 'locked_to_body', False)):
+            return True
+        if role in ('body', 'body_graphic', 'template_body', 'imported_body'):
+            return True
+        # Legacy/cached template imports: BODY owns all non-user graphics when a
+        # BODY-level graphics-as-body flag is present, even if every primitive is
+        # still unmarked.
+        if _sw100_unit_body_has_graphics_as_body(unit):
+            return True
+        # Mentor/template graphics often have raw payloads but no role marker.
+        if raw and raw != '__USER_GRAPHIC__':
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _sw100_capture_resize_state(self, body=None, unit=None):
+    u = unit or _sw99_unit(self)
+    b = body or getattr(u, 'body', None)
+    if u is None or b is None:
+        return {}
+    # Normalize legacy template/import graphics once so all later code sees the
+    # same role/lock state as Symbol-1 BODY-owned geometry.
+    try:
+        if _sw100_unit_body_has_graphics_as_body(u):
+            for gr in getattr(u, 'graphics', []) or []:
+                if _sw100_is_body_graphic_for_unit(u, gr):
+                    try: gr.locked_to_body = True
+                    except Exception: pass
+                    try:
+                        if not str(getattr(gr, 'graphic_role', '') or ''):
+                            gr.graphic_role = 'template_body'
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+    x = _sw99_float(getattr(b, 'x', 0.0))
+    y = _sw99_float(getattr(b, 'y', 0.0))
+    w = max(1e-9, abs(_sw99_float(getattr(b, 'width', 1.0), 1.0)))
+    h = max(1e-9, abs(_sw99_float(getattr(b, 'height', 1.0), 1.0)))
+    return {
+        'x': x, 'y': y, 'w': w, 'h': h,
+        'pins': [(p, _sw99_float(getattr(p, 'x', 0.0)), _sw99_float(getattr(p, 'y', 0.0)),
+                  _sw99_float(getattr(p, 'length', 1.0), 1.0), str(getattr(p, 'side', PinSide.LEFT.value) or PinSide.LEFT.value),
+                  bool(getattr(p, 'auto_dock', True))) for p in getattr(u, 'pins', []) or []],
+        # Plain/free texts remain excluded by the later plain-text separation
+        # patches, but keeping the field preserves compatibility.
+        'texts': [(t, _sw99_float(getattr(t, 'x', 0.0)), _sw99_float(getattr(t, 'y', 0.0))) for t in getattr(u, 'texts', []) or []],
+        'attributes': [(t, _sw99_float(getattr(t, 'x', 0.0)), _sw99_float(getattr(t, 'y', 0.0))) for t in (getattr(b, 'attribute_texts', {}) or {}).values()],
+        'graphics': [(g, _sw99_float(getattr(g, 'x', 0.0)), _sw99_float(getattr(g, 'y', 0.0)),
+                      _sw99_float(getattr(g, 'w', 0.0)), _sw99_float(getattr(g, 'h', 0.0)),
+                      getattr(g, 'ctrl_x', None), getattr(g, 'ctrl_y', None),
+                      _sw99_float(getattr(g, 'curve_radius', 0.0), 0.0),
+                      _sw100_is_body_graphic_for_unit(u, g))
+                     for g in getattr(u, 'graphics', []) or []],
+    }
+
+
+def _sw100_body_graphics_for_unit(self, unit=None):
+    u = unit or _sw99_unit(self)
+    return [g for g in getattr(u, 'graphics', []) or [] if _sw100_is_body_graphic_for_unit(u, g)]
+
+
+def _sw100_sync_body_model_to_body_bounds_only(self, unit=None):
+    u = unit or _sw99_unit(self)
+    b = getattr(u, 'body', None)
+    if u is None or b is None:
+        return
+    body_graphics = _sw100_body_graphics_for_unit(self, u)
+    xs, ys = [], []
+    if body_graphics:
+        for gr in body_graphics:
+            try:
+                gx = _sw99_float(getattr(gr, 'x', 0.0))
+                gy = _sw99_float(getattr(gr, 'y', 0.0))
+                gw = _sw99_float(getattr(gr, 'w', 0.0))
+                gh = _sw99_float(getattr(gr, 'h', 0.0))
+                xs.extend([gx, gx + gw])
+                ys.extend([gy, gy - gh])
+            except Exception:
+                pass
+    if not xs or not ys:
+        xs.extend([_sw99_float(getattr(b, 'x', 0.0)), _sw99_float(getattr(b, 'x', 0.0)) + _sw99_float(getattr(b, 'width', 1.0))])
+        ys.extend([_sw99_float(getattr(b, 'y', 0.0)), _sw99_float(getattr(b, 'y', 0.0)) - _sw99_float(getattr(b, 'height', 1.0))])
+    minx, maxx, miny, maxy = min(xs), max(xs), min(ys), max(ys)
+    if maxx - minx > 1e-9 and maxy - miny > 1e-9:
+        b.x = _sw99_clean(minx)
+        b.y = _sw99_clean(maxy)
+        b.width = _sw99_clean(maxx - minx)
+        b.height = _sw99_clean(maxy - miny)
+
+
+def _sw100_apply_resize_state(self, start_state, body):
+    # Keep the proven SW99 Symbol-1 resize algorithm, but make sure the state was
+    # captured with the widened BODY-graphics ownership rules above.
+    return _sw99_apply_resize_state(self, start_state, body)
+
+
+def _sw100_resize_body_like_symbol1(self, body, new_w=None, new_h=None, *, keep_aspect=False, push_undo=True, refresh=True):
+    if body is None:
+        return
+    old_w = max(_sw99_step(self), abs(_sw99_float(getattr(body, 'width', 1.0), 1.0)))
+    old_h = max(_sw99_step(self), abs(_sw99_float(getattr(body, 'height', 1.0), 1.0)))
+    cx = _sw99_float(getattr(body, 'x', 0.0)) + old_w / 2.0
+    cy = _sw99_float(getattr(body, 'y', 0.0)) - old_h / 2.0
+    if keep_aspect:
+        if new_w is not None:
+            f = _sw99_float(new_w, old_w) / old_w
+        elif new_h is not None:
+            f = _sw99_float(new_h, old_h) / old_h
+        else:
+            f = 1.0
+        new_w, new_h = old_w * f, old_h * f
+    else:
+        new_w = old_w if new_w is None else _sw99_float(new_w, old_w)
+        new_h = old_h if new_h is None else _sw99_float(new_h, old_h)
+    new_w = _sw99_snap(self, new_w, _sw99_step(self))
+    new_h = _sw99_snap(self, new_h, _sw99_step(self))
+    if abs(new_w - old_w) < 1e-9 and abs(new_h - old_h) < 1e-9:
+        return
+    if push_undo:
+        try: self.push_undo_state()
+        except Exception: pass
+    ids = _sw99_selection_ids(self)
+    st = _sw100_capture_resize_state(self, body)
+    body.x = _sw99_snap(self, cx - new_w / 2.0)
+    body.y = _sw99_snap(self, cy + new_h / 2.0)
+    body.width = new_w
+    body.height = new_h
+    _sw99_apply_resize_state(self, st, body)
+    try:
+        # For real template/import BODY artwork, recompute the logical body from
+        # the transformed primitives. This keeps the highlight box and artwork in
+        # sync; for Symbol-1 bodies without body graphics this is a no-op.
+        if _sw100_body_graphics_for_unit(self, _sw99_unit(self)):
+            _sw100_sync_body_model_to_body_bounds_only(self, _sw99_unit(self))
+    except Exception:
+        pass
+    try: self.dirty = True
+    except Exception: pass
+    if refresh:
+        try: self.update_current_unit_canvas_positions()
+        except Exception: pass
+        try: self.update_attribute_items_for_unit()
+        except Exception: pass
+        try: self.rebuild_tree(); self.rebuild_pin_table()
+        except Exception: pass
+        _sw99_restore_selection(self, ids)
+        try: QTimer.singleShot(0, self.refresh_properties)
+        except Exception: pass
+
+
+def _sw100_transform_unit_as_body_group(self, op, value=None, refresh=True):
+    if op in ('scale', 'scale_x_to', 'scale_y_to'):
+        body = getattr(_sw99_unit(self), 'body', None)
+        if body is None:
+            return None
+        if op == 'scale_x_to':
+            return _sw100_resize_body_like_symbol1(self, body, new_w=value, new_h=getattr(body, 'height', None), keep_aspect=False, push_undo=False, refresh=refresh)
+        if op == 'scale_y_to':
+            return _sw100_resize_body_like_symbol1(self, body, new_w=getattr(body, 'width', None), new_h=value, keep_aspect=False, push_undo=False, refresh=refresh)
+        old_w = max(_sw99_step(self), abs(_sw99_float(getattr(body, 'width', 1.0), 1.0)))
+        return _sw100_resize_body_like_symbol1(self, body, new_w=old_w * _sw99_float(value, 1.0), keep_aspect=True, push_undo=False, refresh=refresh)
+    # Keep the existing rotate/flip matrix path.
+    if _sw99_prev_transform_unit_as_body_group is not None:
+        return _sw99_prev_transform_unit_as_body_group(self, op, value, refresh)
+    return None
+
+
+def _sw100_scale_selected_grid(self, direction:int):
+    try: self.set_tool(DrawTool.SELECT.value)
+    except Exception: pass
+    try: body_selected = bool(self._selected_body_active())
+    except Exception: body_selected = False
+    if body_selected:
+        body = getattr(_sw99_unit(self), 'body', None)
+        if body is None:
+            return None
+        step = _sw99_step(self)
+        old_w = max(step, abs(_sw99_float(getattr(body, 'width', 1.0), 1.0)))
+        target_w = max(step, old_w + (step if int(direction) > 0 else -step))
+        return _sw100_resize_body_like_symbol1(self, body, new_w=target_w, keep_aspect=True)
+    try:
+        return _sw98_prev_scale_selected_grid(self, direction)
+    except Exception:
+        return None
+
+
+def _sw100_scale_selected(self, factor):
+    try: self.set_tool(DrawTool.SELECT.value)
+    except Exception: pass
+    try: body_selected = bool(self._selected_body_active())
+    except Exception: body_selected = False
+    if body_selected:
+        body = getattr(_sw99_unit(self), 'body', None)
+        if body is None:
+            return None
+        old_w = max(_sw99_step(self), abs(_sw99_float(getattr(body, 'width', 1.0), 1.0)))
+        return _sw100_resize_body_like_symbol1(self, body, new_w=old_w * _sw99_float(factor, 1.0), keep_aspect=True)
+    try:
+        return _sw98_prev_scale_selected(self, factor)
+    except Exception:
+        return None
+
+try:
+    for _sw100_cls in (MainWindow, TemplateEditorDialog if 'TemplateEditorDialog' in globals() else MainWindow):
+        _sw100_cls._body_graphics_for_unit = _sw100_body_graphics_for_unit
+        _sw100_cls._sync_body_model_to_body_bounds_only = _sw100_sync_body_model_to_body_bounds_only
+        _sw100_cls._snapshot_body_resize_state = _sw100_capture_resize_state
+        _sw100_cls._resize_body_like_symbol1 = _sw100_resize_body_like_symbol1
+        _sw100_cls.scale_current_unit_children_from_body_resize = _sw100_apply_resize_state
+        _sw100_cls.scale_selected_grid = _sw100_scale_selected_grid
+        _sw100_cls.scale_selected = _sw100_scale_selected
+        _sw100_cls._transform_unit_as_body_group = _sw100_transform_unit_as_body_group
+except Exception:
+    pass
+
+
+# ---------------------------------------------------------------------------
+# SW101: remove template/import BODY highlight proxy completely.
+# ---------------------------------------------------------------------------
+# Template/Mentor BODY artwork must be the real selectable BODY.  The old
+# logical BodyItem/highlight rectangle is deliberately not created for units
+# whose BODY is made from imported/template graphics.  The following helpers
+# keep BODY_GRAPHIC primitives in BODY semantics and prevent stale proxy items
+# from affecting transforms.
+
+def _sw101_item_kind(item):
+    try:
+        k = item.data(0)
+        return 'BODY' if k == 'BODY_GRAPHIC' else k
+    except Exception:
+        return None
+
+try:
+    _sw101_prev_apply_item_selectability = MainWindow.apply_item_selectability
+except Exception:
+    _sw101_prev_apply_item_selectability = None
+
+def _sw101_apply_item_selectability(self, item):
+    if getattr(item, 'data', lambda *_: None)(0) == 'BODY_GRAPHIC':
+        selectable = bool(getattr(self, 'selection_enabled', {}).get('BODY', True))
+        try: item.setFlag(QGraphicsItem.ItemIsSelectable, selectable)
+        except Exception: pass
+        try: item.setFlag(QGraphicsItem.ItemIsMovable, False)
+        except Exception: pass
+        try: item.setFlag(QGraphicsItem.ItemIsFocusable, False)
+        except Exception: pass
+        try: item.setAcceptedMouseButtons(Qt.AllButtons if selectable else Qt.NoButton)
+        except Exception: pass
+        try: item.setAcceptHoverEvents(selectable)
+        except Exception: pass
+        try:
+            if not selectable: item.setSelected(False)
+        except Exception: pass
+        return
+    if _sw101_prev_apply_item_selectability is not None:
+        return _sw101_prev_apply_item_selectability(self, item)
+
+try:
+    _sw101_prev_select_all_canvas = MainWindow.select_all_canvas
+except Exception:
+    _sw101_prev_select_all_canvas = None
+
+def _sw101_select_all_canvas(self):
+    try: self.set_tool(DrawTool.SELECT.value)
+    except Exception: pass
+    for item in self.scene.items():
+        k = getattr(item, 'data', lambda *_: None)(0)
+        filter_kind = 'TEXT' if k in ('ATTR_REF_DES', 'ATTR_BODY') else ('BODY' if k == 'BODY_GRAPHIC' else k)
+        if filter_kind in ('BODY', 'PIN', 'TEXT', 'GRAPHIC') and getattr(self, 'selection_enabled', {}).get(filter_kind, True):
+            try: item.setSelected(True)
+            except Exception: pass
+    try: self.refresh_properties()
+    except Exception: pass
+
+# Force BODY-owned graphics selection to resolve to BODY properties and BODY transforms.
+try:
+    MainWindow.apply_item_selectability = _sw101_apply_item_selectability
+    MainWindow.select_all_canvas = _sw101_select_all_canvas
+except Exception:
+    pass
+
+# ---------------------------------------------------------------------------
+# FINAL TEMPLATE/SYMBOL1 HARMONIZATION
+# ---------------------------------------------------------------------------
+# Important rule: there is no special template highlight/proxy geometry anymore.
+# Imported/template BODY artwork is edited through the exact same logical
+# BodyItem that native Symbol 1 uses.  The logical BodyItem owns selection,
+# handles and transforms; BODY-owned GraphicModels are the real visible artwork
+# and are transformed by the shared BODY resize/transform pipeline.
+# ---------------------------------------------------------------------------
+
+def _lh_final_is_body_graphic(gr):
+    role = str(getattr(gr, 'graphic_role', '') or '').lower()
+    raw = str(getattr(gr, 'mentor_raw', '') or '')
+    return bool(
+        getattr(gr, 'locked_to_body', False)
+        or role in ('body', 'template_body', 'imported_body', 'body_graphic')
+        or (raw and raw != '__USER_GRAPHIC__' and role != 'user_graphic')
+    )
+
+
+def _lh_final_body_graphics(self, unit=None):
+    u = unit or self.current_unit
+    return [gr for gr in (getattr(u, 'graphics', []) or []) if _lh_final_is_body_graphic(gr)]
+
+
+def _lh_final_clean(self, v):
+    try:
+        v = round(float(v), 9)
+        return 0.0 if abs(v) < 1e-9 else v
+    except Exception:
+        return v
+
+
+def _lh_final_step(self):
+    try:
+        return max(0.001, float(getattr(self, 'edit_grid_step', 0) or getattr(self, 'edit_grid_inch', 0) / max(float(getattr(self.symbol, 'grid_inch', 0.1) or 0.1), 1e-9) or 1.0))
+    except Exception:
+        return 1.0
+
+
+def _lh_final_snap(self, v):
+    step = _lh_final_step(self)
+    try:
+        return _lh_final_clean(self, round(float(v) / step) * step)
+    except Exception:
+        return _lh_final_clean(self, v)
+
+
+def _lh_final_graphic_endpoints(gr):
+    x = float(getattr(gr, 'x', 0.0) or 0.0)
+    y = float(getattr(gr, 'y', 0.0) or 0.0)
+    w = float(getattr(gr, 'w', 0.0) or 0.0)
+    h = float(getattr(gr, 'h', 0.0) or 0.0)
+    return x, y, x + w, y - h
+
+
+def _lh_final_body_bounds(self, unit=None):
+    u = unit or self.current_unit
+    gs = _lh_final_body_graphics(self, u)
+    if not gs:
+        b = u.body
+        return (float(b.x), float(b.y), max(0.01, float(b.width)), max(0.01, float(b.height)))
+    xs, ys = [], []
+    for gr in gs:
+        x1, y1, x2, y2 = _lh_final_graphic_endpoints(gr)
+        xs.extend([x1, x2]); ys.extend([y1, y2])
+        try:
+            if getattr(gr, 'ctrl_x', None) is not None and getattr(gr, 'ctrl_y', None) is not None:
+                xs.append(x1 + float(gr.ctrl_x)); ys.append(y1 - float(gr.ctrl_y))
+        except Exception:
+            pass
+    left, right = min(xs), max(xs)
+    bottom, top = min(ys), max(ys)
+    return (_lh_final_clean(self, left), _lh_final_clean(self, top), _lh_final_clean(self, max(0.01, right-left)), _lh_final_clean(self, max(0.01, top-bottom)))
+
+
+def _lh_final_sync_body_to_artwork(self, unit=None):
+    u = unit or self.current_unit
+    if not _lh_final_body_graphics(self, u):
+        return
+    x, y, w, h = _lh_final_body_bounds(self, u)
+    u.body.x, u.body.y, u.body.width, u.body.height = x, y, w, h
+
+
+def _lh_final_capture_resize(self, unit=None):
+    u = unit or self.current_unit
+    _lh_final_sync_body_to_artwork(self, u)
+    b = u.body
+    return {
+        'x': float(b.x), 'y': float(b.y), 'w': max(0.01, float(b.width)), 'h': max(0.01, float(b.height)),
+        'pins': [(p, float(p.x), float(p.y), float(getattr(p, 'length', 1.0) or 1.0), bool(getattr(p, 'auto_dock', True))) for p in getattr(u, 'pins', []) or []],
+        'texts': [(t, float(t.x), float(t.y), float(getattr(t, 'font_size_grid', 0.75) or 0.75)) for t in getattr(u, 'texts', []) or []],
+        'attributes': [(t, float(t.x), float(t.y), float(getattr(t, 'font_size_grid', 0.75) or 0.75)) for t in (getattr(b, 'attribute_texts', {}) or {}).values()],
+        'graphics': [(gr, float(gr.x), float(gr.y), float(getattr(gr, 'w', 0.0) or 0.0), float(getattr(gr, 'h', 0.0) or 0.0), getattr(gr, 'ctrl_x', None), getattr(gr, 'ctrl_y', None), float(getattr(gr, 'curve_radius', 0.0) or 0.0), _lh_final_is_body_graphic(gr)) for gr in getattr(u, 'graphics', []) or []],
+    }
+
+
+def _lh_final_move_pin_owned_texts(self, pin, dx, dy):
+    try:
+        self._move_pin_owned_texts(pin, dx, dy)
+    except Exception:
+        for ax, ay in (('label_x', 'label_y'), ('number_x', 'number_y')):
+            try:
+                if getattr(pin, ax, None) is not None and getattr(pin, ay, None) is not None:
+                    setattr(pin, ax, float(getattr(pin, ax)) + dx)
+                    setattr(pin, ay, float(getattr(pin, ay)) + dy)
+            except Exception:
+                pass
+        for tm in (getattr(pin, 'attribute_texts', {}) or {}).values():
+            try:
+                tm.x = float(tm.x) + dx; tm.y = float(tm.y) + dy
+            except Exception:
+                pass
+
+
+def _lh_final_apply_resize(self, start_state, body):
+    old_x = float(start_state.get('x', body.x)); old_y = float(start_state.get('y', body.y))
+    old_w = max(0.01, abs(float(start_state.get('w', body.width))))
+    old_h = max(0.01, abs(float(start_state.get('h', body.height))))
+    new_x = float(body.x); new_y = float(body.y)
+    new_w = max(0.01, abs(float(body.width))); new_h = max(0.01, abs(float(body.height)))
+    sx = new_w / old_w
+    sy = new_h / old_h
+
+    def map_x(x): return _lh_final_snap(self, new_x + (float(x) - old_x) * sx)
+    def map_y(y): return _lh_final_snap(self, new_y + (float(y) - old_y) * sy)
+    def map_raw_x(x): return _lh_final_clean(self, new_x + (float(x) - old_x) * sx)
+    def map_raw_y(y): return _lh_final_clean(self, new_y + (float(y) - old_y) * sy)
+
+    body_graphics_seen = False
+    for gr, gx, gy, gw, gh, cx, cy, cr, is_body in start_state.get('graphics', []) or []:
+        if is_body:
+            body_graphics_seen = True
+            x1, y1 = gx, gy
+            x2, y2 = gx + gw, gy - gh
+            nx1, ny1 = map_raw_x(x1), map_raw_y(y1)
+            nx2, ny2 = map_raw_x(x2), map_raw_y(y2)
+            gr.x = nx1
+            gr.y = ny1
+            gr.w = _lh_final_clean(self, nx2 - nx1)
+            gr.h = _lh_final_clean(self, ny1 - ny2)
+            try:
+                if cx is not None: gr.ctrl_x = _lh_final_clean(self, float(cx) * sx)
+                if cy is not None: gr.ctrl_y = _lh_final_clean(self, float(cy) * sy)
+                gr.curve_radius = _lh_final_clean(self, float(cr) * ((abs(sx)+abs(sy))/2.0))
+            except Exception:
+                pass
+        else:
+            # User graphics stay separate; move their anchor with the body but do not resize them.
+            gr.x, gr.y = map_x(gx), map_y(gy)
+            gr.w, gr.h = gw, gh
+
+    # Keep model BODY dimensions exactly as the logical Symbol-1 editor surface.
+    # For imported/template bodies, also sync once from the scaled real artwork to
+    # avoid drift from negative line vectors or curved control points.
+    if body_graphics_seen:
+        _lh_final_sync_body_to_artwork(self, self.current_unit)
+        body = self.current_unit.body
+    else:
+        body.x, body.y, body.width, body.height = new_x, new_y, new_w, new_h
+
+    for p, px, py, plen, auto_dock in start_state.get('pins', []) or []:
+        ox, oy = float(getattr(p, 'x', px)), float(getattr(p, 'y', py))
+        side = str(getattr(p, 'side', '') or '')
+        if bool(getattr(p, 'auto_dock', auto_dock)):
+            if side == PinSide.LEFT.value:
+                nx, ny = body.x, map_y(py)
+            elif side == PinSide.RIGHT.value:
+                nx, ny = body.x + body.width, map_y(py)
+            elif side == getattr(PinSide, 'TOP', PinSide.LEFT).value:
+                nx, ny = map_x(px), body.y
+            elif side == getattr(PinSide, 'BOTTOM', PinSide.RIGHT).value:
+                nx, ny = map_x(px), body.y - body.height
+            else:
+                nx, ny = map_x(px), map_y(py)
+        else:
+            nx, ny = map_x(px), map_y(py)
+        p.x, p.y = _lh_final_snap(self, nx), _lh_final_snap(self, ny)
+        # Body scaling must not stretch pins.
+        try: p.length = max(0.1, float(plen))
+        except Exception: pass
+        _lh_final_move_pin_owned_texts(self, p, p.x - ox, p.y - oy)
+
+    for t, tx, ty, fs in start_state.get('texts', []) or []:
+        t.x, t.y = map_x(tx), map_y(ty)
+        try: t.font_size_grid = fs
+        except Exception: pass
+    for t, tx, ty, fs in start_state.get('attributes', []) or []:
+        t.x, t.y = map_x(tx), map_y(ty)
+        try: t.font_size_grid = fs
+        except Exception: pass
+
+    try: delattr(self.current_unit, '_body_group_transform')
+    except Exception: pass
+
+
+def _lh_final_resize_body_like_symbol1(self, body, new_w=None, new_h=None, *, push_undo=True, refresh=True):
+    _lh_final_sync_body_to_artwork(self, self.current_unit)
+    body = self.current_unit.body
+    step = _lh_final_step(self)
+    nw = float(body.width if new_w is None else max(step, _lh_final_snap(self, new_w)))
+    nh = float(body.height if new_h is None else max(step, _lh_final_snap(self, new_h)))
+    if abs(nw - float(body.width)) < 1e-9 and abs(nh - float(body.height)) < 1e-9:
+        return
+    if push_undo:
+        self.push_undo_state()
+    try: self._selection_restore_ids = self._capture_selection_ids()
+    except Exception: pass
+    st = _lh_final_capture_resize(self, self.current_unit)
+    body.width, body.height = nw, nh
+    _lh_final_apply_resize(self, st, body)
+    self.dirty = True
+    if refresh:
+        try: self.update_current_unit_canvas_positions()
+        except Exception: pass
+        try: self.rebuild_tree(); self.rebuild_pin_table()
+        except Exception: pass
+        try: self.refresh_properties()
+        except Exception: pass
+        try: self.view.viewport().update(); self.scene.update()
+        except Exception: pass
+
+
+def _lh_final_set_body_width_grid(self, body, value):
+    return _lh_final_resize_body_like_symbol1(self, body, new_w=value, new_h=getattr(body, 'height', None))
+
+
+def _lh_final_set_body_height_grid(self, body, value):
+    return _lh_final_resize_body_like_symbol1(self, body, new_w=getattr(body, 'width', None), new_h=value)
+
+
+try:
+    _lh_final_prev_transform_unit_as_body_group = MainWindow._transform_unit_as_body_group
+except Exception:
+    _lh_final_prev_transform_unit_as_body_group = None
+
+
+def _lh_final_transform_unit_as_body_group(self, op, value=None, refresh=True):
+    if op in ('scale', 'scale_x_to', 'scale_y_to'):
+        _lh_final_sync_body_to_artwork(self, self.current_unit)
+        b = self.current_unit.body
+        if op == 'scale_x_to':
+            return _lh_final_resize_body_like_symbol1(self, b, new_w=float(value), new_h=b.height, push_undo=False, refresh=refresh)
+        if op == 'scale_y_to':
+            return _lh_final_resize_body_like_symbol1(self, b, new_w=b.width, new_h=float(value), push_undo=False, refresh=refresh)
+        f = float(value or 1.0)
+        return _lh_final_resize_body_like_symbol1(self, b, new_w=float(b.width)*f, new_h=float(b.height)*f, push_undo=False, refresh=refresh)
+    if _lh_final_prev_transform_unit_as_body_group is not None:
+        return _lh_final_prev_transform_unit_as_body_group(self, op, value, refresh)
+
+
+try:
+    _lh_final_prev_rebuild_scene = MainWindow.rebuild_scene
+except Exception:
+    _lh_final_prev_rebuild_scene = None
+
+
+def _lh_final_rebuild_scene(self):
+    # This is a direct harmonized rebuild_scene variant: native Symbol 1 and
+    # imported/template symbols always receive a real logical BODY item.
+    selected_ids = getattr(self, '_selection_restore_ids', set()) or self._capture_selection_ids()
+    self._selection_restore_ids = set()
+    self.scene.blockSignals(True)
+    self.scene.clear()
+    u = self.current_unit
+    self.set_format_guide_to_active_origin()
+
+    body_attrs = getattr(u.body, 'attributes', {}) or {}
+    graphics_as_body = (
+        str(body_attrs.get('MENTOR_GRAPHICS_AS_BODY', '0')) == '1'
+        or str(body_attrs.get('MENTOR_BODY_GRAPHICS_LOCKED', '0')) == '1'
+        or str(body_attrs.get('MENTOR_HAS_BODY', '0')) == '1'
+        or str(body_attrs.get('TEMPLATE_GRAPHICS_AS_BODY', '0')) == '1'
+    )
+    try: self._lock_template_body_graphics(u)
+    except Exception: pass
+    if graphics_as_body:
+        try: self._normalize_unit_body_anchor_to_symbol_origin(u)
+        except Exception: pass
+        _lh_final_sync_body_to_artwork(self, u)
+    try: self.dock_pins_to_body(u)
+    except Exception: pass
+
+    # Always create the logical BODY editor surface. This is the same object used
+    # for Symbol 1, and it owns scale/rotate/flip handles for template/imports too.
+    body_item = BodyItem(u.body, self)
+    if graphics_as_body:
+        body_item.setBrush(QBrush(Qt.NoBrush))
+        body_item.setPen(QPen(QColor(40, 40, 40), 1, Qt.DashLine))
+        body_item.setZValue(0.05)
+    self.apply_item_selectability(body_item)
+    self.scene.addItem(body_item)
+    self._restore_or_select_item(body_item, selected_ids)
+
+    self.add_attribute_text_items(u)
+    for g in getattr(u, 'graphics', []) or []:
+        item = GraphicItem(g, self)
+        self.apply_item_selectability(item)
+        if _lh_final_is_body_graphic(g) and graphics_as_body and not getattr(self, 'is_template_editor', False):
+            # BODY artwork is paint-only. Selection and handles belong to BodyItem.
+            item.setData(0, 'GRAPHIC')
+            item.setFlag(QGraphicsItem.ItemIsSelectable, False)
+            item.setFlag(QGraphicsItem.ItemIsMovable, False)
+            item.setFlag(QGraphicsItem.ItemIsFocusable, False)
+            try: item.setAcceptedMouseButtons(Qt.NoButton)
+            except Exception: pass
+            item.setZValue(0.2)
+        else:
+            self._restore_or_select_item(item, selected_ids)
+        self.scene.addItem(item)
+    for p in getattr(u, 'pins', []) or []:
+        item = PinItem(p, self)
+        self.apply_item_selectability(item)
+        self.scene.addItem(item)
+        self._restore_or_select_item(item, selected_ids)
+    for t in getattr(u, 'texts', []) or []:
+        item = TextItem(t, self)
+        self.apply_item_selectability(item)
+        self.scene.addItem(item)
+        self._restore_or_select_item(item, selected_ids)
+    self.scene.update()
+    self.scene.blockSignals(False)
+    self.refresh_properties()
+
+
+try:
+    _lh_final_prev_update_current_unit_canvas_positions = MainWindow.update_current_unit_canvas_positions
+except Exception:
+    _lh_final_prev_update_current_unit_canvas_positions = None
+
+
+def _lh_final_update_current_unit_canvas_positions(self):
+    if _lh_final_prev_update_current_unit_canvas_positions is not None:
+        try:
+            _lh_final_prev_update_current_unit_canvas_positions(self)
+        except Exception:
+            pass
+    g = self.grid_px
+    for item in self.scene.items():
+        if getattr(item, 'data', lambda *_: None)(0) == 'BODY' and getattr(item, 'model', None) is not None:
+            m = item.model
+            try:
+                item.prepareGeometryChange()
+                item.setPos(float(m.x) * g, -float(m.y) * g)
+                item.setRect(0, 0, max(0.01, float(m.width)) * g, max(0.01, float(m.height)) * g)
+                item.setPen(pen_for(getattr(m, 'color', (0,0,0)), getattr(m, 'line_width', 0.03), getattr(m, 'line_style', LineStyle.SOLID.value), g))
+                if hasattr(item, 'apply_transform_from_model'):
+                    item.apply_transform_from_model()
+                item.update()
+            except Exception:
+                pass
+    try: self.scene.update(); self.view.viewport().update()
+    except Exception: pass
+
+
+try:
+    MainWindow._capture_symbol1_body_resize_state = _lh_final_capture_resize
+    MainWindow._apply_symbol1_body_resize_state = _lh_final_apply_resize
+    MainWindow._resize_body_like_symbol1 = _lh_final_resize_body_like_symbol1
+    MainWindow._set_body_width_grid = _lh_final_set_body_width_grid
+    MainWindow._set_body_height_grid = _lh_final_set_body_height_grid
+    MainWindow._transform_unit_as_body_group = _lh_final_transform_unit_as_body_group
+    MainWindow.rebuild_scene = _lh_final_rebuild_scene
+    MainWindow.update_current_unit_canvas_positions = _lh_final_update_current_unit_canvas_positions
+    MainWindow._lh_final_body_graphics = _lh_final_body_graphics
+    MainWindow._lh_final_sync_body_to_artwork = _lh_final_sync_body_to_artwork
+except Exception:
+    pass
+
+# ---------------------------------------------------------------------------
+# LH v103: real Template/Import BODY geometry resize harmonization
+# ---------------------------------------------------------------------------
+# Previous harmonization still depended on per-GraphicModel markers to decide
+# whether a graphic primitive belongs to the BODY.  Some imported/template units
+# only carry BODY ownership on the BODY attributes (MENTOR_GRAPHICS_AS_BODY,
+# MENTOR_HAS_BODY, TEMPLATE_GRAPHICS_AS_BODY, ...).  In that case the logical
+# BodyItem/selection rectangle resized while the real visible BODY primitives did
+# not.  The rule below is intentionally unit-level: when a unit declares graphics
+# as BODY, every graphic is BODY artwork unless it is explicitly marked as a
+# user-created graphic.  This is the same geometry surface that Symbol 1 uses.
+# ---------------------------------------------------------------------------
+
+def _lh103_unit_uses_graphics_as_body(unit):
+    try:
+        attrs = getattr(getattr(unit, 'body', None), 'attributes', {}) or {}
+        for key in ('MENTOR_GRAPHICS_AS_BODY', 'MENTOR_BODY_GRAPHICS_LOCKED', 'MENTOR_HAS_BODY', 'TEMPLATE_GRAPHICS_AS_BODY'):
+            if str(attrs.get(key, '0')) == '1':
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def _lh103_is_explicit_user_graphic(gr):
+    role = str(getattr(gr, 'graphic_role', '') or '').lower()
+    raw = str(getattr(gr, 'mentor_raw', '') or '')
+    return bool(role == 'user_graphic' or role.startswith('user_graphic_group:') or raw == '__USER_GRAPHIC__')
+
+
+def _lh103_is_body_graphic_for_unit(unit, gr):
+    if _lh103_unit_uses_graphics_as_body(unit):
+        return not _lh103_is_explicit_user_graphic(gr)
+    role = str(getattr(gr, 'graphic_role', '') or '').lower()
+    raw = str(getattr(gr, 'mentor_raw', '') or '')
+    return bool(
+        getattr(gr, 'locked_to_body', False)
+        or role in ('body', 'template_body', 'imported_body', 'body_graphic')
+        or (raw and raw != '__USER_GRAPHIC__' and role != 'user_graphic')
+    )
+
+
+def _lh_final_body_graphics(self, unit=None):
+    u = unit or self.current_unit
+    out = []
+    for gr in (getattr(u, 'graphics', []) or []):
+        if _lh103_is_body_graphic_for_unit(u, gr):
+            out.append(gr)
+            # Normalize the marker so painting/highlight code and later calls all
+            # agree that this primitive is BODY artwork, not an independent object.
+            try:
+                gr.locked_to_body = True
+                if not str(getattr(gr, 'graphic_role', '') or '') or str(getattr(gr, 'graphic_role', '') or '').lower() == 'body_graphic':
+                    gr.graphic_role = 'template_body'
+            except Exception:
+                pass
+    return out
+
+
+def _lh_final_sync_body_to_artwork(self, unit=None):
+    u = unit or self.current_unit
+    gs = _lh_final_body_graphics(self, u)
+    if not gs:
+        return
+    x, y, w, h = _lh_final_body_bounds(self, u)
+    u.body.x, u.body.y, u.body.width, u.body.height = x, y, w, h
+
+
+def _lh_final_capture_resize(self, unit=None):
+    u = unit or self.current_unit
+    _lh_final_sync_body_to_artwork(self, u)
+    b = u.body
+    return {
+        'x': float(b.x), 'y': float(b.y), 'w': max(0.01, float(b.width)), 'h': max(0.01, float(b.height)),
+        'pins': [(p, float(p.x), float(p.y), float(getattr(p, 'length', 1.0) or 1.0), bool(getattr(p, 'auto_dock', True))) for p in getattr(u, 'pins', []) or []],
+        'texts': [(t, float(t.x), float(t.y), float(getattr(t, 'font_size_grid', 0.75) or 0.75)) for t in getattr(u, 'texts', []) or []],
+        'attributes': [(t, float(t.x), float(t.y), float(getattr(t, 'font_size_grid', 0.75) or 0.75)) for t in (getattr(b, 'attribute_texts', {}) or {}).values()],
+        'graphics': [(gr, float(gr.x), float(gr.y), float(getattr(gr, 'w', 0.0) or 0.0), float(getattr(gr, 'h', 0.0) or 0.0), getattr(gr, 'ctrl_x', None), getattr(gr, 'ctrl_y', None), float(getattr(gr, 'curve_radius', 0.0) or 0.0), _lh103_is_body_graphic_for_unit(u, gr)) for gr in getattr(u, 'graphics', []) or []],
+    }
+
+
+def _lh_final_apply_resize(self, start_state, body):
+    old_x = float(start_state.get('x', body.x)); old_y = float(start_state.get('y', body.y))
+    old_w = max(0.01, abs(float(start_state.get('w', body.width))))
+    old_h = max(0.01, abs(float(start_state.get('h', body.height))))
+    new_x = float(body.x); new_y = float(body.y)
+    new_w = max(0.01, abs(float(body.width))); new_h = max(0.01, abs(float(body.height)))
+    sx = new_w / old_w
+    sy = new_h / old_h
+
+    def map_x(x): return _lh_final_snap(self, new_x + (float(x) - old_x) * sx)
+    def map_y(y): return _lh_final_snap(self, new_y + (float(y) - old_y) * sy)
+    def map_raw_x(x): return _lh_final_clean(self, new_x + (float(x) - old_x) * sx)
+    def map_raw_y(y): return _lh_final_clean(self, new_y + (float(y) - old_y) * sy)
+
+    body_graphics_seen = False
+    for gr, gx, gy, gw, gh, cx, cy, cr, is_body in start_state.get('graphics', []) or []:
+        if is_body:
+            body_graphics_seen = True
+            x1, y1 = gx, gy
+            x2, y2 = gx + gw, gy - gh
+            nx1, ny1 = map_raw_x(x1), map_raw_y(y1)
+            nx2, ny2 = map_raw_x(x2), map_raw_y(y2)
+            gr.x = nx1
+            gr.y = ny1
+            gr.w = _lh_final_clean(self, nx2 - nx1)
+            gr.h = _lh_final_clean(self, ny1 - ny2)
+            try:
+                gr.locked_to_body = True
+                if not str(getattr(gr, 'graphic_role', '') or '') or str(getattr(gr, 'graphic_role', '') or '').lower() == 'body_graphic':
+                    gr.graphic_role = 'template_body'
+                if cx is not None: gr.ctrl_x = _lh_final_clean(self, float(cx) * sx)
+                if cy is not None: gr.ctrl_y = _lh_final_clean(self, float(cy) * sy)
+                gr.curve_radius = _lh_final_clean(self, float(cr) * ((abs(sx)+abs(sy))/2.0))
+            except Exception:
+                pass
+        else:
+            # User graphics are not BODY geometry. They follow the body position
+            # like Symbol 1 child objects, but are not stretched into the BODY.
+            gr.x, gr.y = map_x(gx), map_y(gy)
+            gr.w, gr.h = gw, gh
+
+    if body_graphics_seen:
+        _lh_final_sync_body_to_artwork(self, self.current_unit)
+        body = self.current_unit.body
+    else:
+        body.x, body.y, body.width, body.height = new_x, new_y, new_w, new_h
+
+    for p, px, py, plen, auto_dock in start_state.get('pins', []) or []:
+        ox, oy = float(getattr(p, 'x', px)), float(getattr(p, 'y', py))
+        side = str(getattr(p, 'side', '') or '')
+        if bool(getattr(p, 'auto_dock', auto_dock)):
+            if side == PinSide.LEFT.value:
+                nx, ny = body.x, map_y(py)
+            elif side == PinSide.RIGHT.value:
+                nx, ny = body.x + body.width, map_y(py)
+            elif side == getattr(PinSide, 'TOP', PinSide.LEFT).value:
+                nx, ny = map_x(px), body.y
+            elif side == getattr(PinSide, 'BOTTOM', PinSide.RIGHT).value:
+                nx, ny = map_x(px), body.y - body.height
+            else:
+                nx, ny = map_x(px), map_y(py)
+        else:
+            nx, ny = map_x(px), map_y(py)
+        p.x, p.y = _lh_final_snap(self, nx), _lh_final_snap(self, ny)
+        try: p.length = max(0.1, float(plen))
+        except Exception: pass
+        _lh_final_move_pin_owned_texts(self, p, p.x - ox, p.y - oy)
+
+    for t, tx, ty, fs in start_state.get('texts', []) or []:
+        t.x, t.y = map_x(tx), map_y(ty)
+        try: t.font_size_grid = fs
+        except Exception: pass
+    for t, tx, ty, fs in start_state.get('attributes', []) or []:
+        t.x, t.y = map_x(tx), map_y(ty)
+        try: t.font_size_grid = fs
+        except Exception: pass
+
+    try: delattr(self.current_unit, '_body_group_transform')
+    except Exception: pass
+
+
+def _lh103_scale_current_unit_children_from_body_resize(self, start_state, body):
+    # Canvas-handle resizing lands here.  Route it through the same real-geometry
+    # resize used by property edits and toolbar scaling.
+    return _lh_final_apply_resize(self, start_state, body)
+
+try:
+    MainWindow._capture_symbol1_body_resize_state = _lh_final_capture_resize
+    MainWindow._apply_symbol1_body_resize_state = _lh_final_apply_resize
+    MainWindow.scale_current_unit_children_from_body_resize = _lh103_scale_current_unit_children_from_body_resize
+    MainWindow._lh_final_body_graphics = _lh_final_body_graphics
+    MainWindow._lh_final_sync_body_to_artwork = _lh_final_sync_body_to_artwork
+    if 'TemplateEditorDialog' in globals():
+        TemplateEditorDialog._capture_symbol1_body_resize_state = _lh_final_capture_resize
+        TemplateEditorDialog._apply_symbol1_body_resize_state = _lh_final_apply_resize
+        TemplateEditorDialog.scale_current_unit_children_from_body_resize = _lh103_scale_current_unit_children_from_body_resize
+except Exception:
+    pass
+
+# LH v103b: scene rebuild must use the same unit-level BODY ownership rule as resize.
+def _lh103_rebuild_scene(self):
+    selected_ids = getattr(self, '_selection_restore_ids', set()) or self._capture_selection_ids()
+    self._selection_restore_ids = set()
+    self.scene.blockSignals(True)
+    self.scene.clear()
+    u = self.current_unit
+    self.set_format_guide_to_active_origin()
+    graphics_as_body = _lh103_unit_uses_graphics_as_body(u) or bool(_lh_final_body_graphics(self, u))
+    try: self._lock_template_body_graphics(u)
+    except Exception: pass
+    if graphics_as_body:
+        try: self._normalize_unit_body_anchor_to_symbol_origin(u)
+        except Exception: pass
+        _lh_final_sync_body_to_artwork(self, u)
+    try: self.dock_pins_to_body(u)
+    except Exception: pass
+
+    body_item = BodyItem(u.body, self)
+    if graphics_as_body:
+        # Same editor surface as Symbol 1; no separate highlight/proxy model.
+        try:
+            body_item.setBrush(QBrush(Qt.NoBrush))
+            body_item.setPen(QPen(QColor(40, 40, 40), 1, Qt.DashLine))
+            body_item.setZValue(0.05)
+        except Exception:
+            pass
+    self.apply_item_selectability(body_item)
+    self.scene.addItem(body_item)
+    self._restore_or_select_item(body_item, selected_ids)
+
+    self.add_attribute_text_items(u)
+    for g in getattr(u, 'graphics', []) or []:
+        item = GraphicItem(g, self)
+        self.apply_item_selectability(item)
+        if _lh103_is_body_graphic_for_unit(u, g) and graphics_as_body and not getattr(self, 'is_template_editor', False):
+            try:
+                g.locked_to_body = True
+                if not str(getattr(g, 'graphic_role', '') or '') or str(getattr(g, 'graphic_role', '') or '').lower() == 'body_graphic':
+                    g.graphic_role = 'template_body'
+            except Exception:
+                pass
+            item.setData(0, 'GRAPHIC')
+            item.setFlag(QGraphicsItem.ItemIsSelectable, False)
+            item.setFlag(QGraphicsItem.ItemIsMovable, False)
+            item.setFlag(QGraphicsItem.ItemIsFocusable, False)
+            try: item.setAcceptedMouseButtons(Qt.NoButton)
+            except Exception: pass
+            item.setZValue(0.2)
+        else:
+            self._restore_or_select_item(item, selected_ids)
+        self.scene.addItem(item)
+    for p in getattr(u, 'pins', []) or []:
+        item = PinItem(p, self)
+        self.apply_item_selectability(item)
+        self.scene.addItem(item)
+        self._restore_or_select_item(item, selected_ids)
+    for t in getattr(u, 'texts', []) or []:
+        item = TextItem(t, self)
+        self.apply_item_selectability(item)
+        self.scene.addItem(item)
+        self._restore_or_select_item(item, selected_ids)
+    self.scene.update()
+    self.scene.blockSignals(False)
+    self.refresh_properties()
+
+try:
+    MainWindow.rebuild_scene = _lh103_rebuild_scene
+except Exception:
+    pass
+
+# ---------------------------------------------------------------------------
+# LH v104: use the logical BodyItem as the real BODY for template/import symbols.
+# ---------------------------------------------------------------------------
+# The BODY selection rectangle is no longer a dashed highlight/proxy.  It is the
+# editable body geometry itself and is drawn with the same pen/handle semantics
+# as native Symbol 1. BODY-owned imported graphics remain paint-only reference
+# artwork below it; they never own selection, handles, resize or transform.
+
+def _lh104_rebuild_scene(self):
+    selected_ids = getattr(self, '_selection_restore_ids', set()) or self._capture_selection_ids()
+    self._selection_restore_ids = set()
+    self.scene.blockSignals(True)
+    self.scene.clear()
+    u = self.current_unit
+    self.set_format_guide_to_active_origin()
+
+    try:
+        graphics_as_body = _lh103_unit_uses_graphics_as_body(u) or bool(_lh_final_body_graphics(self, u))
+    except Exception:
+        body_attrs = getattr(getattr(u, 'body', None), 'attributes', {}) or {}
+        graphics_as_body = any(str(body_attrs.get(k, '0')) == '1' for k in (
+            'MENTOR_GRAPHICS_AS_BODY', 'MENTOR_BODY_GRAPHICS_LOCKED', 'MENTOR_HAS_BODY', 'TEMPLATE_GRAPHICS_AS_BODY'
+        ))
+
+    try:
+        self._lock_template_body_graphics(u)
+    except Exception:
+        pass
+    if graphics_as_body:
+        try:
+            self._normalize_unit_body_anchor_to_symbol_origin(u)
+        except Exception:
+            pass
+        try:
+            _lh_final_sync_body_to_artwork(self, u)
+        except Exception:
+            pass
+    try:
+        self.dock_pins_to_body(u)
+    except Exception:
+        pass
+
+    # BODY is always a true BodyItem, exactly like Symbol 1.  No dashed helper
+    # frame.  No BODY_GRAPHIC selection surface.  Handles belong only here.
+    body_item = BodyItem(u.body, self)
+    try:
+        body_item.setBrush(QBrush(Qt.NoBrush))
+        body_item.setPen(pen_for(getattr(u.body, 'color', (0, 0, 0)), getattr(u.body, 'line_width', 0.03), getattr(u.body, 'line_style', LineStyle.SOLID.value), self.grid_px))
+        body_item.setZValue(0.35 if graphics_as_body else 0.0)
+    except Exception:
+        pass
+    self.apply_item_selectability(body_item)
+    self.scene.addItem(body_item)
+    self._restore_or_select_item(body_item, selected_ids)
+
+    self.add_attribute_text_items(u)
+
+    for g in getattr(u, 'graphics', []) or []:
+        item = GraphicItem(g, self)
+        self.apply_item_selectability(item)
+        is_body_art = False
+        try:
+            is_body_art = _lh103_is_body_graphic_for_unit(u, g) and graphics_as_body and not getattr(self, 'is_template_editor', False)
+        except Exception:
+            role = str(getattr(g, 'graphic_role', '') or '').lower()
+            is_body_art = graphics_as_body and (getattr(g, 'locked_to_body', False) or role in ('body', 'template_body', 'imported_body')) and not getattr(self, 'is_template_editor', False)
+        if is_body_art:
+            try:
+                g.locked_to_body = True
+                if not str(getattr(g, 'graphic_role', '') or ''):
+                    g.graphic_role = 'template_body'
+            except Exception:
+                pass
+            # Paint-only legacy artwork: never select, never highlight, never own
+            # geometry. The visible/editable BODY is the BodyItem above.
+            item.setData(0, 'GRAPHIC')
+            item.setFlag(QGraphicsItem.ItemIsSelectable, False)
+            item.setFlag(QGraphicsItem.ItemIsMovable, False)
+            item.setFlag(QGraphicsItem.ItemIsFocusable, False)
+            try:
+                item.setAcceptedMouseButtons(Qt.NoButton)
+            except Exception:
+                pass
+            item.setZValue(0.10)
+        else:
+            self._restore_or_select_item(item, selected_ids)
+        self.scene.addItem(item)
+
+    for p in getattr(u, 'pins', []) or []:
+        item = PinItem(p, self)
+        self.apply_item_selectability(item)
+        self.scene.addItem(item)
+        self._restore_or_select_item(item, selected_ids)
+    for t in getattr(u, 'texts', []) or []:
+        item = TextItem(t, self)
+        self.apply_item_selectability(item)
+        self.scene.addItem(item)
+        self._restore_or_select_item(item, selected_ids)
+
+    self.scene.update()
+    self.scene.blockSignals(False)
+    self.refresh_properties()
+
+
+def _lh104_update_current_unit_canvas_positions(self):
+    # Keep BODY drawing state authoritative after every transform/scale.
+    try:
+        _lh_final_update_current_unit_canvas_positions(self)
+    except Exception:
+        try:
+            _lh_final_prev_update_current_unit_canvas_positions(self)
+        except Exception:
+            pass
+    try:
+        g = self.grid_px
+        for item in self.scene.items():
+            if getattr(item, 'data', lambda *_: None)(0) == 'BODY' and getattr(item, 'model', None) is not None:
+                m = item.model
+                item.prepareGeometryChange()
+                item.setPos(float(m.x) * g, -float(m.y) * g)
+                item.setRect(0, 0, max(0.01, float(m.width)) * g, max(0.01, float(m.height)) * g)
+                item.setPen(pen_for(getattr(m, 'color', (0, 0, 0)), getattr(m, 'line_width', 0.03), getattr(m, 'line_style', LineStyle.SOLID.value), g))
+                if hasattr(item, 'apply_transform_from_model'):
+                    item.apply_transform_from_model()
+                item.update()
+        self.scene.update(); self.view.viewport().update()
+    except Exception:
+        pass
+
+try:
+    MainWindow.rebuild_scene = _lh104_rebuild_scene
+    MainWindow.update_current_unit_canvas_positions = _lh104_update_current_unit_canvas_positions
+except Exception:
+    pass
+
+# ---------------------------------------------------------------------------
+# LH v105: the largest/template artwork frame is the BODY, not the old logical
+# imported b-record rectangle.  Previous fixes still synchronized the BodyItem
+# to whichever graphic had already been marked as body.  Some imports/template
+# caches mark the visual outer frame as a normal/user graphic while the smaller
+# Mentor b-record remains the logical body.  The user-facing rule is now simple:
+# for imported/template units with BODY-artwork flags, every Mentor/template
+# graphic except explicitly newly drawn Wizard user graphics contributes to the
+# BODY bounds.  The BodyItem is synced to that outer artwork before it is added
+# to the scene, so the visible Symbol-1 handles sit on the real BODY frame.
+# ---------------------------------------------------------------------------
+
+def _lh105_unit_declares_template_or_import_body(unit):
+    try:
+        attrs = getattr(getattr(unit, 'body', None), 'attributes', {}) or {}
+        return any(str(attrs.get(k, '0')) == '1' for k in (
+            'MENTOR_GRAPHICS_AS_BODY',
+            'MENTOR_BODY_GRAPHICS_LOCKED',
+            'MENTOR_HAS_BODY',
+            'TEMPLATE_GRAPHICS_AS_BODY',
+            'TEMPLATE_BODY_GRAPHICS_LOCKED',
+        ))
+    except Exception:
+        return False
+
+
+def _lh105_is_explicit_wizard_user_graphic(gr):
+    """Only graphics created later in the Wizard stay outside the BODY.
+
+    Older template/import migrations sometimes set graphic_role='user_graphic'
+    on imported artwork.  That marker alone is therefore not trusted.  The hard
+    Wizard-created marker is mentor_raw == '__USER_GRAPHIC__' or a user group id.
+    """
+    try:
+        raw = str(getattr(gr, 'mentor_raw', '') or '')
+        role = str(getattr(gr, 'graphic_role', '') or '').lower()
+        group_id = str(getattr(gr, 'group_id', '') or '')
+        if raw == '__USER_GRAPHIC__':
+            return True
+        if role.startswith('user_graphic_group:') or group_id.startswith('user_graphic_group:'):
+            return True
+    except Exception:
+        pass
+    return False
+
+
+def _lh105_is_body_graphic_for_unit(unit, gr):
+    try:
+        if _lh105_unit_declares_template_or_import_body(unit):
+            return not _lh105_is_explicit_wizard_user_graphic(gr)
+    except Exception:
+        pass
+    try:
+        if _lh105_is_explicit_wizard_user_graphic(gr):
+            return False
+        role = str(getattr(gr, 'graphic_role', '') or '').lower()
+        raw = str(getattr(gr, 'mentor_raw', '') or '')
+        return bool(
+            getattr(gr, 'locked_to_body', False)
+            or role in ('body', 'template_body', 'imported_body', 'body_graphic')
+            or (raw and raw != '__USER_GRAPHIC__')
+        )
+    except Exception:
+        return False
+
+
+def _lh105_body_graphics(self, unit=None):
+    u = unit or self.current_unit
+    out = []
+    for gr in getattr(u, 'graphics', []) or []:
+        if _lh105_is_body_graphic_for_unit(u, gr):
+            out.append(gr)
+            try:
+                gr.locked_to_body = True
+                # Do not let stale 'user_graphic' role keep imported artwork out
+                # of BODY geometry/selection handling.
+                gr.graphic_role = 'template_body'
+            except Exception:
+                pass
+    return out
+
+
+def _lh105_graphic_bounds(gr):
+    x = float(getattr(gr, 'x', 0.0) or 0.0)
+    y = float(getattr(gr, 'y', 0.0) or 0.0)
+    w = float(getattr(gr, 'w', 0.0) or 0.0)
+    h = float(getattr(gr, 'h', 0.0) or 0.0)
+    xs = [x, x + w]
+    ys = [y, y - h]
+    try:
+        cx = getattr(gr, 'ctrl_x', None)
+        cy = getattr(gr, 'ctrl_y', None)
+        if cx is not None:
+            xs.append(x + float(cx))
+        if cy is not None:
+            ys.append(y - float(cy))
+    except Exception:
+        pass
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def _lh105_body_bounds(self, unit=None):
+    u = unit or self.current_unit
+    gs = _lh105_body_graphics(self, u)
+    if not gs:
+        b = u.body
+        return (float(getattr(b, 'x', 0.0) or 0.0),
+                float(getattr(b, 'y', 0.0) or 0.0),
+                max(0.01, float(getattr(b, 'width', 1.0) or 1.0)),
+                max(0.01, float(getattr(b, 'height', 1.0) or 1.0)))
+    xs, ys = [], []
+    for gr in gs:
+        try:
+            x0, y0, x1, y1 = _lh105_graphic_bounds(gr)
+            xs.extend([x0, x1]); ys.extend([y0, y1])
+        except Exception:
+            pass
+    if not xs or not ys:
+        b = u.body
+        return (float(getattr(b, 'x', 0.0) or 0.0), float(getattr(b, 'y', 0.0) or 0.0),
+                max(0.01, float(getattr(b, 'width', 1.0) or 1.0)), max(0.01, float(getattr(b, 'height', 1.0) or 1.0)))
+    left, right = min(xs), max(xs)
+    bottom, top = min(ys), max(ys)
+    try:
+        return (_lh_final_clean(self, left), _lh_final_clean(self, top),
+                _lh_final_clean(self, max(0.01, right - left)),
+                _lh_final_clean(self, max(0.01, top - bottom)))
+    except Exception:
+        return (left, top, max(0.01, right - left), max(0.01, top - bottom))
+
+
+def _lh105_sync_body_to_artwork(self, unit=None):
+    u = unit or self.current_unit
+    if not _lh105_body_graphics(self, u):
+        return
+    x, y, w, h = _lh105_body_bounds(self, u)
+    u.body.x = x; u.body.y = y; u.body.width = w; u.body.height = h
+
+
+def _lh105_body_graphics_for_unit_method(self, unit=None):
+    return _lh105_body_graphics(self, unit or self.current_unit)
+
+
+def _lh105_sync_body_model_to_body_bounds_only(self, unit=None):
+    return _lh105_sync_body_to_artwork(self, unit or self.current_unit)
+
+
+def _lh105_rebuild_scene(self):
+    selected_ids = getattr(self, '_selection_restore_ids', set()) or self._capture_selection_ids()
+    self._selection_restore_ids = set()
+    self.scene.blockSignals(True)
+    self.scene.clear()
+    u = self.current_unit
+    self.set_format_guide_to_active_origin()
+
+    graphics_as_body = _lh105_unit_declares_template_or_import_body(u) or bool(_lh105_body_graphics(self, u))
+    try:
+        self._lock_template_body_graphics(u)
+    except Exception:
+        pass
+    if graphics_as_body:
+        # Sync first: BodyItem is created from the real outer template/import
+        # artwork bounds, not from the old inner/logical b-record.
+        try:
+            _lh105_sync_body_to_artwork(self, u)
+        except Exception:
+            pass
+    try:
+        self.dock_pins_to_body(u)
+    except Exception:
+        pass
+
+    body_item = BodyItem(u.body, self)
+    try:
+        body_item.setBrush(QBrush(Qt.NoBrush))
+        body_item.setPen(pen_for(getattr(u.body, 'color', (0, 0, 0)), getattr(u.body, 'line_width', 0.03), getattr(u.body, 'line_style', LineStyle.SOLID.value), self.grid_px))
+        body_item.setZValue(0.35 if graphics_as_body else 0.0)
+    except Exception:
+        pass
+    self.apply_item_selectability(body_item)
+    self.scene.addItem(body_item)
+    self._restore_or_select_item(body_item, selected_ids)
+
+    self.add_attribute_text_items(u)
+    for g in getattr(u, 'graphics', []) or []:
+        item = GraphicItem(g, self)
+        self.apply_item_selectability(item)
+        if _lh105_is_body_graphic_for_unit(u, g) and graphics_as_body and not getattr(self, 'is_template_editor', False):
+            try:
+                g.locked_to_body = True
+                g.graphic_role = 'template_body'
+            except Exception:
+                pass
+            # Body artwork is paint-only reference. It never owns handles or a
+            # selection/highlight frame; the BodyItem above is the BODY.
+            item.setData(0, 'GRAPHIC')
+            item.setFlag(QGraphicsItem.ItemIsSelectable, False)
+            item.setFlag(QGraphicsItem.ItemIsMovable, False)
+            item.setFlag(QGraphicsItem.ItemIsFocusable, False)
+            try:
+                item.setAcceptedMouseButtons(Qt.NoButton)
+            except Exception:
+                pass
+            item.setZValue(0.10)
+        else:
+            self._restore_or_select_item(item, selected_ids)
+        self.scene.addItem(item)
+
+    for p in getattr(u, 'pins', []) or []:
+        item = PinItem(p, self)
+        self.apply_item_selectability(item)
+        self.scene.addItem(item)
+        self._restore_or_select_item(item, selected_ids)
+    for t in getattr(u, 'texts', []) or []:
+        item = TextItem(t, self)
+        self.apply_item_selectability(item)
+        self.scene.addItem(item)
+        self._restore_or_select_item(item, selected_ids)
+
+    self.scene.update()
+    self.scene.blockSignals(False)
+    self.refresh_properties()
+
+
+try:
+    # Override the late-bound helper names used by existing resize/transform
+    # pipeline so scale/rotate/flip work on the same outer BODY frame.
+    _lh103_is_body_graphic_for_unit = _lh105_is_body_graphic_for_unit
+    _lh_final_body_graphics = _lh105_body_graphics
+    _lh_final_body_bounds = _lh105_body_bounds
+    _lh_final_sync_body_to_artwork = _lh105_sync_body_to_artwork
+    MainWindow._body_graphics_for_unit = _lh105_body_graphics_for_unit_method
+    MainWindow._sync_body_model_to_body_bounds_only = _lh105_sync_body_model_to_body_bounds_only
+    MainWindow._lh_final_body_graphics = _lh105_body_graphics
+    MainWindow._lh_final_sync_body_to_artwork = _lh105_sync_body_to_artwork
+    MainWindow.rebuild_scene = _lh105_rebuild_scene
 except Exception:
     pass
