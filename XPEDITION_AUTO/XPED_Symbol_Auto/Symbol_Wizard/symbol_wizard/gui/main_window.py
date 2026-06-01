@@ -2062,13 +2062,33 @@ class TemplateEditorDialog(QDialog):
         }
         return mapping.get(mode, mapping[OriginMode.CENTER.value])
 
+    def body_anchor_point_oriented(self, body: SymbolBodyModel, mode: str):
+        """BODY anchor in grid coordinates, respecting BODY rotation.
+
+        The model stores BODY x/y/width/height as an unrotated rectangle and
+        rotation separately.  For non-center origins the visual anchor is the
+        rotated corner, not the raw rectangle corner.  Using this value as
+        transform pivot prevents drift when origins other than center are used.
+        """
+        try:
+            raw_x, raw_y = self.body_anchor_point(body, mode)
+            if mode == OriginMode.CENTER.value:
+                return (raw_x, raw_y)
+            rot = float(getattr(body, 'rotation', 0.0) or 0.0)
+            if abs(rot) < 1e-9:
+                return (raw_x, raw_y)
+            cx, cy = self._body_center_grid(body)
+            return self._rot_point(raw_x, raw_y, cx, cy, rot)
+        except Exception:
+            return self.body_anchor_point(body, mode)
+
     def origin_mode_changed(self, mode: str):
         self.reset_origin_to_selected_anchor(mode)
 
     def reset_origin_to_selected_anchor(self, mode: str | None = None):
         mode = mode or (self.origin_combo.currentText() if hasattr(self, 'origin_combo') else OriginMode.CENTER.value)
         body = self.unit.body
-        ax, ay = self.body_anchor_point(body, mode)
+        ax, ay = self.body_anchor_point_oriented(body, mode)
         old_mode = getattr(self.symbol, 'origin', OriginMode.CENTER.value)
         if abs(ax) < 1e-9 and abs(ay) < 1e-9 and old_mode == mode:
             return
@@ -5446,14 +5466,20 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         self.rebuild_scene(); self.rebuild_tree()
 
     def _symbol_group_pivot_grid(self):
-        """Stable transform pivot for one symbol/split part.
+        """Return the active BODY origin/pivot in grid coordinates.
 
-        The grid origin is the symbol origin in the Wizard.  BODY, pins,
-        attributes, texts and graphics must rotate/scale/flip as one rigid
-        object around this pivot.  Do not use an auxiliary proxy rectangle and
-        do not transform each class around its own local anchor.
+        Earlier builds always used (0, 0), which only behaved correctly after
+        a center-origin reset.  BODY transforms must also work when the user
+        selects top_left/top_right/bottom_left/bottom_right.  The pivot is
+        therefore the actual configured BODY anchor, including the current BODY
+        rotation, so rotate/scale/flip keep the selected origin fixed.
         """
-        return (0.0, 0.0)
+        try:
+            body = self.current_unit.body
+            mode = getattr(self.symbol, 'origin', OriginMode.CENTER.value)
+            return self.body_anchor_point_oriented(body, mode)
+        except Exception:
+            return (0.0, 0.0)
 
     def _body_center_grid(self, body=None):
         b = body or self.current_unit.body
