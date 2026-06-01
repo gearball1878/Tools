@@ -834,13 +834,13 @@ class GraphicItem(TransformMixin, QGraphicsItem):
         self.common_flags()
         self.setData(0, 'GRAPHIC')
         if getattr(model, 'locked_to_body', False) and not getattr(window, 'is_template_editor', False):
-            # Imported body primitives are one geometric BODY group in the Symbol Wizard.
-            # They can be moved only through the logical BodyItem; individual edit/select
-            # is enabled exclusively in the Template Editor.
+            # Imported body primitives are the BODY representation itself in the
+            # Symbol Wizard. They may be selected as BODY, but never moved or
+            # edited as individual graphics.
             self.setFlag(QGraphicsItem.ItemIsMovable, False)
-            self.setFlag(QGraphicsItem.ItemIsSelectable, False)
-            self.setAcceptedMouseButtons(Qt.NoButton)
-            self.setAcceptHoverEvents(False)
+            self.setFlag(QGraphicsItem.ItemIsSelectable, True)
+            self.setAcceptedMouseButtons(Qt.AllButtons)
+            self.setAcceptHoverEvents(True)
         self.apply_transform_from_model()
 
     def _raw_rect(self):
@@ -900,14 +900,29 @@ class GraphicItem(TransformMixin, QGraphicsItem):
             painter.drawRect(QRectF(0, 0, m.w * g, m.h * g))
         elif m.shape in ('ellipse', 'circle'):
             painter.drawEllipse(QRectF(0, 0, m.w * g, m.h * g))
-        if self.isSelected() and (not getattr(self.model, 'locked_to_body', False) or getattr(self.window, 'is_template_editor', False)):
+        if self.isSelected():
             painter.save()
-            painter.setPen(QPen(QColor(80, 80, 80), 1, Qt.DashLine))
-            painter.drawRect(self._rect())
-            painter.setBrush(QBrush(QColor(255, 255, 255)))
-            for r in self._handles().values():
-                painter.drawRect(r)
-            painter.drawEllipse(_rotation_handle(self._rect(), self.window.grid_px * self.rotate_handle_factor))
+            if getattr(self.model, 'locked_to_body', False) and not getattr(self.window, 'is_template_editor', False):
+                # BODY selection highlight on the real artwork only. No proxy
+                # bounding rectangle / helper frame is drawn.
+                painter.setPen(QPen(QColor(0, 150, 170), max(1, int(0.08 * g)), Qt.DashLine))
+                painter.setBrush(QBrush(Qt.NoBrush))
+                if m.shape in ('line', 'arc'):
+                    if 'path' in locals():
+                        painter.drawPath(path)
+                    else:
+                        painter.drawLine(QPointF(0, 0), QPointF(m.w * g, m.h * g))
+                elif m.shape == 'rect':
+                    painter.drawRect(QRectF(0, 0, m.w * g, m.h * g))
+                elif m.shape in ('ellipse', 'circle'):
+                    painter.drawEllipse(QRectF(0, 0, m.w * g, m.h * g))
+            elif (not getattr(self.model, 'locked_to_body', False) or getattr(self.window, 'is_template_editor', False)):
+                painter.setPen(QPen(QColor(80, 80, 80), 1, Qt.DashLine))
+                painter.drawRect(self._rect())
+                painter.setBrush(QBrush(QColor(255, 255, 255)))
+                for r in self._handles().values():
+                    painter.drawRect(r)
+                painter.drawEllipse(_rotation_handle(self._rect(), self.window.grid_px * self.rotate_handle_factor))
             painter.restore()
 
     def hoverMoveEvent(self, event):
