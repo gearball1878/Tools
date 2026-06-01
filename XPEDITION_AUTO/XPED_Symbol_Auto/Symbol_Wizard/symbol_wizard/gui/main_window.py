@@ -1604,9 +1604,23 @@ class TemplateEditorDialog(QDialog):
         w.valueChanged.connect(lambda v: fn(float(v)))
         return w
     def _combo(self, items, val, fn):
-        w=QComboBox(); w.addItems(items); w.setCurrentText(str(val)); w.currentTextChanged.connect(fn); return w
+        w = QComboBox()
+        w.blockSignals(True)
+        w.addItems(items)
+        w.setCurrentText(str(val))
+        w.blockSignals(False)
+        # Defer model writes until the combo has finished processing its own
+        # signal. This avoids editor destruction/re-entrancy crashes in the
+        # property panel for imported/template symbols.
+        w.currentTextChanged.connect(lambda v, cb=fn: QTimer.singleShot(0, lambda val=v: cb(val)))
+        return w
     def _check(self, value, fn):
-        w=QCheckBox(); w.setChecked(bool(value)); w.toggled.connect(fn); return w
+        w = QCheckBox()
+        w.blockSignals(True)
+        w.setChecked(bool(value))
+        w.blockSignals(False)
+        w.toggled.connect(lambda v, cb=fn: QTimer.singleShot(0, lambda val=bool(v): cb(val)))
+        return w
     def _color_button_row(self, button_text, color, callback):
         row = QWidget(); lay = QHBoxLayout(row); lay.setContentsMargins(0, 0, 0, 0)
         btn = QPushButton(button_text); btn.clicked.connect(callback)
@@ -2680,27 +2694,41 @@ class MainWindow(QMainWindow):
 
         single_page = QWidget()
         single_layout = QVBoxLayout(single_page)
-        single_layout.addWidget(QLabel('Symbols'))
-        single_layout.addWidget(self.single_tabs)
-        single_layout.addWidget(QLabel('Pins of selected single symbol'))
-        single_layout.addWidget(self.single_pin_table, 2)
-        single_layout.addWidget(QLabel('Object Tree'))
-        single_layout.addWidget(self.object_tree)
+        single_top = QWidget(); single_top_layout = QVBoxLayout(single_top); single_top_layout.setContentsMargins(0, 0, 0, 0)
+        single_top_layout.addWidget(QLabel('Symbols'))
+        single_top_layout.addWidget(self.single_tabs)
+        single_top_layout.addWidget(QLabel('Pins of selected single symbol'))
+        single_top_layout.addWidget(self.single_pin_table, 2)
+        single_bottom = QWidget(); single_bottom_layout = QVBoxLayout(single_bottom); single_bottom_layout.setContentsMargins(0, 0, 0, 0)
+        single_bottom_layout.addWidget(QLabel('Object Tree'))
+        single_bottom_layout.addWidget(self.object_tree)
+        self.single_left_splitter = QSplitter(Qt.Vertical)
+        self.single_left_splitter.addWidget(single_top)
+        self.single_left_splitter.addWidget(single_bottom)
+        self.single_left_splitter.setSizes([360, 220])
+        single_layout.addWidget(self.single_left_splitter)
 
         split_page = QWidget()
         split_layout = QVBoxLayout(split_page)
-        split_layout.addWidget(QLabel('Split Symbols'))
-        split_layout.addWidget(self.split_tabs)
-        split_layout.addWidget(QLabel('Units / Split Parts'))
-        split_layout.addWidget(self.unit_tabs)
-        split_layout.addWidget(self.add_unit_button)
+        split_top = QWidget(); split_top_layout = QVBoxLayout(split_top); split_top_layout.setContentsMargins(0, 0, 0, 0)
+        split_top_layout.addWidget(QLabel('Split Symbols'))
+        split_top_layout.addWidget(self.split_tabs)
+        split_top_layout.addWidget(QLabel('Units / Split Parts'))
+        split_top_layout.addWidget(self.unit_tabs)
+        split_top_layout.addWidget(self.add_unit_button)
         info = QLabel('Verification for split symbols is performed across all units as one symbol.')
         info.setWordWrap(True)
-        split_layout.addWidget(info)
-        split_layout.addWidget(QLabel('Pins of selected split part'))
-        split_layout.addWidget(self.split_pin_table, 2)
-        split_layout.addWidget(QLabel('Object Tree'))
-        split_layout.addWidget(self.split_object_tree, 2)
+        split_top_layout.addWidget(info)
+        split_top_layout.addWidget(QLabel('Pins of selected split part'))
+        split_top_layout.addWidget(self.split_pin_table, 2)
+        split_bottom = QWidget(); split_bottom_layout = QVBoxLayout(split_bottom); split_bottom_layout.setContentsMargins(0, 0, 0, 0)
+        split_bottom_layout.addWidget(QLabel('Object Tree'))
+        split_bottom_layout.addWidget(self.split_object_tree, 2)
+        self.split_left_splitter = QSplitter(Qt.Vertical)
+        self.split_left_splitter.addWidget(split_top)
+        self.split_left_splitter.addWidget(split_bottom)
+        self.split_left_splitter.setSizes([420, 220])
+        split_layout.addWidget(self.split_left_splitter)
 
         left_tabs = QTabWidget()
         left_tabs.currentChanged.connect(self.left_workspace_changed)
@@ -11769,5 +11797,235 @@ try:
         _cls.scale_selected_grid = _lh44_scale_selected_grid
         _cls.scale_current_unit_children_from_body_resize = _lh44_scale_current_unit_children_from_body_resize
         _cls.clear_canvas = _lh44_clear_canvas
+except Exception:
+    pass
+
+
+# --- LH45 stability patch -------------------------------------------------
+# Keep the property panel on the current selection during toolbar/property edits,
+# avoid synchronous property-panel rebuilds from editor signals, and ensure BODY
+# resize never scales pin length/font data.
+def _lh45_selected_model_ids(self):
+    try:
+        return {id(getattr(i, 'model', None)) for i in self.scene.selectedItems() if getattr(i, 'model', None) is not None}
+    except Exception:
+        return set()
+
+
+def _lh45_restore_selection(self, ids=None):
+    ids = set(ids or getattr(self, '_selection_restore_ids', set()) or [])
+    if not ids:
+        return
+    try:
+        self.scene.blockSignals(True)
+        for it in self.scene.items():
+            try:
+                it.setSelected(id(getattr(it, 'model', None)) in ids)
+            except Exception:
+                pass
+    finally:
+        try: self.scene.blockSignals(False)
+        except Exception: pass
+    try: self.view.viewport().update()
+    except Exception: pass
+
+
+def _lh45_deferred_refresh(self, ids=None):
+    ids = set(ids or _lh45_selected_model_ids(self) or getattr(self, '_selection_restore_ids', set()) or [])
+    def run():
+        try: _lh45_restore_selection(self, ids)
+        except Exception: pass
+        try: self.refresh_properties()
+        except RuntimeError: pass
+        except Exception: pass
+    try: QTimer.singleShot(0, run)
+    except Exception: run()
+
+
+def _lh45_capture_resize_state(self, unit=None):
+    u = unit or self.current_unit; b = u.body
+    pins = []
+    for p in getattr(u, 'pins', []) or []:
+        pins.append((p, float(p.x), float(p.y), float(getattr(p, 'length', 1.0) or 1.0),
+                     float(getattr(getattr(p, 'number_font', None), 'size_grid', 0.45) or 0.45),
+                     float(getattr(getattr(p, 'label_font', None), 'size_grid', 0.55) or 0.55)))
+    return {
+        'pins': pins,
+        'texts': [(t, float(t.x), float(t.y)) for t in getattr(u, 'texts', []) or []],
+        'attributes': [(t, float(t.x), float(t.y)) for t in (getattr(b, 'attribute_texts', {}) or {}).values()],
+        'graphics': [(g, float(g.x), float(g.y), float(getattr(g, 'w', 0.0) or 0.0), float(getattr(g, 'h', 0.0) or 0.0)) for g in getattr(u, 'graphics', []) or [] if g not in _lh44_body_graphics(self, u)],
+    }
+
+
+def _lh45_redock_pins(self, unit, start, old_bounds, new_bounds):
+    ox, oy, ow, oh = old_bounds; nx, ny, nw, nh = new_bounds
+    sx = float(nw) / max(float(ow), 1e-9); sy = float(nh) / max(float(oh), 1e-9)
+    for rec in start.get('pins', []) or []:
+        p, px, py, plen = rec[:4]
+        num_size = rec[4] if len(rec) > 4 else None
+        lab_size = rec[5] if len(rec) > 5 else None
+        old_px, old_py = float(getattr(p, 'x', px)), float(getattr(p, 'y', py))
+        side = getattr(p, 'side', '')
+        if side == PinSide.LEFT.value:
+            tx, ty = nx, ny - (oy - py) * sy
+        elif side == PinSide.RIGHT.value:
+            tx, ty = nx + nw, ny - (oy - py) * sy
+        elif side == PinSide.TOP.value:
+            tx, ty = nx + (px - ox) * sx, ny
+        elif side == PinSide.BOTTOM.value:
+            tx, ty = nx + (px - ox) * sx, ny - nh
+        else:
+            tx, ty = nx + (px - ox) * sx, ny - (oy - py) * sy
+        p.x, p.y = _lh44_snap(self, tx), _lh44_snap(self, ty)
+        # Critical: pins are docked/repositioned to the BODY, but the pin itself
+        # is never scaled. Keep length and label/number fonts exactly as before.
+        try: p.length = float(plen)
+        except Exception: pass
+        try:
+            if num_size is not None: p.number_font.size_grid = float(num_size)
+        except Exception: pass
+        try:
+            if lab_size is not None: p.label_font.size_grid = float(lab_size)
+        except Exception: pass
+        _lh44_move_pin_texts(self, p, p.x - old_px, p.y - old_py)
+
+
+def _lh45_resize_body_geometry(self, new_w=None, new_h=None, refresh=True, anchor_bounds=None):
+    if getattr(self, '_lh44_resizing_body', False): return
+    keep_ids = set(getattr(self, '_selection_restore_ids', set()) or _lh45_selected_model_ids(self))
+    self._lh44_resizing_body = True
+    try:
+        u = self.current_unit; b = u.body
+        old_bounds = anchor_bounds or _lh44_body_bounds(self, u)
+        ox, oy, ow, oh = old_bounds
+        step = _lh44_edit_step(self)
+        new_w = max(step, _lh44_snap(self, ow if new_w is None else new_w))
+        new_h = max(step, _lh44_snap(self, oh if new_h is None else new_h))
+        start = _lh45_capture_resize_state(self, u)
+        new_bounds = (ox, oy, new_w, new_h)
+        if _lh44_body_graphics(self, u):
+            _lh44_scale_body_graphics_to(self, u, old_bounds, new_bounds)
+        else:
+            b.x, b.y, b.width, b.height = ox, oy, new_w, new_h
+        _lh45_redock_pins(self, u, start, old_bounds, (b.x, b.y, b.width, b.height))
+        nx, ny, nw, nh = float(b.x), float(b.y), float(b.width), float(b.height)
+        sx = nw / max(float(ow), 1e-9); sy = nh / max(float(oh), 1e-9)
+        def map_pos(x, y): return (_lh44_snap(self, nx + (float(x)-ox)*sx), _lh44_snap(self, ny - (oy-float(y))*sy))
+        for t, tx, ty in start.get('texts', []) or []: t.x, t.y = map_pos(tx, ty)
+        for t, tx, ty in start.get('attributes', []) or []: t.x, t.y = map_pos(tx, ty)
+        for g, gx, gy, gw, gh in start.get('graphics', []) or []:
+            g.x, g.y = map_pos(gx, gy); g.w, g.h = gw, gh
+        try:
+            if hasattr(u, '_body_group_transform'): delattr(u, '_body_group_transform')
+        except Exception: pass
+        self.dirty = True
+    finally:
+        self._lh44_resizing_body = False
+    if refresh:
+        try: self.update_current_unit_canvas_positions()
+        except Exception: pass
+        try: self.update_attribute_items_for_unit()
+        except Exception: pass
+        try: self.rebuild_tree(); self.rebuild_pin_table()
+        except Exception: pass
+        try: self.schedule_scene_refresh(visual_only=True)
+        except Exception:
+            try: self.scene.update()
+            except Exception: pass
+        _lh45_deferred_refresh(self, keep_ids)
+
+
+def _lh45_set_body_width_grid(self, body, value):
+    try:
+        keep_ids = _lh45_selected_model_ids(self) or {id(body)}
+        new_w = max(_lh44_edit_step(self), _lh44_snap(self, float(value)))
+        cur_w = float(getattr(self.current_unit.body, 'width', new_w) or new_w)
+        if abs(new_w - cur_w) < 1e-9: return
+        self.push_undo_state(); self._selection_restore_ids = keep_ids
+        _lh45_resize_body_geometry(self, new_w=new_w, new_h=None, refresh=True)
+    except Exception as e:
+        try: self.statusBar().showMessage(f'BODY width update failed: {e}', 4000)
+        except Exception: pass
+
+
+def _lh45_set_body_height_grid(self, body, value):
+    try:
+        keep_ids = _lh45_selected_model_ids(self) or {id(body)}
+        new_h = max(_lh44_edit_step(self), _lh44_snap(self, float(value)))
+        cur_h = float(getattr(self.current_unit.body, 'height', new_h) or new_h)
+        if abs(new_h - cur_h) < 1e-9: return
+        self.push_undo_state(); self._selection_restore_ids = keep_ids
+        _lh45_resize_body_geometry(self, new_w=None, new_h=new_h, refresh=True)
+    except Exception as e:
+        try: self.statusBar().showMessage(f'BODY height update failed: {e}', 4000)
+        except Exception: pass
+
+
+def _lh45_transform_unit_as_body_group(self, op, value=None, refresh=True):
+    if op in ('scale', 'scale_x_to', 'scale_y_to'):
+        b = self.current_unit.body
+        cur_w = float(getattr(b, 'width', 1.0) or 1.0); cur_h = float(getattr(b, 'height', 1.0) or 1.0)
+        if op == 'scale_x_to': return _lh45_resize_body_geometry(self, new_w=float(value), new_h=None, refresh=refresh)
+        if op == 'scale_y_to': return _lh45_resize_body_geometry(self, new_w=None, new_h=float(value), refresh=refresh)
+        f = float(value or 1.0)
+        return _lh45_resize_body_geometry(self, new_w=cur_w * f, new_h=cur_h * f, refresh=refresh)
+    if _lh44_prev_transform_unit_as_body_group is not None:
+        keep_ids = _lh45_selected_model_ids(self)
+        r = _lh44_prev_transform_unit_as_body_group(self, op, value, refresh)
+        _lh45_deferred_refresh(self, keep_ids)
+        return r
+
+
+def _lh45_scale_selected_grid(self, direction: int):
+    self.set_tool(DrawTool.SELECT.value)
+    if self._selected_body_active():
+        b = self.current_unit.body; step = _lh44_edit_step(self)
+        keep_ids = _lh45_selected_model_ids(self) or {id(b)}
+        self.push_undo_state(); self._selection_restore_ids = keep_ids
+        _lh45_resize_body_geometry(self, float(b.width) + direction * step, float(b.height) + direction * step, refresh=True)
+    else:
+        if _lh44_prev_scale_selected_grid is not None:
+            keep_ids = _lh45_selected_model_ids(self)
+            r = _lh44_prev_scale_selected_grid(self, direction)
+            _lh45_deferred_refresh(self, keep_ids)
+            return r
+        return self.scale_selected(1.0 + (0.1 if direction > 0 else -0.1))
+
+
+def _lh45_scale_current_unit_children_from_body_resize(self, start_state, body):
+    try:
+        keep_ids = _lh45_selected_model_ids(self) or {id(body)}
+        self._selection_restore_ids = keep_ids
+        old_bounds = (float(start_state.get('x', body.x)), float(start_state.get('y', body.y)),
+                      max(float(start_state.get('w', body.width)), 1e-9), max(float(start_state.get('h', body.height)), 1e-9))
+        _lh45_resize_body_geometry(self, new_w=float(body.width), new_h=float(body.height), refresh=True, anchor_bounds=old_bounds)
+    except Exception as e:
+        try: self.statusBar().showMessage(f'Canvas BODY scale failed: {e}', 4000)
+        except Exception: pass
+
+
+def _lh45_set_safe(self, m, a, v):
+    keep_ids = _lh45_selected_model_ids(self) or {id(m)}
+    try: self.push_undo_state()
+    except Exception: pass
+    self._selection_restore_ids = keep_ids
+    try:
+        if a == 'rotation': v = (round(float(v) / 15.0) * 15.0) % 360
+        setattr(m, a, v)
+        self.dirty = True
+        self.update_current_unit_canvas_positions()
+    except Exception as e:
+        try: self.statusBar().showMessage(f'Property update failed: {e}', 4000)
+        except Exception: pass
+    _lh45_deferred_refresh(self, keep_ids)
+
+try:
+    for _cls in (MainWindow, TemplateEditorDialog):
+        _cls._set_body_width_grid = _lh45_set_body_width_grid
+        _cls._set_body_height_grid = _lh45_set_body_height_grid
+        _cls._transform_unit_as_body_group = _lh45_transform_unit_as_body_group
+        _cls.scale_selected_grid = _lh45_scale_selected_grid
+        _cls.scale_current_unit_children_from_body_resize = _lh45_scale_current_unit_children_from_body_resize
+        _cls._set = _lh45_set_safe
 except Exception:
     pass
