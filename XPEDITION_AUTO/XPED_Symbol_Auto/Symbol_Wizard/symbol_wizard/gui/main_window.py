@@ -1216,103 +1216,6 @@ class TemplateEditorDialog(QDialog):
             self.undo_stack.pop(0)
         self._restore_template_unit_from_history(nxt)
 
-    # ------------------------------------------------------------------ Real BODY group transforms
-    def _body_transform_origin(self, body=None):
-        body = body or self.current_unit.body
-        # In the Wizard coordinate system body.x/body.y is the upper-left grid
-        # anchor and the rectangle extends downward.  The BODY origin used for
-        # transform tools is the geometric center.  This keeps all relative
-        # coordinates stable and matches the selected BODY handle center.
-        return (float(body.x) + float(body.width) / 2.0,
-                float(body.y) - float(body.height) / 2.0)
-
-    def _rot_point(self, x, y, ox, oy, deg):
-        import math
-        a = math.radians(float(deg))
-        c, s = math.cos(a), math.sin(a)
-        dx, dy = float(x) - ox, float(y) - oy
-        return (ox + dx * c - dy * s, oy + dx * s + dy * c)
-
-    def _rotate_vector(self, x, y, deg):
-        import math
-        a = math.radians(float(deg))
-        c, s = math.cos(a), math.sin(a)
-        return (float(x) * c - float(y) * s, float(x) * s + float(y) * c)
-
-    def _norm_angle(self, a):
-        try:
-            return float(a) % 360.0
-        except Exception:
-            return 0.0
-
-    def capture_current_unit_transform_state(self, body=None):
-        u = self.current_unit
-        body = body or u.body
-        ox, oy = self._body_transform_origin(body)
-        return {
-            'body': body,
-            'origin': (ox, oy),
-            'body_state': (float(body.x), float(body.y), float(body.width), float(body.height), float(getattr(body, 'rotation', 0.0) or 0.0)),
-            'graphics': [(g, float(g.x), float(g.y), float(g.w), float(g.h), float(getattr(g, 'rotation', 0.0) or 0.0), getattr(g, 'ctrl_x', None), getattr(g, 'ctrl_y', None), float(getattr(g, 'curve_radius', 0.0) or 0.0)) for g in getattr(u, 'graphics', [])],
-            'pins': [(p, float(p.x), float(p.y), float(getattr(p, 'rotation', 0.0) or 0.0), getattr(p, 'label_x', None), getattr(p, 'label_y', None), getattr(p, 'number_x', None), getattr(p, 'number_y', None),
-                      [(k, tm, float(tm.x), float(tm.y), float(getattr(tm, 'rotation', 0.0) or 0.0)) for k, tm in (getattr(p, 'attribute_texts', {}) or {}).items()]) for p in getattr(u, 'pins', [])],
-            'texts': [(t, float(t.x), float(t.y), float(getattr(t, 'rotation', 0.0) or 0.0)) for t in getattr(u, 'texts', [])],
-            'attributes': [(k, t, float(t.x), float(t.y), float(getattr(t, 'rotation', 0.0) or 0.0)) for k, t in (getattr(u.body, 'attribute_texts', {}) or {}).items()],
-        }
-
-    def _rotate_text_model_from_state(self, tm, x, y, rot, ox, oy, deg):
-        tm.x, tm.y = self._rot_point(x, y, ox, oy, deg)
-        tm.rotation = self._norm_angle(rot + deg)
-
-    def rotate_current_unit_group_from_state(self, state, deg):
-        """Rotate all real objects of the current unit around the BODY origin.
-
-        This replaces the old proxy-frame behaviour.  Imported/template body
-        graphics, user graphics, pins, pin-owned labels/attributes, normal texts
-        and body attributes keep their exact relative positions and rotate as a
-        single BODY-owned group.
-        """
-        if not state:
-            return
-        body = state.get('body') or self.current_unit.body
-        ox, oy = state.get('origin', self._body_transform_origin(body))
-        bx, by, bw, bh, brot = state.get('body_state', (body.x, body.y, body.width, body.height, getattr(body, 'rotation', 0.0) or 0.0))
-        attrs = getattr(body, 'attributes', {}) or {}
-        graphics_as_body = str(attrs.get('MENTOR_GRAPHICS_AS_BODY', '0')) == '1' or str(attrs.get('MENTOR_BODY_GRAPHICS_LOCKED', '0')) == '1' or str(attrs.get('MENTOR_HAS_BODY', '0')) == '1'
-        # For ordinary Wizard bodies the rectangle itself is the visible body,
-        # so it may carry rotation.  For Mentor/template graphics-as-body the
-        # visible body is the graphics list; the logical rectangle must remain a
-        # non-painted owner and must not become a rotated proxy frame.
-        body.x, body.y, body.width, body.height = bx, by, bw, bh
-        body.rotation = (0.0 if graphics_as_body else self._norm_angle(brot + deg))
-        for g, x, y, w, h, rot, cx, cy, cr in state.get('graphics', []):
-            g.x, g.y = self._rot_point(x, y, ox, oy, deg)
-            if getattr(g, 'shape', '') in ('line', 'arc'):
-                g.w, g.h = self._rotate_vector(w, h, deg)
-                if cx is not None and cy is not None:
-                    g.ctrl_x, g.ctrl_y = self._rotate_vector(float(cx), float(cy), deg)
-                g.rotation = self._norm_angle(rot)
-            else:
-                g.w, g.h = w, h
-                g.rotation = self._norm_angle(rot + deg)
-            try:
-                g.curve_radius = cr
-            except Exception:
-                pass
-        for p, x, y, rot, lx, ly, nx, ny, attr_states in state.get('pins', []):
-            p.x, p.y = self._rot_point(x, y, ox, oy, deg)
-            p.rotation = self._norm_angle(rot + deg)
-            if lx is not None and ly is not None:
-                p.label_x, p.label_y = self._rot_point(float(lx), float(ly), ox, oy, deg)
-            if nx is not None and ny is not None:
-                p.number_x, p.number_y = self._rot_point(float(nx), float(ny), ox, oy, deg)
-            for _k, tm, tx, ty, trot in attr_states:
-                self._rotate_text_model_from_state(tm, tx, ty, trot, ox, oy, deg)
-        for t, x, y, rot in state.get('texts', []):
-            self._rotate_text_model_from_state(t, x, y, rot, ox, oy, deg)
-        for _k, t, x, y, rot in state.get('attributes', []):
-            self._rotate_text_model_from_state(t, x, y, rot, ox, oy, deg)
-
     def rotate_selected(self, deg):
         self.push_undo_state()
         for it in self.scene.selectedItems():
@@ -5318,6 +5221,174 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
             gr.w = sg(gw * sx)
             gr.h = sg(gh * sy)
 
+
+    # ------------------------------------------------------------------ Real BODY transforms
+
+    def _body_transform_origin(self, body: SymbolBodyModel):
+        """Return the logical body center in model/grid coordinates (y points up)."""
+        return (float(body.x) + float(body.width) / 2.0,
+                float(body.y) - float(body.height) / 2.0)
+
+    def _rotate_point_model(self, x: float, y: float, cx: float, cy: float, deg: float):
+        import math
+        a = math.radians(float(deg))
+        ca, sa = math.cos(a), math.sin(a)
+        dx, dy = float(x) - cx, float(y) - cy
+        return (cx + dx * ca - dy * sa, cy + dx * sa + dy * ca)
+
+    def _scale_point_model(self, x: float, y: float, cx: float, cy: float, sx: float, sy: float):
+        return (cx + (float(x) - cx) * float(sx), cy + (float(y) - cy) * float(sy))
+
+    def _transform_text_model(self, tm, cx, cy, mode, *, deg=0.0, sx=1.0, sy=1.0):
+        if tm is None:
+            return
+        try:
+            if mode == 'rotate':
+                tm.x, tm.y = self._rotate_point_model(tm.x, tm.y, cx, cy, deg)
+                tm.rotation = (float(getattr(tm, 'rotation', 0.0) or 0.0) + float(deg)) % 360
+            elif mode == 'scale':
+                tm.x, tm.y = self._scale_point_model(tm.x, tm.y, cx, cy, sx, sy)
+                # Keep text readable but let uniform scale change the size.
+                if abs(float(sx) - float(sy)) < 1e-9:
+                    try:
+                        tm.font_size_grid = max(0.05, float(tm.font_size_grid) * abs(float(sx)))
+                    except Exception:
+                        pass
+            elif mode == 'flip_h':
+                tm.x = cx - (float(tm.x) - cx)
+                tm.rotation = (-float(getattr(tm, 'rotation', 0.0) or 0.0)) % 360
+            elif mode == 'flip_v':
+                tm.y = cy - (float(tm.y) - cy)
+                tm.rotation = (180.0 - float(getattr(tm, 'rotation', 0.0) or 0.0)) % 360
+        except Exception:
+            pass
+
+    def _transform_pin_model(self, p, cx, cy, mode, *, deg=0.0, sx=1.0, sy=1.0):
+        def side_after_rotation(side, deg):
+            # Only remap at right angles. For 15/30° arbitrary rotations the side
+            # metadata is kept, while the drawn pin rotation carries the angle.
+            try:
+                d = int(round(float(deg) / 90.0)) % 4
+            except Exception:
+                d = 0
+            order = [PinSide.RIGHT.value, PinSide.TOP.value, PinSide.LEFT.value, PinSide.BOTTOM.value]
+            if d and side in order:
+                return order[(order.index(side) + d) % 4]
+            return side
+        try:
+            if mode == 'rotate':
+                p.x, p.y = self._rotate_point_model(p.x, p.y, cx, cy, deg)
+                p.rotation = (float(getattr(p, 'rotation', 0.0) or 0.0) + float(deg)) % 360
+                p.side = side_after_rotation(getattr(p, 'side', PinSide.LEFT.value), deg)
+            elif mode == 'scale':
+                p.x, p.y = self._scale_point_model(p.x, p.y, cx, cy, sx, sy)
+                p.length = max(0.05, float(getattr(p, 'length', 1.0) or 1.0) * max(abs(float(sx)), abs(float(sy))))
+            elif mode == 'flip_h':
+                p.x = cx - (float(p.x) - cx)
+                p.rotation = (-float(getattr(p, 'rotation', 0.0) or 0.0)) % 360
+                if p.side == PinSide.LEFT.value:
+                    p.side = PinSide.RIGHT.value
+                elif p.side == PinSide.RIGHT.value:
+                    p.side = PinSide.LEFT.value
+            elif mode == 'flip_v':
+                p.y = cy - (float(p.y) - cy)
+                p.rotation = (180.0 - float(getattr(p, 'rotation', 0.0) or 0.0)) % 360
+                if p.side == PinSide.TOP.value:
+                    p.side = PinSide.BOTTOM.value
+                elif p.side == PinSide.BOTTOM.value:
+                    p.side = PinSide.TOP.value
+            # Explicit label/number anchors and pin-owned attribute texts must follow the pin.
+            for ax, ay in (('label_x', 'label_y'), ('number_x', 'number_y')):
+                if getattr(p, ax, None) is not None and getattr(p, ay, None) is not None:
+                    if mode == 'rotate':
+                        nx, ny = self._rotate_point_model(getattr(p, ax), getattr(p, ay), cx, cy, deg)
+                    elif mode == 'scale':
+                        nx, ny = self._scale_point_model(getattr(p, ax), getattr(p, ay), cx, cy, sx, sy)
+                    elif mode == 'flip_h':
+                        nx, ny = cx - (float(getattr(p, ax)) - cx), getattr(p, ay)
+                    else:
+                        nx, ny = getattr(p, ax), cy - (float(getattr(p, ay)) - cy)
+                    setattr(p, ax, nx); setattr(p, ay, ny)
+            for tm in (getattr(p, 'attribute_texts', {}) or {}).values():
+                self._transform_text_model(tm, cx, cy, mode, deg=deg, sx=sx, sy=sy)
+        except Exception:
+            pass
+
+    def _transform_graphic_model(self, gr, cx, cy, mode, *, deg=0.0, sx=1.0, sy=1.0):
+        try:
+            # Treat x/y and x+w/y+h as endpoints for line/arc-like imported primitives.
+            if mode == 'rotate':
+                x1, y1 = self._rotate_point_model(gr.x, gr.y, cx, cy, deg)
+                x2, y2 = self._rotate_point_model(float(gr.x) + float(gr.w), float(gr.y) + float(gr.h), cx, cy, deg)
+                gr.x, gr.y, gr.w, gr.h = x1, y1, x2 - x1, y2 - y1
+                if getattr(gr, 'ctrl_x', None) is not None and getattr(gr, 'ctrl_y', None) is not None:
+                    cax, cay = self._rotate_point_model(float(gr.x) + float(gr.ctrl_x), float(gr.y) + float(gr.ctrl_y), cx, cy, deg)
+                    gr.ctrl_x, gr.ctrl_y = cax - gr.x, cay - gr.y
+                if str(getattr(gr, 'shape', '')).lower() not in ('line', 'arc', 'polyline'):
+                    gr.rotation = (float(getattr(gr, 'rotation', 0.0) or 0.0) + float(deg)) % 360
+            elif mode == 'scale':
+                x1, y1 = self._scale_point_model(gr.x, gr.y, cx, cy, sx, sy)
+                x2, y2 = self._scale_point_model(float(gr.x) + float(gr.w), float(gr.y) + float(gr.h), cx, cy, sx, sy)
+                gr.x, gr.y, gr.w, gr.h = x1, y1, x2 - x1, y2 - y1
+                try:
+                    gr.style.line_width = max(0.001, float(gr.style.line_width) * max(abs(float(sx)), abs(float(sy))))
+                except Exception:
+                    pass
+            elif mode == 'flip_h':
+                x1, y1 = cx - (float(gr.x) - cx), float(gr.y)
+                x2, y2 = cx - (float(gr.x) + float(gr.w) - cx), float(gr.y) + float(gr.h)
+                gr.x, gr.y, gr.w, gr.h = x1, y1, x2 - x1, y2 - y1
+                gr.rotation = (-float(getattr(gr, 'rotation', 0.0) or 0.0)) % 360
+            elif mode == 'flip_v':
+                x1, y1 = float(gr.x), cy - (float(gr.y) - cy)
+                x2, y2 = float(gr.x) + float(gr.w), cy - (float(gr.y) + float(gr.h) - cy)
+                gr.x, gr.y, gr.w, gr.h = x1, y1, x2 - x1, y2 - y1
+                gr.rotation = (180.0 - float(getattr(gr, 'rotation', 0.0) or 0.0)) % 360
+        except Exception:
+            pass
+
+    def transform_current_body_real_objects(self, mode: str, *, deg: float = 0.0, factor: float = 1.0):
+        """Transform the real symbol objects, not a temporary body frame.
+
+        This is intentionally used by BodyItem for rotate/scale/flip. Imported
+        Mentor/template artwork is stored as real graphics in the unit; pins and
+        all pin/body attributes are transformed around the same body origin so
+        their relative coordinates stay fixed and pins remain flush with the body.
+        """
+        u = self.current_unit
+        b = u.body
+        cx, cy = self._body_transform_origin(b)
+        sx = sy = float(factor)
+        if mode == 'rotate':
+            b.rotation = (float(getattr(b, 'rotation', 0.0) or 0.0) + float(deg)) % 360
+        elif mode == 'scale':
+            # Scale the logical body bounds about its center.
+            old_w, old_h = float(b.width), float(b.height)
+            b.width = max(0.1, old_w * abs(sx))
+            b.height = max(0.1, old_h * abs(sy))
+            b.x = cx - b.width / 2.0
+            b.y = cy + b.height / 2.0
+        elif mode == 'flip_h':
+            b.scale_x = -float(getattr(b, 'scale_x', 1.0) or 1.0)
+        elif mode == 'flip_v':
+            b.scale_y = -float(getattr(b, 'scale_y', 1.0) or 1.0)
+        for gr in list(getattr(u, 'graphics', []) or []):
+            self._transform_graphic_model(gr, cx, cy, mode, deg=deg, sx=sx, sy=sy)
+        for p in list(getattr(u, 'pins', []) or []):
+            self._transform_pin_model(p, cx, cy, mode, deg=deg, sx=sx, sy=sy)
+        for tm in list(getattr(u, 'texts', []) or []):
+            self._transform_text_model(tm, cx, cy, mode, deg=deg, sx=sx, sy=sy)
+        for tm in list((getattr(b, 'attribute_texts', {}) or {}).values()):
+            self._transform_text_model(tm, cx, cy, mode, deg=deg, sx=sx, sy=sy)
+        self.update_current_unit_canvas_positions()
+        self.update_attribute_items_for_unit()
+        self.rebuild_tree()
+        self.rebuild_pin_table()
+        try:
+            self.refresh_properties()
+        except Exception:
+            pass
+
     def schedule_scene_refresh(self, visual_only=False):
         # Keep selected canvas objects selected during deferred refreshes.
         self._selection_restore_ids = self._capture_selection_ids()
@@ -5462,103 +5533,6 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         self.current_unit.graphics.append(model)
         self.select_model_after_rebuild(model)
         self.rebuild_scene(); self.rebuild_tree()
-
-    # ------------------------------------------------------------------ Real BODY group transforms
-    def _body_transform_origin(self, body=None):
-        body = body or self.current_unit.body
-        # In the Wizard coordinate system body.x/body.y is the upper-left grid
-        # anchor and the rectangle extends downward.  The BODY origin used for
-        # transform tools is the geometric center.  This keeps all relative
-        # coordinates stable and matches the selected BODY handle center.
-        return (float(body.x) + float(body.width) / 2.0,
-                float(body.y) - float(body.height) / 2.0)
-
-    def _rot_point(self, x, y, ox, oy, deg):
-        import math
-        a = math.radians(float(deg))
-        c, s = math.cos(a), math.sin(a)
-        dx, dy = float(x) - ox, float(y) - oy
-        return (ox + dx * c - dy * s, oy + dx * s + dy * c)
-
-    def _rotate_vector(self, x, y, deg):
-        import math
-        a = math.radians(float(deg))
-        c, s = math.cos(a), math.sin(a)
-        return (float(x) * c - float(y) * s, float(x) * s + float(y) * c)
-
-    def _norm_angle(self, a):
-        try:
-            return float(a) % 360.0
-        except Exception:
-            return 0.0
-
-    def capture_current_unit_transform_state(self, body=None):
-        u = self.current_unit
-        body = body or u.body
-        ox, oy = self._body_transform_origin(body)
-        return {
-            'body': body,
-            'origin': (ox, oy),
-            'body_state': (float(body.x), float(body.y), float(body.width), float(body.height), float(getattr(body, 'rotation', 0.0) or 0.0)),
-            'graphics': [(g, float(g.x), float(g.y), float(g.w), float(g.h), float(getattr(g, 'rotation', 0.0) or 0.0), getattr(g, 'ctrl_x', None), getattr(g, 'ctrl_y', None), float(getattr(g, 'curve_radius', 0.0) or 0.0)) for g in getattr(u, 'graphics', [])],
-            'pins': [(p, float(p.x), float(p.y), float(getattr(p, 'rotation', 0.0) or 0.0), getattr(p, 'label_x', None), getattr(p, 'label_y', None), getattr(p, 'number_x', None), getattr(p, 'number_y', None),
-                      [(k, tm, float(tm.x), float(tm.y), float(getattr(tm, 'rotation', 0.0) or 0.0)) for k, tm in (getattr(p, 'attribute_texts', {}) or {}).items()]) for p in getattr(u, 'pins', [])],
-            'texts': [(t, float(t.x), float(t.y), float(getattr(t, 'rotation', 0.0) or 0.0)) for t in getattr(u, 'texts', [])],
-            'attributes': [(k, t, float(t.x), float(t.y), float(getattr(t, 'rotation', 0.0) or 0.0)) for k, t in (getattr(u.body, 'attribute_texts', {}) or {}).items()],
-        }
-
-    def _rotate_text_model_from_state(self, tm, x, y, rot, ox, oy, deg):
-        tm.x, tm.y = self._rot_point(x, y, ox, oy, deg)
-        tm.rotation = self._norm_angle(rot + deg)
-
-    def rotate_current_unit_group_from_state(self, state, deg):
-        """Rotate all real objects of the current unit around the BODY origin.
-
-        This replaces the old proxy-frame behaviour.  Imported/template body
-        graphics, user graphics, pins, pin-owned labels/attributes, normal texts
-        and body attributes keep their exact relative positions and rotate as a
-        single BODY-owned group.
-        """
-        if not state:
-            return
-        body = state.get('body') or self.current_unit.body
-        ox, oy = state.get('origin', self._body_transform_origin(body))
-        bx, by, bw, bh, brot = state.get('body_state', (body.x, body.y, body.width, body.height, getattr(body, 'rotation', 0.0) or 0.0))
-        attrs = getattr(body, 'attributes', {}) or {}
-        graphics_as_body = str(attrs.get('MENTOR_GRAPHICS_AS_BODY', '0')) == '1' or str(attrs.get('MENTOR_BODY_GRAPHICS_LOCKED', '0')) == '1' or str(attrs.get('MENTOR_HAS_BODY', '0')) == '1'
-        # For ordinary Wizard bodies the rectangle itself is the visible body,
-        # so it may carry rotation.  For Mentor/template graphics-as-body the
-        # visible body is the graphics list; the logical rectangle must remain a
-        # non-painted owner and must not become a rotated proxy frame.
-        body.x, body.y, body.width, body.height = bx, by, bw, bh
-        body.rotation = (0.0 if graphics_as_body else self._norm_angle(brot + deg))
-        for g, x, y, w, h, rot, cx, cy, cr in state.get('graphics', []):
-            g.x, g.y = self._rot_point(x, y, ox, oy, deg)
-            if getattr(g, 'shape', '') in ('line', 'arc'):
-                g.w, g.h = self._rotate_vector(w, h, deg)
-                if cx is not None and cy is not None:
-                    g.ctrl_x, g.ctrl_y = self._rotate_vector(float(cx), float(cy), deg)
-                g.rotation = self._norm_angle(rot)
-            else:
-                g.w, g.h = w, h
-                g.rotation = self._norm_angle(rot + deg)
-            try:
-                g.curve_radius = cr
-            except Exception:
-                pass
-        for p, x, y, rot, lx, ly, nx, ny, attr_states in state.get('pins', []):
-            p.x, p.y = self._rot_point(x, y, ox, oy, deg)
-            p.rotation = self._norm_angle(rot + deg)
-            if lx is not None and ly is not None:
-                p.label_x, p.label_y = self._rot_point(float(lx), float(ly), ox, oy, deg)
-            if nx is not None and ny is not None:
-                p.number_x, p.number_y = self._rot_point(float(nx), float(ny), ox, oy, deg)
-            for _k, tm, tx, ty, trot in attr_states:
-                self._rotate_text_model_from_state(tm, tx, ty, trot, ox, oy, deg)
-        for t, x, y, rot in state.get('texts', []):
-            self._rotate_text_model_from_state(t, x, y, rot, ox, oy, deg)
-        for _k, t, x, y, rot in state.get('attributes', []):
-            self._rotate_text_model_from_state(t, x, y, rot, ox, oy, deg)
 
     def rotate_selected(self, deg):
         self.push_undo_state()
