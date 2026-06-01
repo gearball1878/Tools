@@ -15787,3 +15787,220 @@ try:
         TemplateEditorDialog.flip_selected_vertical = _sw72_te_flip_v
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# SW73: plain TEXT is a standalone canvas object, never part of BODY transforms.
+# ---------------------------------------------------------------------------
+# BODY-owned attribute texts (ATTR_REF_DES/ATTR_BODY) still follow the BODY.
+# User-created plain TextModel objects in unit.texts must not be captured in the
+# BODY transform base, nor scaled during BODY resize.  This prevents a plain text
+# item from behaving as if it were attached to the selected BODY.
+try:
+    _sw73_prev_body_group_capture_base = MainWindow._body_group_capture_base
+except Exception:
+    _sw73_prev_body_group_capture_base = None
+
+try:
+    _sw73_prev_body_group_state = MainWindow._body_group_state
+except Exception:
+    _sw73_prev_body_group_state = None
+
+try:
+    _sw73_prev_scale_children_from_body_resize = MainWindow.scale_current_unit_children_from_body_resize
+except Exception:
+    _sw73_prev_scale_children_from_body_resize = None
+
+
+def _sw73_strip_plain_texts_from_body_state(st):
+    try:
+        if isinstance(st, dict):
+            base = st.get('base')
+            if isinstance(base, dict):
+                # Only BODY attributes and pin-owned attribute_texts belong to
+                # BODY/PIN transforms. Plain unit.texts are free objects.
+                base['texts'] = []
+        return st
+    except Exception:
+        return st
+
+
+def _sw73_body_group_capture_base(self, unit=None):
+    if _sw73_prev_body_group_capture_base is None:
+        return None
+    st = _sw73_prev_body_group_capture_base(self, unit)
+    return _sw73_strip_plain_texts_from_body_state(st)
+
+
+def _sw73_body_group_state(self, unit=None):
+    if _sw73_prev_body_group_state is None:
+        return _sw73_body_group_capture_base(self, unit)
+    st = _sw73_prev_body_group_state(self, unit)
+    return _sw73_strip_plain_texts_from_body_state(st)
+
+
+def _sw73_scale_current_unit_children_from_body_resize(self, start_state, body):
+    # Reuse the existing BODY resize behaviour, but remove free/plain texts from
+    # the resize state so they stay exactly where they are.  Attribute texts are
+    # still passed via the separate 'attributes' entry.
+    try:
+        if isinstance(start_state, dict):
+            start_state = dict(start_state)
+            start_state['texts'] = []
+    except Exception:
+        pass
+    if _sw73_prev_scale_children_from_body_resize is not None:
+        return _sw73_prev_scale_children_from_body_resize(self, start_state, body)
+
+
+try:
+    MainWindow._body_group_capture_base = _sw73_body_group_capture_base
+    MainWindow._body_group_state = _sw73_body_group_state
+    MainWindow.scale_current_unit_children_from_body_resize = _sw73_scale_current_unit_children_from_body_resize
+    if 'TemplateEditorDialog' in globals():
+        TemplateEditorDialog._body_group_capture_base = _sw73_body_group_capture_base
+        TemplateEditorDialog._body_group_state = _sw73_body_group_state
+        TemplateEditorDialog.scale_current_unit_children_from_body_resize = _sw73_scale_current_unit_children_from_body_resize
+except Exception:
+    pass
+
+# Make all existing/new plain text models explicitly free-standing on rebuild.
+try:
+    _sw73_prev_rebuild_scene = MainWindow.rebuild_scene
+    def _sw73_rebuild_scene(self):
+        try:
+            for t in getattr(getattr(self, 'current_unit', None), 'texts', []) or []:
+                setattr(t, '_is_attribute_text', False)
+                setattr(t, '_attribute_key', '')
+        except Exception:
+            pass
+        return _sw73_prev_rebuild_scene(self)
+    MainWindow.rebuild_scene = _sw73_rebuild_scene
+    if 'TemplateEditorDialog' in globals():
+        _sw73_prev_te_rebuild_scene = TemplateEditorDialog.rebuild_scene
+        def _sw73_te_rebuild_scene(self):
+            try:
+                for t in getattr(getattr(self, 'unit', None), 'texts', []) or []:
+                    setattr(t, '_is_attribute_text', False)
+                    setattr(t, '_attribute_key', '')
+            except Exception:
+                pass
+            return _sw73_prev_te_rebuild_scene(self)
+        TemplateEditorDialog.rebuild_scene = _sw73_te_rebuild_scene
+except Exception:
+    pass
+
+# ---------------------------------------------------------------------------
+# SW74: hard-separate plain TEXT from BODY ownership.
+# ---------------------------------------------------------------------------
+# Plain TEXT lives exclusively in unit.texts and must never move/rotate/flip/scale
+# as a BODY child.  Only BODY attributes (ATTR_REF_DES/ATTR_BODY) and pin-owned
+# attribute_texts follow their owning object.
+try:
+    _sw74_prev_move_current_unit_group = MainWindow.move_current_unit_group
+except Exception:
+    _sw74_prev_move_current_unit_group = None
+
+
+def _sw74_move_current_unit_group(self, dx: float, dy: float, source_body=None):
+    u = self.current_unit
+    try:
+        self._invalidate_body_group_transform_cache(u)
+    except Exception:
+        pass
+    # BODY move carries pins, pin-owned texts, BODY attributes and BODY graphics.
+    # It deliberately does NOT carry free/plain unit.texts.
+    for p in getattr(u, 'pins', []) or []:
+        p.x += dx; p.y += dy
+        try: self._move_pin_owned_texts(p, dx, dy)
+        except Exception: pass
+    for t in (getattr(getattr(u, 'body', None), 'attribute_texts', {}) or {}).values():
+        try:
+            t.x += dx; t.y += dy
+        except Exception:
+            pass
+    for g in getattr(u, 'graphics', []) or []:
+        try:
+            # Imported/body graphics belong to BODY. Free user graphics remain independent.
+            if bool(getattr(g, 'locked_to_body', False)) or str(getattr(g, 'graphic_role', '') or '').lower() in ('body','template_body','imported_body'):
+                g.x += dx; g.y += dy
+        except Exception:
+            pass
+
+try:
+    MainWindow.move_current_unit_group = _sw74_move_current_unit_group
+    if 'TemplateEditorDialog' in globals():
+        TemplateEditorDialog.move_current_unit_group = _sw74_move_current_unit_group
+except Exception:
+    pass
+
+# Remove plain texts from any already captured BODY transform state, every time.
+try:
+    _sw74_prev_body_group_capture_base = MainWindow._body_group_capture_base
+    def _sw74_body_group_capture_base(self, unit=None):
+        st = _sw74_prev_body_group_capture_base(self, unit)
+        try:
+            if isinstance(st, dict) and isinstance(st.get('base'), dict):
+                st['base']['texts'] = []
+        except Exception:
+            pass
+        return st
+    MainWindow._body_group_capture_base = _sw74_body_group_capture_base
+    if 'TemplateEditorDialog' in globals():
+        TemplateEditorDialog._body_group_capture_base = _sw74_body_group_capture_base
+except Exception:
+    pass
+
+try:
+    _sw74_prev_body_group_state = MainWindow._body_group_state
+    def _sw74_body_group_state(self, unit=None):
+        st = _sw74_prev_body_group_state(self, unit)
+        try:
+            if isinstance(st, dict) and isinstance(st.get('base'), dict):
+                st['base']['texts'] = []
+        except Exception:
+            pass
+        return st
+    MainWindow._body_group_state = _sw74_body_group_state
+    if 'TemplateEditorDialog' in globals():
+        TemplateEditorDialog._body_group_state = _sw74_body_group_state
+except Exception:
+    pass
+
+try:
+    _sw74_prev_scale_body_children = MainWindow.scale_current_unit_children_from_body_resize
+    def _sw74_scale_current_unit_children_from_body_resize(self, start_state, body):
+        try:
+            if isinstance(start_state, dict):
+                start_state = dict(start_state)
+                start_state['texts'] = []
+                if isinstance(start_state.get('base'), dict):
+                    start_state['base'] = dict(start_state['base'])
+                    start_state['base']['texts'] = []
+        except Exception:
+            pass
+        return _sw74_prev_scale_body_children(self, start_state, body)
+    MainWindow.scale_current_unit_children_from_body_resize = _sw74_scale_current_unit_children_from_body_resize
+    if 'TemplateEditorDialog' in globals():
+        TemplateEditorDialog.scale_current_unit_children_from_body_resize = _sw74_scale_current_unit_children_from_body_resize
+except Exception:
+    pass
+
+# Newly inserted canvas TEXT should be explicitly free-standing and selected after rebuild.
+try:
+    _sw74_prev_select_model_after_rebuild = MainWindow.select_model_after_rebuild
+    def _sw74_select_model_after_rebuild(self, model):
+        try:
+            if isinstance(getattr(self, '_selection_restore_ids', None), set):
+                self._selection_restore_ids = {id(model)}
+            else:
+                self._selection_restore_ids = {id(model)}
+            if hasattr(model, 'text') and hasattr(model, 'font_size_grid'):
+                setattr(model, '_is_attribute_text', False)
+                setattr(model, '_attribute_key', '')
+        except Exception:
+            pass
+    MainWindow.select_model_after_rebuild = _sw74_select_model_after_rebuild
+    if 'TemplateEditorDialog' in globals():
+        TemplateEditorDialog.select_model_after_rebuild = _sw74_select_model_after_rebuild
+except Exception:
+    pass
