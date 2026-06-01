@@ -10,7 +10,7 @@ class PinSide(str, Enum):
 class OriginMode(str, Enum):
     BOTTOM_LEFT='bottom_left'; BOTTOM_RIGHT='bottom_right'; CENTER='center'; TOP_LEFT='top_left'; TOP_RIGHT='top_right'
 class DrawTool(str, Enum):
-    SELECT='select'; PIN_LEFT='pin_left'; PIN_RIGHT='pin_right'; TEXT='text'; LINE='line'; RECT='rect'; ELLIPSE='ellipse'
+    SELECT='select'; PIN_LEFT='pin_left'; PIN_RIGHT='pin_right'; PIN_TOP='pin_top'; PIN_BOTTOM='pin_bottom'; TEXT='text'; LINE='line'; RECT='rect'; ELLIPSE='ellipse'
 class SymbolKind(str, Enum):
     SINGLE='single'; SPLIT='split'
 class SheetFormat(str, Enum):
@@ -70,6 +70,8 @@ class PinModel(TransformModel):
     number: str='1'; name: str='PIN'; function: str='FUNC'
     pin_type: str=PinType.BIDI.value; side: str=PinSide.LEFT.value
     x: float=0.0; y: float=0.0; length: float=2.0
+    # True: pin follows automatic body docking. False: free/raster-preserving pin.
+    auto_dock: bool=True
     inverted: bool=False; color: Tuple[int,int,int]=(0,0,0)
     visible_number: bool=True; visible_name: bool=True; visible_function: bool=True
     line_width: float=0.03; line_style: str=LineStyle.SOLID.value

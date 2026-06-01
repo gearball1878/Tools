@@ -461,6 +461,8 @@ class MainWindow(QMainWindow):
             (DrawTool.SELECT, 'Select/Edit'),
             (DrawTool.PIN_LEFT, 'Pin L'),
             (DrawTool.PIN_RIGHT, 'Pin R'),
+            (DrawTool.PIN_TOP, 'Pin T'),
+            (DrawTool.PIN_BOTTOM, 'Pin B'),
             (DrawTool.TEXT, 'Text'),
             (DrawTool.LINE, 'Line'),
             (DrawTool.RECT, 'Rect'),
@@ -795,7 +797,7 @@ Gemeinsames Linien-/Füllmodell.
 | `PinType` | IN, OUT, BIDI, PASSIVE, POWER, GROUND, ANALOG |
 | `PinSide` | left, right |
 | `OriginMode` | bottom_left, bottom_right, center, top_left, top_right |
-| `DrawTool` | select, pin_left, pin_right, text, line, rect, ellipse |
+| `DrawTool` | select, pin_left, pin_right, pin_top, pin_bottom, text, line, rect, ellipse |
 | `SymbolKind` | single, split |
 | `SheetFormat` | A0, A1, A2, A3, A4, A5 |
 | `LineStyle` | solid, dash, dot, dash_dot |
@@ -2435,6 +2437,10 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         for label, attr in [('Show Number', 'visible_number'), ('Show Name', 'visible_name'), ('Show Function', 'visible_function')]:
             cb = QCheckBox(); cb.setChecked(getattr(m, attr)); cb.toggled.connect(lambda v, a=attr: self.set_pin_attr(m, a, v)); self.form.addRow(label, cb)
         self.form.addRow('Length [grid]', self._dbl(m.length, lambda v: self.set_pin_length(m, v), 1, 100, 1))
+        self.form.addRow(QLabel('<b>PIN Transform</b>'))
+        self.form.addRow('Rotation [deg]', self._dbl(getattr(m, 'rotation', 0), lambda v: self.set_pin_attr(m, 'rotation', (round(float(v) / 15.0) * 15.0) % 360), -360, 360, 15))
+        self.form.addRow('Scale X', self._dbl(getattr(m, 'scale_x', 1.0), lambda v: self.set_pin_attr(m, 'scale_x', float(v)), -5, 5, .1))
+        self.form.addRow('Scale Y', self._dbl(getattr(m, 'scale_y', 1.0), lambda v: self.set_pin_attr(m, 'scale_y', float(v)), -5, 5, .1))
         self.form.addRow('Line style', self._combo([x.value for x in LineStyle], m.line_style, lambda v: self.set_pin_attr(m, 'line_style', v)))
         self.form.addRow('Line width', self._dbl(m.line_width, lambda v: self.set_pin_attr(m, 'line_width', v), .01, 1, .01))
         self.font_props('Pin number font', m.number_font)
@@ -2704,7 +2710,10 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         self.push_undo_state()
         setattr(m, a, v)
         if a == 'side':
-            self.dock_pins_to_body(self.current_unit)
+            # Side changes define orientation only for free pins. Auto-docked pins
+            # may still follow the BODY through dock_pins_to_body().
+            if getattr(m, 'auto_dock', False):
+                self.dock_pins_to_body(self.current_unit)
         dup = duplicate_pin_numbers(self.symbol)
         if dup:
             self.statusBar().showMessage('Duplicate pin number(s): ' + ', '.join(dup), 8000)
@@ -2969,6 +2978,8 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         if str(attrs.get('MENTOR_DISABLE_AUTO_DOCK', '0')) == '1' or str(attrs.get('MENTOR_GRAPHICS_AS_BODY', '0')) == '1':
             return
         for p in u.pins:
+            if not getattr(p, 'auto_dock', True):
+                continue
             if p.side == PinSide.LEFT.value:
                 p.x = b.x
             elif p.side == PinSide.RIGHT.value:
@@ -3070,10 +3081,15 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         self.push_undo_state()
         p = create_auto_pin(self.symbol, self.current_unit, side)
         p.name = self._unique_pin_name(getattr(p, 'name', 'PIN'))
-        if x is not None: p.x = x
-        if y is not None: p.y = y
-        # Keep the docking side strict; y may be edited freely.
-        p.x = self.current_unit.body.x if side == PinSide.LEFT.value else self.current_unit.body.x + self.current_unit.body.width
+        # When the user places a pin from the canvas, the clicked grid position is
+        # authoritative.  Do not snap it back to the BODY edge.  This keeps pasted
+        # and newly created pins editable on the active edit raster.
+        if x is not None:
+            p.x = self.snap_grid_value(x)
+            p.auto_dock = False
+        if y is not None:
+            p.y = self.snap_grid_value(y)
+            p.auto_dock = False
         self.current_unit.pins.append(p)
         self.validate_pins(silent=True)
         self.select_model_after_rebuild(p)
@@ -3841,25 +3857,51 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         self.clipboard_is_cut = True
         self.delete_selected()
 
+    def _paste_offset_grid(self):
+        try:
+            return self._edit_grid_step()
+        except Exception:
+            return 1.0
+
+    def _offset_model_for_paste(self, model, dx: float, dy: float):
+        """Move copied objects by one active edit-grid step, including owned labels."""
+        if hasattr(model, 'x'):
+            model.x = self.snap_grid_value(float(model.x) + dx) if hasattr(self, 'snap_grid_value') else float(model.x) + dx
+        if hasattr(model, 'y'):
+            model.y = self.snap_grid_value(float(model.y) + dy) if hasattr(self, 'snap_grid_value') else float(model.y) + dy
+        for ax_name, ay_name in (('label_x', 'label_y'), ('number_x', 'number_y')):
+            if getattr(model, ax_name, None) is not None and getattr(model, ay_name, None) is not None:
+                setattr(model, ax_name, self.snap_grid_value(float(getattr(model, ax_name)) + dx) if hasattr(self, 'snap_grid_value') else float(getattr(model, ax_name)) + dx)
+                setattr(model, ay_name, self.snap_grid_value(float(getattr(model, ay_name)) + dy) if hasattr(self, 'snap_grid_value') else float(getattr(model, ay_name)) + dy)
+        for tm in (getattr(model, 'attribute_texts', {}) or {}).values():
+            try:
+                tm.x = self.snap_grid_value(float(tm.x) + dx) if hasattr(self, 'snap_grid_value') else float(tm.x) + dx
+                tm.y = self.snap_grid_value(float(tm.y) + dy) if hasattr(self, 'snap_grid_value') else float(tm.y) + dy
+            except Exception:
+                pass
+
     def paste_selected(self):
         self.set_tool(DrawTool.SELECT.value)
-        self.push_undo_state()
         if not self.clipboard:
             return
+        self.push_undo_state()
         existing_pins = [p.number for u in self.symbol.units for p in u.pins]
         pasted_models = []
+        step = float(self._paste_offset_grid())
+        dx, dy = step, -step
         for kind, src in self.clipboard:
             m = copy.deepcopy(src)
-            if hasattr(m, 'x'):
-                m.x += 1
-            if hasattr(m, 'y'):
-                m.y -= 1
+            self._offset_model_for_paste(m, dx, dy)
             if kind == 'PIN':
                 # Copy creates unique pin numbers and names; cut/paste keeps them.
+                # The pasted pin is intentionally not auto-docked to the BODY, so
+                # it stays on the same active edit raster and can be transformed
+                # individually immediately after paste.
                 if not getattr(self, 'clipboard_is_cut', False):
                     m.number = next_pin_number(existing_pins)
                     existing_pins.append(m.number)
                     m.name = self._unique_pin_name(getattr(m, 'name', 'PIN'))
+                m.auto_dock = False
                 self.current_unit.pins.append(m)
                 pasted_models.append(m)
             elif kind == 'TEXT':
@@ -3874,7 +3916,6 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
             elif kind == 'BODY':
                 self.current_unit.body = m
                 pasted_models.append(m)
-        self.dock_pins_to_body(self.current_unit)
         self.clipboard_is_cut = False
         self._selection_restore_ids = {id(m) for m in pasted_models}
         self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
@@ -4033,7 +4074,9 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         body = self.current_unit.body
         for it in pins:
             it.model.side = side
-            it.model.x = body.x if side == PinSide.LEFT.value else body.x + body.width
+            # Assign Side changes the pin orientation. It must not forcibly move
+            # free pins back onto the BODY edge.
+            it.model.auto_dock = False
         self._selection_restore_ids = {id(it.model) for it in pins}
         self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
 

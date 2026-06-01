@@ -101,10 +101,11 @@ class TransformMixin:
                 pass
             snap_enabled = not bool(getattr(win, 'template_snap_check', None) and not win.template_snap_check.isChecked())
             if snap_enabled:
-                # Template Editor may use a fine edit grid while the stored symbol/pin grid
-                # stays at the coarser base grid. Normal Symbol Wizard items still snap to
-                # the main grid. Locked imported BODY primitives bypass this branch above.
-                g = float(getattr(win, 'edit_grid_px', self.scene().grid_px) if getattr(win, 'is_template_editor', False) else self.scene().grid_px)
+                # Use the active edit grid in the normal Symbol Wizard as well.
+                # This keeps copied/pasted pins on the same raster that the user is
+                # currently editing with (0.100/0.050/0.025 inch). Locked imported
+                # BODY primitives bypass this branch above.
+                g = float(getattr(win, 'edit_grid_px', self.scene().grid_px) or self.scene().grid_px)
                 return QPointF(snap(value.x(), g), snap(value.y(), g))
         if change == QGraphicsItem.ItemPositionHasChanged and self.scene():
             self.update_model_pos()
@@ -135,6 +136,10 @@ class TransformMixin:
         elif hasattr(self.model, 'length'):
             self.model.length = max(.1, self.model.length * factor)
         self.update()
+
+    def scale_by(self, factor):
+        """Public toolbar-compatible scale hook for transformable items."""
+        return self.scale_selected(factor)
 
 
 def _corner_handles(rect: QRectF, s: float):
@@ -630,9 +635,22 @@ class PinItem(TransformMixin, QGraphicsItem):
                     pass
 
     def scale_selected(self, factor):
-        # Pin length is always quantized to full grid units.
-        self.model.length = max(1.0, round(self.model.length * factor))
+        # Pin length is quantized to the active edit grid so copied/imported
+        # pins can be edited at the same raster as the current workspace.
+        try:
+            step = self.window._edit_grid_step() if hasattr(self.window, '_edit_grid_step') else 1.0
+        except Exception:
+            step = 1.0
+        try:
+            value = float(self.model.length) * float(factor)
+            self.model.length = max(step, round(value / step) * step)
+        except Exception:
+            self.model.length = max(1.0, round(self.model.length * factor))
+        self.apply_transform_from_model()
         self.update()
+
+    def scale_by(self, factor):
+        return self.scale_selected(factor)
 
 
 class TextItem(TransformMixin, QGraphicsTextItem):

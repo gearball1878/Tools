@@ -185,6 +185,10 @@ class SymbolView(QGraphicsView):
                 self.window.add_pin(PinSide.LEFT.value, x=gx, y=gy)
             elif tool == DrawTool.PIN_RIGHT.value:
                 self.window.add_pin(PinSide.RIGHT.value, x=gx, y=gy)
+            elif tool == DrawTool.PIN_TOP.value:
+                self.window.add_pin(PinSide.TOP.value, x=gx, y=gy)
+            elif tool == DrawTool.PIN_BOTTOM.value:
+                self.window.add_pin(PinSide.BOTTOM.value, x=gx, y=gy)
             elif tool == DrawTool.TEXT.value:
                 m = TextModel(x=gx, y=gy)
                 self.window.current_unit.texts.append(m)
