@@ -16565,15 +16565,41 @@ except Exception:
     pass
 
 # ---------------------------------------------------------------------------
-# SW78: real vector-style graphic group proxy from stable v68 syntax-fixed base.
+# Liebherr v80: real group graphic item.
+# A graphic group is represented by one selectable GraphicItem-like proxy.  The
+# proxy owns the full bounding-box hit area and delegates its exact movement,
+# scaling, rotation and mirror operations to all child graphics.  Highlight
+# items stay UI-only and are never part of the group selection/model.
 # ---------------------------------------------------------------------------
 try:
-    from PySide6.QtCore import QPointF as _SW78_QPointF
+    from PySide6.QtCore import QPointF as _V80QPointF, QRectF as _V80QRectF, Qt as _V80Qt
+    from PySide6.QtGui import QPen as _V80QPen, QBrush as _V80QBrush, QColor as _V80QColor, QCursor as _V80QCursor
+    from PySide6.QtWidgets import QGraphicsItem as _V80QGraphicsItem, QMessageBox as _V80QMessageBox, QLabel as _V80QLabel, QToolBar as _V80QToolBar
+    from symbol_wizard.graphics.items import _hit_handle as _v80_hit_handle, _corner_handles as _v80_corner_handles, _rotation_handle as _v80_rotation_handle, _cursor_for_handle as _v80_cursor_for_handle, _angle_from as _v80_angle_from
 except Exception:
-    _SW78_QPointF = None
+    pass
 
 
-def _sw78_gid(gr):
+def _v80_step(win):
+    try:
+        return max(float(win._edit_grid_step()), 1e-9)
+    except Exception:
+        try:
+            return max(float(getattr(win, 'edit_grid_px', 0.0) or 0.0) / max(float(getattr(win, 'grid_px', 1.0) or 1.0), 1e-9), 1e-9)
+        except Exception:
+            return 0.1
+
+
+def _v80_snap(win, v):
+    try:
+        return float(win._snap_to_edit_grid(float(v), _v80_step(win)))
+    except Exception:
+        st = _v80_step(win)
+        try: return round(float(v) / st) * st
+        except Exception: return float(v)
+
+
+def _v80_gid(gr):
     try:
         gid = str(getattr(gr, 'group_id', '') or '')
         if gid:
@@ -16586,15 +16612,14 @@ def _sw78_gid(gr):
     return ''
 
 
-def _sw78_set_gid(gr, gid):
-    gid = str(gid or '')
-    try: gr.group_id = gid
+def _v80_set_gid(gr, gid):
+    try: gr.group_id = str(gid or '')
     except Exception: pass
-    try: gr.graphic_role = ('user_graphic_group:' + gid) if gid else 'user_graphic'
+    try: gr.graphic_role = ('user_graphic_group:' + str(gid)) if gid else 'user_graphic'
     except Exception: pass
 
 
-def _sw78_is_user_graphic(gr):
+def _v80_is_user_graphic(gr):
     try:
         role = str(getattr(gr, 'graphic_role', '') or '').lower()
         return (not bool(getattr(gr, 'locked_to_body', False))) and role not in ('body', 'template_body', 'imported_body')
@@ -16602,417 +16627,613 @@ def _sw78_is_user_graphic(gr):
         return False
 
 
-def _sw78_group_map(self):
-    groups = {}
-    try: graphics = list(getattr(self.current_unit, 'graphics', []) or [])
-    except Exception: graphics = []
-    for gr in graphics:
-        try:
-            gid = _sw78_gid(gr)
-            if gid and _sw78_is_user_graphic(gr):
-                groups.setdefault(gid, []).append(gr)
-        except Exception:
-            pass
-    return {k: v for k, v in groups.items() if len(v) >= 1}
-
-
-def _sw78_model_points(gr):
+def _v80_graphic_bounds(gr):
+    x = float(getattr(gr, 'x', 0.0) or 0.0)
+    y = float(getattr(gr, 'y', 0.0) or 0.0)
+    w = float(getattr(gr, 'w', 0.0) or 0.0)
+    h = float(getattr(gr, 'h', 0.0) or 0.0)
+    pts = [(x, y), (x + w, y - h)]
     try:
-        x = float(getattr(gr, 'x', 0.0) or 0.0); y = float(getattr(gr, 'y', 0.0) or 0.0)
-        w = float(getattr(gr, 'w', 0.0) or 0.0); h = float(getattr(gr, 'h', 0.0) or 0.0)
-        sx = float(getattr(gr, 'scale_x', 1.0) or 1.0); sy = float(getattr(gr, 'scale_y', 1.0) or 1.0)
-        rot = math.radians(float(getattr(gr, 'rotation', 0.0) or 0.0))
-        cx = x + w / 2.0; cy = y - h / 2.0
-        raw = [(x, y), (x + w, y), (x + w, y - h), (x, y - h)]
-        c = math.cos(rot); s = math.sin(rot)
-        pts = []
-        for px, py in raw:
-            dx = (px - cx) * sx; dy = (py - cy) * sy
-            pts.append((cx + dx * c - dy * s, cy + dx * s + dy * c))
-        return pts
+        if getattr(gr, 'ctrl_x', None) is not None and getattr(gr, 'ctrl_y', None) is not None:
+            pts.append((x + float(gr.ctrl_x), y - float(gr.ctrl_y)))
     except Exception:
-        return []
-
-
-def _sw78_group_bbox_grid(models):
-    pts = []
-    for gr in models:
-        pts.extend(_sw78_model_points(gr))
-    if not pts:
-        return None
+        pass
+    try:
+        cr = float(getattr(gr, 'curve_radius', 0.0) or 0.0)
+        if abs(cr) > 1e-12:
+            pts.append((x + w / 2.0, y - h / 2.0 + cr))
+    except Exception:
+        pass
     xs = [p[0] for p in pts]; ys = [p[1] for p in pts]
     return (min(xs), min(ys), max(xs), max(ys))
 
 
-def _sw78_snap(self, v):
-    try:
-        return float(self.snap_grid_value(float(v)))
+def _v80_group_bbox(models):
+    vals = [_v80_graphic_bounds(m) for m in models]
+    if not vals:
+        return (0.0, 0.0, 1.0, 1.0)
+    return (min(v[0] for v in vals), min(v[1] for v in vals), max(v[2] for v in vals), max(v[3] for v in vals))
+
+
+def _v80_current_unit(win):
+    try: return win.current_unit()
     except Exception:
+        try: return win.unit
+        except Exception: return None
+
+
+def _v80_group_map(win):
+    unit = _v80_current_unit(win)
+    out = {}
+    for gr in list(getattr(unit, 'graphics', []) if unit is not None else []):
         try:
-            st = float(self._edit_grid_step()) if hasattr(self, '_edit_grid_step') else 1.0
-            st = max(st, 1e-9)
-            return round(float(v) / st) * st
+            if not _v80_is_user_graphic(gr):
+                continue
+            gid = _v80_gid(gr)
+            if gid:
+                out.setdefault(gid, []).append(gr)
         except Exception:
-            return float(v)
+            pass
+    return {k: v for k, v in out.items() if len(v) >= 1}
 
 
-def _sw78_group_origin(self, models):
-    bb = _sw78_group_bbox_grid(models)
-    if not bb:
-        return (0.0, 0.0)
-    minx, miny, maxx, maxy = bb
-    # lower-left of the group outline, snapped to edit-grid
-    return (_sw78_snap(self, minx), _sw78_snap(self, miny))
-
-
-def _sw78_model_center(gr):
-    try:
-        return (float(getattr(gr, 'x', 0.0) or 0.0) + float(getattr(gr, 'w', 0.0) or 0.0) / 2.0,
-                float(getattr(gr, 'y', 0.0) or 0.0) - float(getattr(gr, 'h', 0.0) or 0.0) / 2.0)
-    except Exception:
-        return (0.0, 0.0)
-
-
-def _sw78_set_model_center(gr, cx, cy):
-    try:
-        w = float(getattr(gr, 'w', 0.0) or 0.0); h = float(getattr(gr, 'h', 0.0) or 0.0)
-        gr.x = float(cx) - w / 2.0
-        gr.y = float(cy) + h / 2.0
-    except Exception:
-        pass
-
-
-def _sw78_group_ids_from_selection(self):
-    gids = []
-    try: items = list(self.scene.selectedItems())
+def _v80_scene_graphic_items(win):
+    res = []
+    try: items = list(win.scene.items())
     except Exception: items = []
     for it in items:
         try:
-            if it.data(0) == 'GRAPHIC_GROUP':
-                gid = str(getattr(it, 'group_id', '') or '')
-            elif it.data(0) == 'GRAPHIC' and getattr(it, 'model', None) is not None:
-                gid = _sw78_gid(it.model)
-            else:
-                gid = ''
-            if gid and gid not in gids:
-                gids.append(gid)
+            if it.data(0) == 'GRAPHIC' and getattr(it, 'model', None) is not None:
+                res.append(it)
         except Exception:
             pass
-    return gids
+    return res
 
 
-def _sw78_selected_group_models(self):
-    groups = _sw78_group_map(self)
-    out = []
-    for gid in _sw78_group_ids_from_selection(self):
-        for gr in groups.get(gid, []):
-            if gr not in out:
-                out.append(gr)
-    return out
+def _v80_update_child_items(win, models):
+    model_ids = {id(m) for m in models}
+    gpx = float(getattr(win, 'grid_px', 40.0) or 40.0)
+    for it in _v80_scene_graphic_items(win):
+        try:
+            if id(getattr(it, 'model', None)) in model_ids:
+                it.prepareGeometryChange()
+                it.setPos(float(it.model.x) * gpx, -float(it.model.y) * gpx)
+                if hasattr(it, 'apply_transform_from_model'):
+                    it.apply_transform_from_model()
+                it.update()
+        except Exception:
+            pass
+    try: win.scene.update()
+    except Exception: pass
 
 
-class _SW78GraphicGroupProxy(QGraphicsRectItem):
-    def __init__(self, window, group_id, models):
-        self.window = window
-        self.group_id = str(group_id)
-        self.models = list(models or [])
-        self._moving = False
-        g = float(getattr(window, 'grid_px', 40.0) or 40.0)
-        bb = _sw78_group_bbox_grid(self.models) or (0, 0, 1, 1)
-        minx, miny, maxx, maxy = bb
-        left = minx * g; top = -maxy * g
-        w = max(1.0, (maxx - minx) * g); h = max(1.0, (maxy - miny) * g)
-        super().__init__(0, 0, w, h)
-        self.setPos(left, top)
+def _v80_affine_apply(models, start_states, old_bbox, new_bbox, win):
+    ox0, oy0, ox1, oy1 = old_bbox
+    nx0, ny0, nx1, ny1 = new_bbox
+    ow = max(1e-9, ox1 - ox0); oh = max(1e-9, oy1 - oy0)
+    sx = (nx1 - nx0) / ow; sy = (ny1 - ny0) / oh
+    for gr, st in zip(models, start_states):
+        try:
+            x = st['x']; y = st['y']; w = st['w']; h = st['h']
+            x2 = x + w; y2 = y - h
+            gr.x = _v80_snap(win, nx0 + (x - ox0) * sx)
+            gr.y = _v80_snap(win, ny0 + (y - oy0) * sy)
+            ex = _v80_snap(win, nx0 + (x2 - ox0) * sx)
+            ey = _v80_snap(win, ny0 + (y2 - oy0) * sy)
+            gr.w = ex - gr.x
+            gr.h = gr.y - ey
+            if st.get('ctrl_x') is not None and st.get('ctrl_y') is not None:
+                cx = nx0 + ((x + st['ctrl_x']) - ox0) * sx
+                cy = ny0 + ((y - st['ctrl_y']) - oy0) * sy
+                gr.ctrl_x = cx - gr.x
+                gr.ctrl_y = gr.y - cy
+            if st.get('curve_radius') not in (None, 0, 0.0):
+                gr.curve_radius = st['curve_radius'] * ((abs(sx) + abs(sy)) / 2.0)
+        except Exception:
+            pass
+
+
+def _v80_transform_models(models, op, value, win):
+    if not models:
+        return False
+    x0, y0, x1, y1 = _v80_group_bbox(models)
+    origin = (x0, y0)  # exact lower-left object origin, same for single/group vector object
+    ox, oy = origin
+    def tx_point(x, y):
+        if op == 'move':
+            dx, dy = value
+            return x + dx, y + dy
+        if op == 'flip_h':  # mirror at local Y-axis through origin: x changes
+            return ox - (x - ox), y
+        if op == 'flip_v':  # mirror at local X-axis through origin: y changes
+            return x, oy - (y - oy)
+        if op == 'rotate':
+            a = math.radians(float(value))
+            c, s = math.cos(a), math.sin(a)
+            rx, ry = x - ox, y - oy
+            return ox + rx * c - ry * s, oy + rx * s + ry * c
+        if op == 'scale':
+            f = float(value)
+            return ox + (x - ox) * f, oy + (y - oy) * f
+        return x, y
+    for gr in models:
+        try:
+            x = float(getattr(gr, 'x', 0.0) or 0.0); y = float(getattr(gr, 'y', 0.0) or 0.0)
+            w = float(getattr(gr, 'w', 0.0) or 0.0); h = float(getattr(gr, 'h', 0.0) or 0.0)
+            ex, ey = x + w, y - h
+            nx, ny = tx_point(x, y); nex, ney = tx_point(ex, ey)
+            gr.x = _v80_snap(win, nx); gr.y = _v80_snap(win, ny)
+            gr.w = _v80_snap(win, nex) - gr.x; gr.h = gr.y - _v80_snap(win, ney)
+            if getattr(gr, 'ctrl_x', None) is not None and getattr(gr, 'ctrl_y', None) is not None:
+                cx, cy = tx_point(x + float(gr.ctrl_x), y - float(gr.ctrl_y))
+                gr.ctrl_x = cx - gr.x; gr.ctrl_y = gr.y - cy
+            if op == 'scale' and getattr(gr, 'curve_radius', None) not in (None, 0, 0.0):
+                gr.curve_radius = float(gr.curve_radius) * float(value)
+        except Exception:
+            pass
+    return True
+
+
+class _V80GroupGraphicItem(GraphicItem):
+    """A real GraphicItem-compatible group shell with full rectangular hitbox."""
+    def __init__(self, window, gid, models):
+        self.group_id = gid
+        self.models = list(models)
+        x0, y0, x1, y1 = _v80_group_bbox(self.models)
+        proxy = GraphicModel(shape='rect', x=x0, y=y1, w=max(_v80_step(window), x1-x0), h=max(_v80_step(window), y1-y0))
+        proxy.graphic_role = 'group_proxy'
+        proxy.group_id = gid
+        proxy.style.stroke = (0, 120, 170)
+        proxy.style.fill = None
+        proxy.style.line_width = 0.03
+        super().__init__(proxy, window)
         self.setData(0, 'GRAPHIC_GROUP')
-        self.setZValue(9999)
-        self.setPen(QPen(QColor(40, 40, 40), 1, Qt.DashLine))
-        self.setBrush(QBrush(QColor(255, 255, 255, 1)))  # almost transparent but clickable full area
-        self.setFlags(QGraphicsItem.ItemIsMovable | QGraphicsItem.ItemIsSelectable | QGraphicsItem.ItemSendsGeometryChanges | QGraphicsItem.ItemIsFocusable)
-        self.setAcceptHoverEvents(True)
-        self._last_grid_pos = (minx, maxy)
+        self.setZValue(100000)
+        self.setAcceptedMouseButtons(_V80Qt.LeftButton)
+        self.setFlag(_V80QGraphicsItem.ItemIsSelectable, True)
+        self.setFlag(_V80QGraphicsItem.ItemIsMovable, True)
+        self.setFlag(_V80QGraphicsItem.ItemIsFocusable, True)
+        self.setFlag(_V80QGraphicsItem.ItemSendsGeometryChanges, True)
+        self._v80_moving = False
+        self._v80_resizing = None
+        self._v80_resize_start = None
+        self._v80_rotating = False
+        self._v80_rotate_center = _V80QPointF()
+        self._v80_rotate_start = 0.0
+        self._v80_last_rot = 0.0
+        self._v80_sync_proxy_model()
+
+    def _v80_sync_proxy_model(self):
+        x0, y0, x1, y1 = _v80_group_bbox(self.models)
+        st = _v80_step(self.window)
+        self.model.x = x0
+        self.model.y = y1
+        self.model.w = max(st, x1 - x0)
+        self.model.h = max(st, y1 - y0)
+        g = float(getattr(self.window, 'grid_px', 40.0) or 40.0)
+        self.prepareGeometryChange()
+        self.setPos(self.model.x * g, -self.model.y * g)
+        self.update()
 
     def paint(self, painter, option, widget=None):
+        # Same visible affordance as a selected single graphic: one rectangular
+        # outline, handles and rotation handle. Children draw the real artwork.
+        r = self._rect()
+        painter.save()
         if self.isSelected():
-            painter.save()
-            painter.setPen(QPen(QColor(40, 40, 40), 1, Qt.DashLine))
-            painter.setBrush(QBrush(Qt.NoBrush))
-            painter.drawRect(self.rect())
-            try:
-                s = float(getattr(self.window, 'grid_px', 40.0) or 40.0) * 0.32
-                painter.setBrush(QBrush(QColor(255, 255, 255)))
-                for r in _corner_handles(self.rect(), s).values():
-                    painter.drawRect(r)
-                painter.drawEllipse(_rotation_handle(self.rect(), s))
-            except Exception:
-                pass
-            painter.restore()
+            painter.setPen(_V80QPen(_V80QColor(80, 80, 80), 1, _V80Qt.DashLine))
+        else:
+            painter.setPen(_V80QPen(_V80QColor(0, 0, 0, 0), 0))
+        painter.setBrush(_V80QBrush(_V80Qt.NoBrush))
+        painter.drawRect(r)
+        if self.isSelected():
+            painter.setBrush(_V80QBrush(_V80QColor(255, 255, 255)))
+            for hr in self._handles().values():
+                painter.drawRect(hr)
+            painter.drawEllipse(_v80_rotation_handle(r, float(getattr(self.window, 'grid_px', 40.0) or 40.0) * self.rotate_handle_factor))
+        painter.restore()
 
-    def itemChange(self, change, value):
-        if change == QGraphicsItem.ItemPositionChange and self.scene():
-            try:
-                gpx = float(getattr(self.window, 'edit_grid_px', self.scene().grid_px) or self.scene().grid_px)
-                return QPointF(snap(value.x(), gpx), snap(value.y(), gpx))
-            except Exception:
-                return value
-        if change == QGraphicsItem.ItemPositionHasChanged and self.scene() and not self._moving:
-            try:
-                g = float(getattr(self.window, 'grid_px', 40.0) or 40.0)
-                new_left = self.pos().x() / g
-                new_top_grid = -self.pos().y() / g
-                old_left, old_top_grid = self._last_grid_pos
-                dx = new_left - old_left
-                dy = new_top_grid - old_top_grid
-                if abs(dx) > 1e-9 or abs(dy) > 1e-9:
-                    self._moving = True
-                    for gr in self.models:
-                        try:
-                            gr.x = float(getattr(gr, 'x', 0.0) or 0.0) + dx
-                            gr.y = float(getattr(gr, 'y', 0.0) or 0.0) + dy
-                        except Exception:
-                            pass
-                    self._last_grid_pos = (new_left, new_top_grid)
-                    try: self.window.notify_canvas_model_changed()
-                    except Exception: pass
-                    self._moving = False
-            except Exception:
-                self._moving = False
-        return super().itemChange(change, value)
+    def shape(self):
+        # Full rectangle is clickable, not only child geometry.
+        from PySide6.QtGui import QPainterPath
+        path = QPainterPath()
+        path.addRect(self._rect())
+        return path
+
+    def hoverMoveEvent(self, event):
+        if self.isSelected():
+            h = 'rot' if _v80_rotation_handle(self._rect(), float(getattr(self.window, 'grid_px', 40.0) or 40.0) * self.rotate_handle_factor).contains(event.pos()) else _v80_hit_handle(self._handles(), event.pos())
+            self.setCursor(_V80QCursor(_v80_cursor_for_handle(h)) if h else _V80QCursor(_V80Qt.ArrowCursor))
+        else:
+            self.setCursor(_V80QCursor(_V80Qt.ArrowCursor))
+        super().hoverMoveEvent(event)
 
     def mousePressEvent(self, event):
-        try:
-            if event.button() == Qt.LeftButton:
-                self.window.push_undo_state()
-        except Exception:
-            pass
+        if event.button() == _V80Qt.LeftButton:
+            try: self.window.push_undo_state()
+            except Exception: pass
+        if self.isSelected() and event.button() == _V80Qt.LeftButton:
+            rot = _v80_rotation_handle(self._rect(), float(getattr(self.window, 'grid_px', 40.0) or 40.0) * self.rotate_handle_factor)
+            if rot.contains(event.pos()):
+                self._v80_rotating = True
+                self._v80_rotate_center = self.mapToScene(_V80QPointF(0, self._rect().height()))
+                self._v80_rotate_start = _v80_angle_from(self._v80_rotate_center, event.scenePos())
+                self._v80_last_rot = 0.0
+                event.accept(); return
+            h = _v80_hit_handle(self._handles(), event.pos())
+            if h:
+                self._v80_resizing = h
+                self._v80_resize_start = {
+                    'bbox': _v80_group_bbox(self.models),
+                    'states': [{
+                        'x': float(getattr(m, 'x', 0.0) or 0.0), 'y': float(getattr(m, 'y', 0.0) or 0.0),
+                        'w': float(getattr(m, 'w', 0.0) or 0.0), 'h': float(getattr(m, 'h', 0.0) or 0.0),
+                        'ctrl_x': getattr(m, 'ctrl_x', None), 'ctrl_y': getattr(m, 'ctrl_y', None),
+                        'curve_radius': float(getattr(m, 'curve_radius', 0.0) or 0.0),
+                    } for m in self.models]
+                }
+                event.accept(); return
         super().mousePressEvent(event)
 
+    def mouseMoveEvent(self, event):
+        g = float(getattr(self.window, 'grid_px', 40.0) or 40.0)
+        if self._v80_rotating:
+            delta = _v80_angle_from(self._v80_rotate_center, event.scenePos()) - self._v80_rotate_start
+            step = round(delta / 15.0) * 15.0
+            inc = step - self._v80_last_rot
+            if abs(inc) > 1e-9:
+                _v80_transform_models(self.models, 'rotate', inc, self.window)
+                self._v80_last_rot = step
+                _v80_update_child_items(self.window, self.models)
+                self._v80_moving = True; self._v80_sync_proxy_model(); self._v80_moving = False
+                try: self.window.refresh_properties()
+                except Exception: pass
+            event.accept(); return
+        if self._v80_resizing and self._v80_resize_start:
+            p = _V80QPointF(snap(event.scenePos().x(), float(getattr(self.window, 'edit_grid_px', g) or g)), snap(event.scenePos().y(), float(getattr(self.window, 'edit_grid_px', g) or g)))
+            x0, y0, x1, y1 = self._v80_resize_start['bbox']
+            left = x0 * g; right = x1 * g; top = -y1 * g; bottom = -y0 * g
+            h = self._v80_resizing
+            if h in ('l', 'tl', 'bl'): left = p.x()
+            if h in ('r', 'tr', 'br'): right = p.x()
+            if h in ('t', 'tl', 'tr'): top = p.y()
+            if h in ('b', 'bl', 'br'): bottom = p.y()
+            min_px = max(1.0, _v80_step(self.window) * g)
+            if right < left: left, right = right, left
+            if bottom < top: top, bottom = bottom, top
+            if right - left < min_px:
+                if h in ('l', 'tl', 'bl'): left = right - min_px
+                else: right = left + min_px
+            if bottom - top < min_px:
+                if h in ('t', 'tl', 'tr'): top = bottom - min_px
+                else: bottom = top + min_px
+            new_bbox = (left / g, -bottom / g, right / g, -top / g)
+            _v80_affine_apply(self.models, self._v80_resize_start['states'], self._v80_resize_start['bbox'], new_bbox, self.window)
+            _v80_update_child_items(self.window, self.models)
+            self._v80_moving = True; self._v80_sync_proxy_model(); self._v80_moving = False
+            try: self.window.refresh_properties()
+            except Exception: pass
+            event.accept(); return
+        super().mouseMoveEvent(event)
+
+    def itemChange(self, change, value):
+        if change == _V80QGraphicsItem.ItemPositionChange and self.scene():
+            try:
+                ep = float(getattr(self.window, 'edit_grid_px', getattr(self.window, 'grid_px', 40.0)) or 40.0)
+                return _V80QPointF(snap(value.x(), ep), snap(value.y(), ep))
+            except Exception:
+                return value
+        if change == _V80QGraphicsItem.ItemPositionHasChanged and self.scene() and not self._v80_moving and not self._v80_resizing and not self._v80_rotating:
+            try:
+                g = float(getattr(self.window, 'grid_px', 40.0) or 40.0)
+                nx = self.pos().x() / g; ny = -self.pos().y() / g
+                dx = nx - float(self.model.x); dy_top = ny - float(self.model.y)
+                # model.y is top; grid y delta for all child anchors is same dy_top.
+                if abs(dx) > 1e-9 or abs(dy_top) > 1e-9:
+                    self._v80_moving = True
+                    _v80_transform_models(self.models, 'move', (dx, dy_top), self.window)
+                    _v80_update_child_items(self.window, self.models)
+                    self._v80_sync_proxy_model()
+                    self._v80_moving = False
+                    try: self.window.notify_canvas_model_changed()
+                    except Exception: pass
+            except Exception:
+                self._v80_moving = False
+        return super().itemChange(change, value)
+
     def mouseReleaseEvent(self, event):
+        self._v80_resizing = None
+        self._v80_resize_start = None
+        self._v80_rotating = False
+        self._v80_last_rot = 0.0
         try:
-            self.window.rebuild_tree(); self.scene().update()
+            self.window.dirty = True
+            self.window._v80_restore_group_id = self.group_id
+            self.window.rebuild_scene(); self.window.rebuild_tree(); self.window.refresh_properties()
         except Exception:
             pass
         super().mouseReleaseEvent(event)
 
+    def scale_by(self, factor):
+        _v80_transform_models(self.models, 'scale', float(factor), self.window)
+        _v80_update_child_items(self.window, self.models)
+        self._v80_moving = True; self._v80_sync_proxy_model(); self._v80_moving = False
 
-def _sw78_add_group_proxies(self, selected_ids=None):
-    selected_ids = selected_ids or set()
-    for gid, models in _sw78_group_map(self).items():
-        try:
-            proxy = _SW78GraphicGroupProxy(self, gid, models)
-            self.scene.addItem(proxy)
-            if any(id(m) in selected_ids for m in models):
-                proxy.setSelected(True)
-        except Exception:
-            pass
+    def rotate_by(self, deg):
+        _v80_transform_models(self.models, 'rotate', float(deg), self.window)
+        _v80_update_child_items(self.window, self.models)
+        self._v80_moving = True; self._v80_sync_proxy_model(); self._v80_moving = False
 
+    def flip_horizontal(self):
+        _v80_transform_models(self.models, 'flip_h', None, self.window)
+        _v80_update_child_items(self.window, self.models)
+        self._v80_moving = True; self._v80_sync_proxy_model(); self._v80_moving = False
 
-def _sw78_harden_group_children(self):
-    try: items = list(self.scene.items())
-    except Exception: items = []
-    for it in items:
-        try:
-            if it.data(0) == 'GRAPHIC' and getattr(it, 'model', None) is not None and _sw78_gid(it.model):
-                it.setFlag(QGraphicsItem.ItemIsSelectable, False)
-                it.setFlag(QGraphicsItem.ItemIsMovable, False)
-                it.setFlag(QGraphicsItem.ItemIsFocusable, False)
-                it.setAcceptedMouseButtons(Qt.NoButton)
-                it.setZValue(10)
-        except Exception:
-            pass
+    def flip_vertical(self):
+        _v80_transform_models(self.models, 'flip_v', None, self.window)
+        _v80_update_child_items(self.window, self.models)
+        self._v80_moving = True; self._v80_sync_proxy_model(); self._v80_moving = False
+
+    def update_model_pos(self):
+        # handled by itemChange; do not let TransformMixin write into proxy only
+        return
 
 
-try:
-    _sw78_prev_rebuild_scene = MainWindow.rebuild_scene
-except Exception:
-    _sw78_prev_rebuild_scene = None
-
-
-def _sw78_rebuild_scene(self):
-    try: selected_ids = self._selection_restore_ids or self._capture_selection_ids()
-    except Exception: selected_ids = set()
-    if _sw78_prev_rebuild_scene:
-        _sw78_prev_rebuild_scene(self)
+def _v80_selected_group_item(win):
     try:
-        self.scene.blockSignals(True)
-        _sw78_harden_group_children(self)
-        _sw78_add_group_proxies(self, selected_ids)
-    finally:
-        try: self.scene.blockSignals(False)
-        except Exception: pass
-    try: self.scene.update(); self.refresh_properties()
-    except Exception: pass
+        for it in win.scene.selectedItems():
+            if getattr(it, 'data', lambda *_: None)(0) == 'GRAPHIC_GROUP':
+                return it
+    except Exception:
+        pass
+    return None
 
 
-def _sw78_group_selected_graphics(self):
+def _v80_selected_graphic_models(win):
     models = []
-    try: items = list(self.scene.selectedItems())
+    seen = set()
+    try: items = list(win.scene.selectedItems())
     except Exception: items = []
     for it in items:
         try:
-            if it.data(0) == 'GRAPHIC' and getattr(it, 'model', None) is not None and _sw78_is_user_graphic(it.model):
-                if it.model not in models:
-                    models.append(it.model)
-            elif it.data(0) == 'GRAPHIC_GROUP':
-                for gr in getattr(it, 'models', []) or []:
-                    if gr not in models:
-                        models.append(gr)
+            if it.data(0) == 'GRAPHIC_GROUP':
+                for m in getattr(it, 'models', []) or []:
+                    if id(m) not in seen:
+                        models.append(m); seen.add(id(m))
+            elif it.data(0) == 'GRAPHIC' and getattr(it, 'model', None) is not None:
+                m = it.model
+                if _v80_is_user_graphic(m) and id(m) not in seen:
+                    models.append(m); seen.add(id(m))
         except Exception:
             pass
-    if len(models) < 2:
-        try: QMessageBox.information(self, 'Group Graphics', 'Bitte mindestens zwei eingefügte Grafikobjekte auswählen.')
-        except Exception: pass
-        return
-    try: self.push_undo_state()
-    except Exception: pass
-    import uuid as _sw78_uuid
-    gid = 'G' + _sw78_uuid.uuid4().hex[:8]
-    for gr in models:
-        _sw78_set_gid(gr, gid)
-    try:
-        self._selection_restore_ids = {id(models[0])}
-        self.dirty = True
-        self.rebuild_scene(); self.rebuild_tree(); self.refresh_properties()
-    except Exception:
-        pass
+    return models
 
 
-def _sw78_ungroup_selected_graphics(self):
-    models = _sw78_selected_group_models(self)
-    if not models:
+def _v80_harden_children(win):
+    grouped_ids = set()
+    for models in _v80_group_map(win).values():
+        grouped_ids.update(id(m) for m in models)
+    for it in _v80_scene_graphic_items(win):
         try:
-            for it in self.scene.selectedItems():
-                if it.data(0) == 'GRAPHIC' and getattr(it, 'model', None) is not None:
-                    models.append(it.model)
-        except Exception: pass
-    if not models:
-        return
-    try: self.push_undo_state()
-    except Exception: pass
-    for gr in models:
-        _sw78_set_gid(gr, '')
-    try:
-        self._selection_restore_ids = {id(m) for m in models}
-        self.dirty = True
-        self.rebuild_scene(); self.rebuild_tree(); self.refresh_properties()
-    except Exception:
-        pass
+            if id(it.model) in grouped_ids:
+                it.setSelected(False)
+                it.setFlag(_V80QGraphicsItem.ItemIsSelectable, False)
+                it.setFlag(_V80QGraphicsItem.ItemIsMovable, False)
+                it.setFlag(_V80QGraphicsItem.ItemIsFocusable, False)
+                it.setAcceptedMouseButtons(_V80Qt.NoButton)
+            elif _v80_is_user_graphic(it.model):
+                it.setFlag(_V80QGraphicsItem.ItemIsSelectable, True)
+                it.setFlag(_V80QGraphicsItem.ItemIsMovable, True)
+                it.setFlag(_V80QGraphicsItem.ItemIsFocusable, True)
+                it.setAcceptedMouseButtons(_V80Qt.LeftButton)
+        except Exception:
+            pass
 
-
-def _sw78_transform_group(self, op, value=None):
-    models = _sw78_selected_group_models(self)
-    if not models:
-        return False
-    try: self.push_undo_state()
-    except Exception: pass
-    ox, oy = _sw78_group_origin(self, models)
-    try:
-        if op == 'scale':
-            factor = float(value)
-            step = float(self._edit_grid_step()) if hasattr(self, '_edit_grid_step') else 1.0
-            for gr in models:
-                cx, cy = _sw78_model_center(gr)
-                # scale both position vector and local size, exactly like a vector group
-                old_w = float(getattr(gr, 'w', 0.0) or 0.0)
-                old_h = float(getattr(gr, 'h', 0.0) or 0.0)
-                gr.w = max(step, abs(old_w * factor))
-                gr.h = max(step, abs(old_h * factor))
-                _sw78_set_model_center(gr, ox + (cx - ox) * factor, oy + (cy - oy) * factor)
-        elif op == 'rotate':
-            deg = float(value)
-            rad = math.radians(deg); c = math.cos(rad); s = math.sin(rad)
-            for gr in models:
-                cx, cy = _sw78_model_center(gr)
-                dx, dy = cx - ox, cy - oy
-                _sw78_set_model_center(gr, ox + dx * c - dy * s, oy + dx * s + dy * c)
-                gr.rotation = (float(getattr(gr, 'rotation', 0.0) or 0.0) + deg) % 360.0
-        elif op == 'flip_h':
-            for gr in models:
-                cx, cy = _sw78_model_center(gr)
-                _sw78_set_model_center(gr, ox - (cx - ox), cy)
-                gr.scale_x = -float(getattr(gr, 'scale_x', 1.0) or 1.0)
-        elif op == 'flip_v':
-            for gr in models:
-                cx, cy = _sw78_model_center(gr)
-                _sw78_set_model_center(gr, cx, oy - (cy - oy))
-                gr.scale_y = -float(getattr(gr, 'scale_y', 1.0) or 1.0)
-    except Exception:
-        return False
-    try:
-        self._selection_restore_ids = {id(models[0])}
-        self.dirty = True
-        self.rebuild_scene(); self.rebuild_tree(); self.refresh_properties()
-    except Exception:
-        pass
-    return True
 
 try:
-    _sw78_prev_scale_grid = MainWindow.scale_selected_grid
-    _sw78_prev_rotate = MainWindow.rotate_selected
-    _sw78_prev_flip_h = MainWindow.flip_selected_horizontal
-    _sw78_prev_flip_v = MainWindow.flip_selected_vertical
-    _sw78_prev_refresh_properties = MainWindow.refresh_properties
+    _v80_prev_rebuild_scene = MainWindow.rebuild_scene
 except Exception:
-    _sw78_prev_scale_grid = _sw78_prev_rotate = _sw78_prev_flip_h = _sw78_prev_flip_v = _sw78_prev_refresh_properties = None
+    _v80_prev_rebuild_scene = None
+try:
+    _v80_prev_refresh_properties = MainWindow.refresh_properties
+except Exception:
+    _v80_prev_refresh_properties = None
+try:
+    _v80_prev_scale_grid = MainWindow.scale_selected_grid
+    _v80_prev_rotate = MainWindow.rotate_selected
+    _v80_prev_flip_h = MainWindow.flip_selected_horizontal
+    _v80_prev_flip_v = MainWindow.flip_selected_vertical
+except Exception:
+    _v80_prev_scale_grid = _v80_prev_rotate = _v80_prev_flip_h = _v80_prev_flip_v = None
 
 
-def _sw78_scale_selected_grid(self, direction:int):
+def _v80_rebuild_scene(self):
+    restore_gid = getattr(self, '_v80_restore_group_id', '') or ''
+    if not restore_gid:
+        try:
+            sg = _v80_selected_group_item(self)
+            restore_gid = getattr(sg, 'group_id', '') if sg is not None else ''
+        except Exception:
+            restore_gid = ''
+    if _v80_prev_rebuild_scene:
+        _v80_prev_rebuild_scene(self)
     try:
-        models = _sw78_selected_group_models(self)
-        if models:
-            bb = _sw78_group_bbox_grid(models)
-            if bb:
-                ref = max(1e-9, bb[2] - bb[0], bb[3] - bb[1])
-                step = float(self._edit_grid_step()) if hasattr(self, '_edit_grid_step') else 1.0
-                factor = max(step / ref, (ref + (1 if direction > 0 else -1) * step) / ref)
-                _sw78_transform_group(self, 'scale', factor)
-                return None
+        _v80_harden_children(self)
+        for gid, models in _v80_group_map(self).items():
+            proxy = _V80GroupGraphicItem(self, gid, models)
+            self.scene.addItem(proxy)
+            if gid == restore_gid:
+                proxy.setSelected(True)
+        self._v80_restore_group_id = ''
+    except Exception as e:
+        try: self.statusBar().showMessage(f'Group proxy error: {e}', 5000)
+        except Exception: pass
+
+
+def _v80_group_selected_graphics(self):
+    models = _v80_selected_graphic_models(self)
+    # If already selecting a group, keep it as one object; no nested group.
+    if len(models) < 2:
+        try: _V80QMessageBox.information(self, 'Group Graphics', 'Bitte mindestens zwei Grafikobjekte auswählen.')
+        except Exception: pass
+        return
+    import uuid
+    gid = 'grp_' + uuid.uuid4().hex[:10]
+    try: self.push_undo_state()
+    except Exception: pass
+    for m in models:
+        _v80_set_gid(m, gid)
+    try:
+        self._v80_restore_group_id = gid
+        self.dirty = True
+        self.rebuild_scene(); self.rebuild_tree(); self.refresh_properties()
     except Exception:
         pass
-    return _sw78_prev_scale_grid(self, direction) if _sw78_prev_scale_grid else None
 
 
-def _sw78_rotate_selected(self, deg):
-    try:
-        if _sw78_transform_group(self, 'rotate', deg): return None
+def _v80_ungroup_selected_graphics(self):
+    models = _v80_selected_graphic_models(self)
+    if not models:
+        return
+    try: self.push_undo_state()
     except Exception: pass
-    return _sw78_prev_rotate(self, deg) if _sw78_prev_rotate else None
-
-
-def _sw78_flip_h(self):
+    for m in models:
+        _v80_set_gid(m, '')
     try:
-        if _sw78_transform_group(self, 'flip_h'): return None
-    except Exception: pass
-    return _sw78_prev_flip_h(self) if _sw78_prev_flip_h else None
+        self.dirty = True
+        self.rebuild_scene(); self.rebuild_tree(); self.refresh_properties()
+    except Exception:
+        pass
 
 
-def _sw78_flip_v(self):
+def _v80_scale_selected_grid(self, direction:int):
+    gi = _v80_selected_group_item(self)
+    if gi is not None:
+        try: self.push_undo_state()
+        except Exception: pass
+        bbox = _v80_group_bbox(gi.models)
+        w = max(1e-9, bbox[2] - bbox[0]); h = max(1e-9, bbox[3] - bbox[1])
+        st = _v80_step(self)
+        # same grid-step behavior as a single rectangle: grow/shrink both axes
+        f = min(max(st, w + (st if int(direction) > 0 else -st)) / w,
+                max(st, h + (st if int(direction) > 0 else -st)) / h)
+        gi.scale_by(f)
+        try:
+            self._v80_restore_group_id = gi.group_id
+            self.dirty = True
+            self.rebuild_scene(); self.rebuild_tree(); self.refresh_properties()
+        except Exception: pass
+        return None
+    return _v80_prev_scale_grid(self, direction) if _v80_prev_scale_grid else None
+
+
+def _v80_rotate_selected(self, deg):
+    gi = _v80_selected_group_item(self)
+    if gi is not None:
+        try: self.push_undo_state()
+        except Exception: pass
+        gi.rotate_by(float(deg))
+        try:
+            self._v80_restore_group_id = gi.group_id
+            self.dirty = True
+            self.rebuild_scene(); self.rebuild_tree(); self.refresh_properties()
+        except Exception: pass
+        return None
+    return _v80_prev_rotate(self, deg) if _v80_prev_rotate else None
+
+
+def _v80_flip_h(self):
+    gi = _v80_selected_group_item(self)
+    if gi is not None:
+        try: self.push_undo_state()
+        except Exception: pass
+        gi.flip_horizontal()
+        try:
+            self._v80_restore_group_id = gi.group_id
+            self.dirty = True
+            self.rebuild_scene(); self.rebuild_tree(); self.refresh_properties()
+        except Exception: pass
+        return None
+    return _v80_prev_flip_h(self) if _v80_prev_flip_h else None
+
+
+def _v80_flip_v(self):
+    gi = _v80_selected_group_item(self)
+    if gi is not None:
+        try: self.push_undo_state()
+        except Exception: pass
+        gi.flip_vertical()
+        try:
+            self._v80_restore_group_id = gi.group_id
+            self.dirty = True
+            self.rebuild_scene(); self.rebuild_tree(); self.refresh_properties()
+        except Exception: pass
+        return None
+    return _v80_prev_flip_v(self) if _v80_prev_flip_v else None
+
+
+def _v80_refresh_properties(self):
     try:
-        if _sw78_transform_group(self, 'flip_v'): return None
-    except Exception: pass
-    return _sw78_prev_flip_v(self) if _sw78_prev_flip_v else None
-
-
-def _sw78_refresh_properties(self):
-    try:
-        groups = [it for it in self.scene.selectedItems() if getattr(it, 'data', lambda *_: None)(0) == 'GRAPHIC_GROUP']
-        if groups and hasattr(self, 'form') and self.form is not None:
+        gi = _v80_selected_group_item(self)
+        if gi is not None and hasattr(self, 'form') and self.form is not None:
             while self.form.rowCount(): self.form.removeRow(0)
-            self.form.addRow(QLabel('<b>Selected: GRAPHIC GROUP</b>'))
-            self.form.addRow(QLabel('Gruppe verhält sich als ein Objekt.'))
+            self.form.addRow(_V80QLabel('<b>Selected: GRAPHIC</b>'))
+            self.form.addRow(_V80QLabel('Grouped object'))
+            self.form.addRow(_V80QLabel('Verhält sich wie ein einzelnes Grafikobjekt.'))
             return
     except Exception:
         pass
-    return _sw78_prev_refresh_properties(self) if _sw78_prev_refresh_properties else None
+    return _v80_prev_refresh_properties(self) if _v80_prev_refresh_properties else None
+
+
+def _v80_remove_duplicate_group_ui(self):
+    try:
+        for tb in list(self.findChildren(_V80QToolBar)):
+            try:
+                title = str(tb.windowTitle() or '')
+                texts = [str(a.text() or '') for a in tb.actions()]
+                if title == 'Graphic Group' or any(('Group Graphics' in t or 'Ungroup' in t) for t in texts):
+                    self.removeToolBar(tb); tb.deleteLater()
+            except Exception:
+                pass
+    except Exception:
+        pass
+    try:
+        edit = None
+        for a in self.menuBar().actions():
+            if str(a.text()).replace('&','').lower().startswith('edit'):
+                edit = a.menu(); break
+        if edit is not None:
+            seen = set()
+            for a in list(edit.actions()):
+                t = str(a.text() or '')
+                if 'Group Graphics' in t or 'Ungroup' in t:
+                    if t in seen:
+                        edit.removeAction(a)
+                    seen.add(t)
+    except Exception:
+        pass
+
 
 try:
-    MainWindow.rebuild_scene = _sw78_rebuild_scene
-    MainWindow.group_selected_graphics = _sw78_group_selected_graphics
-    MainWindow.ungroup_selected_graphics = _sw78_ungroup_selected_graphics
-    MainWindow.scale_selected_grid = _sw78_scale_selected_grid
-    MainWindow.rotate_selected = _sw78_rotate_selected
-    MainWindow.flip_selected_horizontal = _sw78_flip_h
-    MainWindow.flip_selected_vertical = _sw78_flip_v
-    MainWindow.refresh_properties = _sw78_refresh_properties
+    MainWindow.rebuild_scene = _v80_rebuild_scene
+    MainWindow.group_selected_graphics = _v80_group_selected_graphics
+    MainWindow.ungroup_selected_graphics = _v80_ungroup_selected_graphics
+    MainWindow.scale_selected_grid = _v80_scale_selected_grid
+    MainWindow.rotate_selected = _v80_rotate_selected
+    MainWindow.flip_selected_horizontal = _v80_flip_h
+    MainWindow.flip_selected_vertical = _v80_flip_v
+    MainWindow.refresh_properties = _v80_refresh_properties
+    _v80_old_init = MainWindow.__init__
+    def _v80_init(self, *a, **kw):
+        _v80_old_init(self, *a, **kw)
+        try: _v80_remove_duplicate_group_ui(self)
+        except Exception: pass
+        try:
+            tb = self.addToolBar('Graphic Group')
+            b = QPushButton('Group Graphics'); b.clicked.connect(self.group_selected_graphics); tb.addWidget(b)
+            b = QPushButton('Ungroup Graphics'); b.clicked.connect(self.ungroup_selected_graphics); tb.addWidget(b)
+        except Exception: pass
+    MainWindow.__init__ = _v80_init
 except Exception:
     pass
