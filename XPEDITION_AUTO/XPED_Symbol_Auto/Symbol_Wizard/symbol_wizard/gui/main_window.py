@@ -10353,3 +10353,79 @@ try:
         _cls.scale_selected = _lh7_scale_selected
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# Liebherr v8: normalize direction semantics globally.
+# User convention:
+#   Rotate CW  = clockwise around canvas origin (0,0):       (x,y) -> ( y,-x)
+#   Rotate CCW = counter-clockwise around canvas origin:      (x,y) -> (-y, x)
+#   Flip H     = mirror at the HORIZONTAL axis (X-axis):      (x,y) -> ( x,-y)
+#   Flip V     = mirror at the VERTICAL axis (Y-axis):        (x,y) -> (-x, y)
+# Text glyphs remain readable; only positions are transformed by _lh6_move_text.
+# This intentionally redefines _lh6_pt/_lh6_side after v7 because the transform
+# backend resolves these globals at call time.
+# ---------------------------------------------------------------------------
+def _lh6_pt(op, x, y):
+    x = float(x); y = float(y)
+    if op[0] == 'rotate':
+        # Positive angle is clockwise in the Symbol Wizard UI.
+        d = int(round(float(op[1]) / 90.0)) % 4
+        if d == 0:
+            return x, y
+        if d == 1:      # 90° CW
+            return y, -x
+        if d == 2:
+            return -x, -y
+        return -y, x    # 90° CCW
+    if op[0] == 'flip_h':
+        # Flip H means mirror at the horizontal X-axis.
+        return x, -y
+    if op[0] == 'flip_v':
+        # Flip V means mirror at the vertical Y-axis.
+        return -x, y
+    if op[0] == 'scale':
+        return x * float(op[1]), y * float(op[2])
+    return x, y
+
+
+def _lh6_side(side, op):
+    s = str(side or '')
+    valid = (PinSide.LEFT.value, PinSide.RIGHT.value, PinSide.TOP.value, PinSide.BOTTOM.value)
+    if s not in valid:
+        return s
+    if op[0] == 'flip_h':
+        # Mirror at X-axis: top/bottom swap, left/right stay.
+        return {PinSide.TOP.value: PinSide.BOTTOM.value,
+                PinSide.BOTTOM.value: PinSide.TOP.value}.get(s, s)
+    if op[0] == 'flip_v':
+        # Mirror at Y-axis: left/right swap, top/bottom stay.
+        return {PinSide.LEFT.value: PinSide.RIGHT.value,
+                PinSide.RIGHT.value: PinSide.LEFT.value}.get(s, s)
+    if op[0] == 'rotate':
+        d = int(round(float(op[1]) / 90.0)) % 4
+        cw = {
+            PinSide.RIGHT.value: PinSide.BOTTOM.value,
+            PinSide.BOTTOM.value: PinSide.LEFT.value,
+            PinSide.LEFT.value: PinSide.TOP.value,
+            PinSide.TOP.value: PinSide.RIGHT.value,
+        }
+        for _ in range(d):
+            s = cw.get(s, s)
+    return s
+
+
+def _lh8_flip_selected_horizontal(self):
+    # Flip H = mirror at horizontal X-axis.
+    _lh7_do_body_transform(self, 'flip_h', None)
+
+
+def _lh8_flip_selected_vertical(self):
+    # Flip V = mirror at vertical Y-axis.
+    _lh7_do_body_transform(self, 'flip_v', None)
+
+try:
+    for _cls in (MainWindow, TemplateEditorDialog):
+        _cls.flip_selected_horizontal = _lh8_flip_selected_horizontal
+        _cls.flip_selected_vertical = _lh8_flip_selected_vertical
+except Exception:
+    pass
