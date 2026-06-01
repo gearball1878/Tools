@@ -3294,29 +3294,130 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
             v = float(minimum)
         return max(float(minimum), self._clean_float(v))
 
-    def _set_body_width_grid(self, body, value):
-        """Set BODY width through a group X-scale, snapped to edit-grid."""
-        new_w = self._snap_to_edit_grid(value, 0.01)
-        old_w = max(1e-9, float(getattr(body, 'width', new_w) or new_w))
-        if abs(new_w - old_w) < 1e-9:
+    def _capture_symbol1_body_resize_state(self, unit=None):
+        """Capture the native Symbol-1 resize contract for BODY based resizing.
+
+        This state is intentionally geometry based instead of patch/matrix based.
+        Template/Mentor body artwork is treated like normal BODY-owned geometry,
+        so width/height changes move and scale it in the same direction as the
+        native Symbol 1 rectangle. This avoids the old counter-running template
+        scale behaviour.
+        """
+        u = unit or self.current_unit
+        b = u.body
+        return {
+            'x': float(b.x), 'y': float(b.y),
+            'w': float(b.width), 'h': float(b.height),
+            'pins': [(p, float(p.x), float(p.y), float(getattr(p, 'length', 1.0) or 1.0), bool(getattr(p, 'auto_dock', True))) for p in getattr(u, 'pins', []) or []],
+            'texts': [(t, float(t.x), float(t.y), float(getattr(t, 'font_size_grid', 0.75) or 0.75)) for t in getattr(u, 'texts', []) or []],
+            'attributes': [(t, float(t.x), float(t.y), float(getattr(t, 'font_size_grid', 0.75) or 0.75)) for t in (getattr(b, 'attribute_texts', {}) or {}).values()],
+            'graphics': [(gr, float(gr.x), float(gr.y), float(getattr(gr, 'w', 0.0) or 0.0), float(getattr(gr, 'h', 0.0) or 0.0),
+                          getattr(gr, 'ctrl_x', None), getattr(gr, 'ctrl_y', None), float(getattr(gr, 'curve_radius', 0.0) or 0.0))
+                         for gr in getattr(u, 'graphics', []) or []],
+        }
+
+    def _apply_symbol1_body_resize_state(self, start_state: dict, body: SymbolBodyModel):
+        """Apply Symbol-1 style resize to native and template-import bodies.
+
+        Coordinate rule used everywhere here:
+        - BODY x/y is the top-left anchor.
+        - BODY height grows downward in model space (y - height).
+        - Graphics keep their native w/h sign; negative line vectors are not
+          normalized because that would invert imported template artwork.
+        """
+        old_x = float(start_state.get('x', body.x)); old_y = float(start_state.get('y', body.y))
+        old_w = max(abs(float(start_state.get('w', body.width))), 1e-9)
+        old_h = max(abs(float(start_state.get('h', body.height))), 1e-9)
+        sx = float(body.width) / old_w
+        sy = float(body.height) / old_h
+        font_factor = max(0.1, (abs(sx) + abs(sy)) / 2.0)
+
+        step = self._edit_grid_step() if hasattr(self, '_edit_grid_step') else 1.0
+        def sg(v):
+            try:
+                return self._clean_float(round(float(v) / step) * step)
+            except Exception:
+                return self._clean_float(v)
+
+        for p, px, py, plen, was_auto_dock in start_state.get('pins', []):
+            # Loose pins remain free. Auto-docked pins behave like Symbol 1 body
+            # pins and follow the resized body side.
+            if getattr(p, 'auto_dock', was_auto_dock):
+                side = str(getattr(p, 'side', PinSide.LEFT.value))
+                if side == PinSide.LEFT.value:
+                    p.x = body.x
+                    p.y = sg(body.y + (py - old_y) * sy)
+                elif side == PinSide.RIGHT.value:
+                    p.x = body.x + body.width
+                    p.y = sg(body.y + (py - old_y) * sy)
+                elif side == getattr(PinSide, 'TOP', PinSide.LEFT).value:
+                    p.x = sg(body.x + (px - old_x) * sx)
+                    p.y = body.y
+                elif side == getattr(PinSide, 'BOTTOM', PinSide.RIGHT).value:
+                    p.x = sg(body.x + (px - old_x) * sx)
+                    p.y = body.y - body.height
+                else:
+                    p.x = sg(body.x + (px - old_x) * sx)
+                    p.y = sg(body.y + (py - old_y) * sy)
+            else:
+                p.x = sg(body.x + (px - old_x) * sx)
+                p.y = sg(body.y + (py - old_y) * sy)
+            p.length = max(0.5, self._clean_float(plen * font_factor))
+            self._move_pin_owned_texts(p, p.x - px, p.y - py)
+
+        for t, tx, ty, fs in start_state.get('texts', []):
+            t.x = sg(body.x + (tx - old_x) * sx)
+            t.y = sg(body.y + (ty - old_y) * sy)
+            try: t.font_size_grid = max(0.1, self._clean_float(fs * font_factor))
+            except Exception: pass
+        for t, tx, ty, fs in start_state.get('attributes', []):
+            t.x = sg(body.x + (tx - old_x) * sx)
+            t.y = sg(body.y + (ty - old_y) * sy)
+            try: t.font_size_grid = max(0.1, self._clean_float(fs * font_factor))
+            except Exception: pass
+        for gr, gx, gy, gw, gh, cx, cy, cr in start_state.get('graphics', []):
+            gr.x = sg(body.x + (gx - old_x) * sx)
+            gr.y = sg(body.y + (gy - old_y) * sy)
+            gr.w = self._clean_float(gw * sx)
+            gr.h = self._clean_float(gh * sy)
+            if cx is not None:
+                try: gr.ctrl_x = self._clean_float(float(cx) * sx)
+                except Exception: pass
+            if cy is not None:
+                try: gr.ctrl_y = self._clean_float(float(cy) * sy)
+                except Exception: pass
+            try: gr.curve_radius = self._clean_float(cr * font_factor)
+            except Exception: pass
+
+        self._invalidate_body_group_transform_cache(self.current_unit)
+
+    def _resize_body_like_symbol1(self, body: SymbolBodyModel, new_w=None, new_h=None, *, push_undo=True, refresh=True):
+        """Resize BODY with one shared implementation for Symbol 1 and template imports."""
+        new_w = float(body.width if new_w is None else self._snap_to_edit_grid(new_w, 0.01))
+        new_h = float(body.height if new_h is None else self._snap_to_edit_grid(new_h, 0.01))
+        if abs(new_w - float(body.width)) < 1e-9 and abs(new_h - float(body.height)) < 1e-9:
             return
-        self.push_undo_state()
+        if push_undo:
+            self.push_undo_state()
         self._selection_restore_ids = self._capture_selection_ids()
-        self._transform_unit_as_body_group('scale_x_to', new_w)
+        st = self._capture_symbol1_body_resize_state(self.current_unit)
+        body.width = self._clean_float(max(0.01, new_w))
+        body.height = self._clean_float(max(0.01, new_h))
+        self._apply_symbol1_body_resize_state(st, body)
         self.dirty = True
-        QTimer.singleShot(0, self.refresh_properties)
+        if refresh:
+            self.update_current_unit_canvas_positions()
+            self.rebuild_tree(); self.rebuild_pin_table()
+            QTimer.singleShot(0, self.refresh_properties)
+            self.schedule_scene_refresh(visual_only=True)
+
+    def _set_body_width_grid(self, body, value):
+        """Set BODY width using the same resize routine for Symbol 1 and templates."""
+        self._resize_body_like_symbol1(body, new_w=value, new_h=body.height)
 
     def _set_body_height_grid(self, body, value):
-        """Set BODY height through a group Y-scale, snapped to edit-grid."""
-        new_h = self._snap_to_edit_grid(value, 0.01)
-        old_h = max(1e-9, float(getattr(body, 'height', new_h) or new_h))
-        if abs(new_h - old_h) < 1e-9:
-            return
-        self.push_undo_state()
-        self._selection_restore_ids = self._capture_selection_ids()
-        self._transform_unit_as_body_group('scale_y_to', new_h)
-        self.dirty = True
-        QTimer.singleShot(0, self.refresh_properties)
+        """Set BODY height using the same resize routine for Symbol 1 and templates."""
+        self._resize_body_like_symbol1(body, new_w=body.width, new_h=value)
 
     def _set_body_rotation_90(self, body, value):
         """Rotate BODY group only to absolute 0/90/180/270 degrees."""
@@ -3815,12 +3916,8 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
             body = self.current_unit.body
             new_w = max(step, self._snap_to_edit_grid(float(body.width) + direction * step, step))
             new_h = max(step, self._snap_to_edit_grid(float(body.height) + direction * step, step))
-            self.push_undo_state()
-            self._selection_restore_ids = self._capture_selection_ids()
-            self._transform_unit_as_body_group('scale_x_to', new_w, refresh=False)
-            self._transform_unit_as_body_group('scale_y_to', new_h, refresh=True)
-            self.dirty = True
-            QTimer.singleShot(0, self.refresh_properties)
+            # Use the same Symbol-1 resize path for native BODY and imported/template BODY artwork.
+            self._resize_body_like_symbol1(body, new_w=new_w, new_h=new_h)
         else:
             self.scale_selected(1.0 + (0.1 if direction > 0 else -0.1))
 
@@ -3828,7 +3925,8 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         self.set_tool(DrawTool.SELECT.value)
         self.push_undo_state()
         if self._selected_body_active():
-            self._transform_unit_as_body_group('scale', float(factor))
+            body = self.current_unit.body
+            self._resize_body_like_symbol1(body, new_w=float(body.width) * float(factor), new_h=float(body.height) * float(factor), push_undo=False)
         else:
             # Fallback for non-body selections: keep existing item-level behaviour if present.
             for it in self.scene.selectedItems():
