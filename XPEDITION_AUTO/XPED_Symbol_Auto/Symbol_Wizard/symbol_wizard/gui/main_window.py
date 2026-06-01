@@ -12800,3 +12800,228 @@ try:
     MainWindow._set_attr_val = _lh48_set_attr_val
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# Liebherr v50: BODY property edits must never leave the BODY selection view.
+# ---------------------------------------------------------------------------
+
+def _lh50_property_panel_kind(self):
+    """Return the currently displayed property panel kind, e.g. BODY.
+
+    This is deliberately independent from the live scene selection because some
+    body-attribute updates temporarily recreate ATTR_* items and Qt can emit a
+    transient multi-selection.  The user's visible context is the authoritative
+    context for property widget callbacks.
+    """
+    try:
+        if not hasattr(self, 'form') or self.form is None or self.form.rowCount() <= 0:
+            return None
+        item = self.form.itemAt(0, QFormLayout.LabelRole) or self.form.itemAt(0, QFormLayout.FieldRole)
+        w = item.widget() if item is not None else None
+        txt = w.text() if hasattr(w, 'text') else ''
+        if isinstance(txt, str) and txt.startswith('Selected:'):
+            return txt.split(':', 1)[1].strip().upper()
+    except Exception:
+        pass
+    return getattr(self, '_lh50_last_property_kind', None)
+
+try:
+    _lh50_prev_refresh_properties = MainWindow.refresh_properties
+except Exception:
+    _lh50_prev_refresh_properties = None
+
+def _lh50_refresh_properties(self):
+    r = None
+    if _lh50_prev_refresh_properties is not None:
+        r = _lh50_prev_refresh_properties(self)
+    try:
+        k = _lh50_property_panel_kind(self)
+        if k:
+            self._lh50_last_property_kind = k
+    except Exception:
+        pass
+    return r
+
+
+def _lh50_body_context(self, sig=None):
+    try:
+        if str(_lh50_property_panel_kind(self) or '').upper() == 'BODY':
+            return True
+    except Exception:
+        pass
+    try:
+        return any(str(s[0]) in ('BODY', 'BODY_GRAPHIC') for s in (sig or []))
+    except Exception:
+        return False
+
+
+def _lh50_restore_body_or_signature(self, sig=None, fs=None, refresh_panel=True):
+    force_body = _lh50_body_context(self, sig)
+    def run():
+        try:
+            if fs is not None and '_lh47_restore_selection_filter_state' in globals():
+                _lh47_restore_selection_filter_state(self, fs)
+            if force_body and '_lh47_select_one_logical_body' in globals():
+                _lh47_select_one_logical_body(self)
+            elif sig and '_lh46_restore_selection_signature' in globals():
+                _lh46_restore_selection_signature(self, sig)
+            if refresh_panel:
+                try: _lh50_refresh_properties(self)
+                except Exception: pass
+            try:
+                if '_lh48_sync_style_toolbar_to_selection' in globals():
+                    _lh48_sync_style_toolbar_to_selection(self)
+            except Exception:
+                pass
+        except Exception as e:
+            try: self.statusBar().showMessage(f'Selection restore failed: {e}', 4000)
+            except Exception: pass
+    try: QTimer.singleShot(0, run)
+    except Exception: run()
+
+# Capture the BODY view before a property widget can trigger transient scene changes.
+def _lh50_dbl(self, value, fn, lo=-999, hi=999, step=.1):
+    w = QDoubleSpinBox(); w.setRange(lo, hi); w.setSingleStep(step); w.setDecimals(3); w.setKeyboardTracking(False)
+    try:
+        w.blockSignals(True); w.setValue(float(value)); w.blockSignals(False)
+    except Exception:
+        try: w.blockSignals(True); w.setValue(0.0); w.blockSignals(False)
+        except Exception: pass
+    def safe(v):
+        sig = _lh46_selected_signature(self) if '_lh46_selected_signature' in globals() else []
+        fs = _lh47_selection_filter_state(self) if '_lh47_selection_filter_state' in globals() else None
+        body_ctx = _lh50_body_context(self, sig)
+        def do():
+            try: fn(float(v))
+            except RuntimeError: return
+            except Exception as e:
+                try: self.statusBar().showMessage(f'Property update failed: {e}', 5000)
+                except Exception: pass
+            finally:
+                if body_ctx: self._lh50_last_property_kind = 'BODY'
+                _lh50_restore_body_or_signature(self, sig=sig, fs=fs, refresh_panel=True)
+        try: QTimer.singleShot(0, do)
+        except Exception: do()
+    w.valueChanged.connect(safe)
+    return w
+
+
+def _lh50_combo(self, items, val, fn):
+    w = QComboBox(); w.blockSignals(True); w.addItems([str(x) for x in items]); w.setCurrentText(str(val)); w.blockSignals(False)
+    def safe(v):
+        # Ignore display-only mismatch marker.
+        if str(v) == globals().get('_LH48_MULTIPLE', '<Multiple>'):
+            return
+        sig = _lh46_selected_signature(self) if '_lh46_selected_signature' in globals() else []
+        fs = _lh47_selection_filter_state(self) if '_lh47_selection_filter_state' in globals() else None
+        body_ctx = _lh50_body_context(self, sig)
+        def do():
+            try: fn(v)
+            except RuntimeError: return
+            except Exception as e:
+                try: self.statusBar().showMessage(f'Property update failed: {e}', 5000)
+                except Exception: pass
+            finally:
+                if body_ctx: self._lh50_last_property_kind = 'BODY'
+                _lh50_restore_body_or_signature(self, sig=sig, fs=fs, refresh_panel=True)
+        try: QTimer.singleShot(0, do)
+        except Exception: do()
+    w.currentTextChanged.connect(safe)
+    return w
+
+
+def _lh50_check(self, value, fn):
+    w = QCheckBox(); w.blockSignals(True); w.setChecked(bool(value)); w.blockSignals(False)
+    def safe(v):
+        sig = _lh46_selected_signature(self) if '_lh46_selected_signature' in globals() else []
+        fs = _lh47_selection_filter_state(self) if '_lh47_selection_filter_state' in globals() else None
+        body_ctx = _lh50_body_context(self, sig)
+        def do():
+            try: fn(bool(v))
+            except RuntimeError: return
+            except Exception as e:
+                try: self.statusBar().showMessage(f'Property update failed: {e}', 5000)
+                except Exception: pass
+            finally:
+                if body_ctx: self._lh50_last_property_kind = 'BODY'
+                _lh50_restore_body_or_signature(self, sig=sig, fs=fs, refresh_panel=True)
+        try: QTimer.singleShot(0, do)
+        except Exception: do()
+    w.toggled.connect(safe)
+    return w
+
+
+def _lh50_set_safe(self, m, a, v):
+    sig = _lh46_selected_signature(self) if '_lh46_selected_signature' in globals() else []
+    fs = _lh47_selection_filter_state(self) if '_lh47_selection_filter_state' in globals() else None
+    body_ctx = _lh50_body_context(self, sig)
+    try: self.push_undo_state()
+    except Exception: pass
+    try:
+        if a == 'rotation': v = (round(float(v) / 15.0) * 15.0) % 360
+        setattr(m, a, v); self.dirty = True
+        try: self.update_current_unit_canvas_positions()
+        except Exception: pass
+        try: self.scene.update(); self.view.viewport().update()
+        except Exception: pass
+    except Exception as e:
+        try: self.statusBar().showMessage(f'Property update failed: {e}', 5000)
+        except Exception: pass
+    if body_ctx: self._lh50_last_property_kind = 'BODY'
+    _lh50_restore_body_or_signature(self, sig=sig, fs=fs, refresh_panel=True)
+
+
+def _lh50_set_attr_vis(self, key, val):
+    sig = _lh46_selected_signature(self) if '_lh46_selected_signature' in globals() else []
+    fs = _lh47_selection_filter_state(self) if '_lh47_selection_filter_state' in globals() else None
+    body_ctx = _lh50_body_context(self, sig)
+    try:
+        try: self.scene.blockSignals(True)
+        except Exception: pass
+        self.push_undo_state()
+        self.current_unit.body.visible_attributes[key] = bool(val)
+        self.dirty = True
+        try: self.update_attribute_items_for_unit()
+        except Exception: pass
+    except Exception as e:
+        try: self.statusBar().showMessage(f'Attribute update failed: {e}', 5000)
+        except Exception: pass
+    finally:
+        try: self.scene.blockSignals(False)
+        except Exception: pass
+        if body_ctx: self._lh50_last_property_kind = 'BODY'
+        _lh50_restore_body_or_signature(self, sig=sig, fs=fs, refresh_panel=True)
+
+
+def _lh50_set_attr_val(self, key, val):
+    sig = _lh46_selected_signature(self) if '_lh46_selected_signature' in globals() else []
+    fs = _lh47_selection_filter_state(self) if '_lh47_selection_filter_state' in globals() else None
+    body_ctx = _lh50_body_context(self, sig)
+    try:
+        try: self.scene.blockSignals(True)
+        except Exception: pass
+        self.push_undo_state()
+        self.current_unit.body.attributes[key] = str(val)
+        self.dirty = True
+        try: self.update_attribute_items_for_unit()
+        except Exception: pass
+    except Exception as e:
+        try: self.statusBar().showMessage(f'Attribute update failed: {e}', 5000)
+        except Exception: pass
+    finally:
+        try: self.scene.blockSignals(False)
+        except Exception: pass
+        if body_ctx: self._lh50_last_property_kind = 'BODY'
+        _lh50_restore_body_or_signature(self, sig=sig, fs=fs, refresh_panel=True)
+
+try:
+    for _cls in (MainWindow, TemplateEditorDialog):
+        _cls.refresh_properties = _lh50_refresh_properties
+        _cls._dbl = _lh50_dbl
+        _cls._combo = _lh50_combo
+        _cls._check = _lh50_check
+        _cls._set = _lh50_set_safe
+    MainWindow._set_attr_vis = _lh50_set_attr_vis
+    MainWindow._set_attr_val = _lh50_set_attr_val
+except Exception:
+    pass
