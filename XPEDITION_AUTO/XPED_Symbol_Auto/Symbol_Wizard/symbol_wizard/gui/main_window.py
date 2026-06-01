@@ -19696,3 +19696,127 @@ try:
         TemplateEditorDialog.dock_pins_to_body = _sw92_dock_pins_to_body
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# Liebherr v93: TemplateEditor safety + force template/import BODY parity
+# ---------------------------------------------------------------------------
+# Fixes:
+# - TemplateEditorDialog inherited MainWindow refresh wrappers in older patches,
+#   but did not expose clear_properties(). Add the tiny compatible method so
+#   opening Tools -> Symbol Templates editieren cannot crash.
+# - Units loaded from template files/runtime templates are normalized with the
+#   same body-owned-graphics flags as Mentor imports. This makes rebuild_scene(),
+#   BodyItem selection, BODY canvas scaling and pin redocking use the same path
+#   as native Symbol 1.
+
+def _sw93_clear_properties(self):
+    try:
+        if not hasattr(self, 'form') or self.form is None:
+            return False
+        while self.form.rowCount():
+            self.form.removeRow(0)
+        return True
+    except Exception:
+        return False
+
+
+def _sw93_mark_unit_as_body_graphics(unit, source='template'):
+    try:
+        if unit is None or getattr(unit, 'body', None) is None:
+            return unit
+        attrs = getattr(unit.body, 'attributes', None)
+        if attrs is None:
+            unit.body.attributes = {}; attrs = unit.body.attributes
+        # Rebuild_scene in this code base checks the Mentor flags for the
+        # imported/template body proxy path. Set both the explicit template flag
+        # and the generic body-graphics flags so every older code path agrees.
+        attrs['TEMPLATE_GRAPHICS_AS_BODY'] = '1'
+        attrs['MENTOR_GRAPHICS_AS_BODY'] = '1'
+        attrs['MENTOR_BODY_GRAPHICS_LOCKED'] = '1'
+        role = 'template_body' if str(source).lower().startswith('template') else 'imported_body'
+        for g in getattr(unit, 'graphics', []) or []:
+            try:
+                marker = str(getattr(g, 'mentor_raw', '') or '')
+                old_role = str(getattr(g, 'graphic_role', '') or '').lower()
+                if marker == '__USER_GRAPHIC__' or old_role == 'user_graphic':
+                    g.graphic_role = 'user_graphic'
+                    g.locked_to_body = False
+                else:
+                    g.graphic_role = role
+                    g.locked_to_body = True
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return unit
+
+try:
+    if 'TemplateEditorDialog' in globals():
+        TemplateEditorDialog.clear_properties = _sw93_clear_properties
+except Exception:
+    pass
+
+try:
+    _sw93_prev_load_template_unit = MainWindow.load_template_unit
+except Exception:
+    _sw93_prev_load_template_unit = None
+
+
+def _sw93_load_template_unit(self, key):
+    if _sw93_prev_load_template_unit is None:
+        return SymbolUnitModel(name=str(key or 'Template'))
+    unit = _sw93_prev_load_template_unit(self, key)
+    try:
+        if str(key or '').strip() not in ('', '<NONE>', 'None', 'NONE'):
+            unit = _sw93_mark_unit_as_body_graphics(unit, 'template')
+            # Keep existing helper migration in sync when available.
+            try: self._lock_template_body_graphics(unit)
+            except Exception: pass
+    except Exception:
+        pass
+    return unit
+
+try:
+    MainWindow.load_template_unit = _sw93_load_template_unit
+except Exception:
+    pass
+
+# Some import paths bypass load_template_unit and append units directly. Normalize
+# before every rebuild so imported/template body graphics always enter the same
+# proxy/scaling path as Symbol 1.
+try:
+    _sw93_prev_rebuild_scene = MainWindow.rebuild_scene
+except Exception:
+    _sw93_prev_rebuild_scene = None
+
+
+def _sw93_rebuild_scene(self, *args, **kwargs):
+    try:
+        units = []
+        try: units = list(getattr(getattr(self, 'symbol', None), 'units', []) or [])
+        except Exception: pass
+        try:
+            cu = getattr(self, 'current_unit', None)
+            if cu is not None and cu not in units:
+                units.append(cu)
+        except Exception: pass
+        for u in units:
+            try:
+                attrs = getattr(getattr(u, 'body', None), 'attributes', {}) or {}
+                has_graphics = bool(getattr(u, 'graphics', []) or [])
+                has_import_template_flag = any(str(attrs.get(k, '0')) == '1' for k in (
+                    'TEMPLATE_GRAPHICS_AS_BODY', 'MENTOR_GRAPHICS_AS_BODY', 'MENTOR_BODY_GRAPHICS_LOCKED', 'MENTOR_HAS_BODY'))
+                locked_graphics = any(bool(getattr(g, 'locked_to_body', False)) or str(getattr(g, 'graphic_role', '') or '').lower() in ('body','template_body','imported_body') for g in getattr(u, 'graphics', []) or [])
+                if has_graphics and (has_import_template_flag or locked_graphics):
+                    _sw93_mark_unit_as_body_graphics(u, 'template')
+            except Exception:
+                pass
+    except Exception:
+        pass
+    if _sw93_prev_rebuild_scene is not None:
+        return _sw93_prev_rebuild_scene(self, *args, **kwargs)
+
+try:
+    MainWindow.rebuild_scene = _sw93_rebuild_scene
+except Exception:
+    pass
