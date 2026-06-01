@@ -192,6 +192,9 @@ class SplitPinManagerDialog(QDialog):
         title = QLabel('All pins of the current symbol / split symbol')
         title.setStyleSheet('font-weight: bold;')
         layout.addWidget(title)
+        self.pin_count_label = QLabel('Gesamtpins: 0')
+        self.pin_count_label.setStyleSheet('color: #555;')
+        layout.addWidget(self.pin_count_label)
 
         filter_row = QHBoxLayout()
         filter_row.addWidget(QLabel('Global filter'))
@@ -221,6 +224,10 @@ class SplitPinManagerDialog(QDialog):
         self.table.verticalHeader().setVisible(False)
         self.table.cellChanged.connect(self.cell_changed)
         self.table.cellDoubleClicked.connect(self.goto_pin_from_cell)
+        try:
+            self.table.itemSelectionChanged.connect(self._update_count_label)
+        except Exception:
+            pass
         self.column_filters = {}
         layout.addWidget(self.table, 1)
 
@@ -474,6 +481,20 @@ class SplitPinManagerDialog(QDialog):
             return 'yes' if item.checkState() == Qt.Checked else 'no'
         return item.text().lower()
 
+    def _update_count_label(self):
+        """Show total/filtered/marked/selected counts for the complete symbol."""
+        try:
+            total = max(0, self.table.rowCount() - 1)
+            filtered = len([r for r in range(1, self.table.rowCount()) if not self.table.isRowHidden(r)])
+            marked = len([r for r in range(1, self.table.rowCount()) if self._is_marked(r)])
+            selected = len({i.row() for i in self.table.selectedItems() if i.row() > 0})
+            units_count = len(getattr(self.symbol, 'units', []) or [])
+            self.pin_count_label.setText(
+                f'Pins gesamt: {total}  |  gefiltert: {filtered}  |  markiert: {marked}  |  ausgewählt: {selected}  |  Units/Parts: {units_count}'
+            )
+        except Exception:
+            pass
+
     def clear_filters(self):
         self.filter_edit.clear()
         for widget in getattr(self, 'column_filters', {}).values():
@@ -517,6 +538,7 @@ class SplitPinManagerDialog(QDialog):
             filter_ok = text_ok and column_ok
             ok = filter_ok and marked_ok
             self.table.setRowHidden(r, not ok)
+        self._update_count_label()
 
     def mark_selected_rows(self):
         self._loading = True
@@ -5097,33 +5119,81 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
             elif it.data(0) == 'GRAPHIC': u.graphics = [g for g in u.graphics if g is not it.model]
         self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
 
-    def validate_pins(self, silent=False):
-        dup = duplicate_pin_numbers(self.symbol)
-        name_map = {}
-        dup_names = []
+    def _total_pin_count(self, symbol=None):
+        symbol = symbol or self.symbol
         try:
-            for u in getattr(self.symbol, 'units', []):
-                for p in getattr(u, 'pins', []):
-                    n = str(getattr(p, 'name', '') or '').strip()
-                    if not n:
-                        continue
-                    if n in name_map and n not in dup_names:
-                        dup_names.append(n)
-                    name_map[n] = True
+            return sum(len(getattr(u, 'pins', []) or []) for u in getattr(symbol, 'units', []) or [])
         except Exception:
-            pass
+            return 0
 
-        msgs = []
-        if dup:
-            msgs.append('Doppelte Pinnummern im Symbol sind verboten: ' + ', '.join(dup))
-        if dup_names:
-            msgs.append('Doppelte Pinnamen im Symbol sind verboten: ' + ', '.join(dup_names))
+    def validate_pins(self, silent=False):
+        """Validate all pins and report counts plus a detailed error list."""
+        total_pins = self._total_pin_count(self.symbol)
+        units = list(getattr(self.symbol, 'units', []) or [])
+        unit_count = len(units)
 
-        if msgs and not silent:
-            QMessageBox.warning(self, 'Pin validation', '\n'.join(msgs))
-        elif not msgs and not silent:
-            QMessageBox.information(self, 'Pin validation', 'Keine doppelten Pinnummern oder Pinnamen gefunden.')
-        return not msgs
+        number_occ = {}
+        name_occ = {}
+        empty_numbers = []
+        empty_names = []
+        for ui, u in enumerate(units, start=1):
+            unit_name = str(getattr(u, 'name', '') or f'Unit {ui}')
+            for pi, p in enumerate(getattr(u, 'pins', []) or [], start=1):
+                number = str(getattr(p, 'number', '') or '').strip()
+                name = str(getattr(p, 'name', '') or '').strip()
+                pin_desc = f'{unit_name} / Pin {pi}: number="{number}", name="{name}"'
+                if number:
+                    number_occ.setdefault(number, []).append(pin_desc)
+                else:
+                    empty_numbers.append(pin_desc)
+                if name:
+                    name_occ.setdefault(name, []).append(pin_desc)
+                else:
+                    empty_names.append(pin_desc)
+
+        duplicate_numbers = {k: v for k, v in number_occ.items() if len(v) > 1}
+        duplicate_names = {k: v for k, v in name_occ.items() if len(v) > 1}
+        ok = not duplicate_numbers and not duplicate_names
+        if silent:
+            return ok
+
+        details = []
+        if duplicate_numbers:
+            details.append('Doppelte Pinnummern:')
+            for number, entries in sorted(duplicate_numbers.items(), key=lambda kv: kv[0]):
+                details.append(f'  Pinnummer {number}:')
+                details.extend('    - ' + e for e in entries)
+        if duplicate_names:
+            if details:
+                details.append('')
+            details.append('Doppelte Pinnamen:')
+            for name, entries in sorted(duplicate_names.items(), key=lambda kv: kv[0].lower()):
+                details.append(f'  Pinname {name}:')
+                details.extend('    - ' + e for e in entries)
+        warnings = []
+        if empty_numbers:
+            warnings.append(f'Pins ohne Pinnummer: {len(empty_numbers)}')
+        if empty_names:
+            warnings.append(f'Pins ohne Pinname: {len(empty_names)}')
+        if warnings:
+            if details:
+                details.append('')
+            details.append('Hinweise / Warnungen:')
+            details.extend('  - ' + w for w in warnings)
+
+        summary = f'Pins gesamt: {total_pins}\nUnits/Parts: {unit_count}'
+        box = QMessageBox(self)
+        box.setWindowTitle('Pin validation')
+        box.setIcon(QMessageBox.Information if ok else QMessageBox.Warning)
+        if ok:
+            box.setText(summary + '\n\nKeine doppelten Pinnummern oder Pinnamen gefunden.')
+        else:
+            box.setText(summary + '\n\nEs wurden Pin-Fehler gefunden, die behoben werden müssen.')
+            box.setInformativeText('Details öffnen, um die betroffenen Pins je Unit/Part zu sehen.')
+        if details:
+            box.setDetailedText('\n'.join(details))
+        box.exec()
+        return ok
 
     def _current_unit_bounds_grid(self):
         u = self.current_unit
@@ -6155,6 +6225,90 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
     def _template_manifest_path(self):
         return self.symbol_templates_dir() / '.template_manifest.json'
 
+    def _normalize_template_manifest(self, data: dict) -> dict:
+        """Repair and canonicalize the metadata-only template manifest."""
+        try:
+            templates_in = data.get('templates') or {}
+            if not isinstance(templates_in, dict):
+                return data
+
+            def leaf_name(value: str) -> str:
+                leaf = str(value or '').replace('\\', '/').split('/')[-1].strip()
+                return leaf or str(value or '').strip()
+
+            templates = {}
+            for key, meta in templates_in.items():
+                meta = dict(meta or {})
+                part = str(meta.get('partition') or '').strip()
+                if not part:
+                    parts = [x.strip() for x in str(key).replace('\\','/').split('/') if x.strip()]
+                    part = parts[0] if len(parts) >= 2 else ''
+                name = leaf_name(meta.get('name') or key)
+                if part and name.upper() == part.upper():
+                    name = leaf_name(key)
+                canonical = f'{part} / {name}' if part and part != name else name
+                meta['name'] = name
+                meta['partition'] = part
+                templates[canonical] = meta
+            data['templates'] = templates
+
+            def is_large_ic_partition(name: str) -> bool:
+                n = str(name or '').upper().replace('-', '_')
+                exclude = ('RELAIS','RELAY','DIODE','FET','TRANS','THYR','TRIAC','IGBT','OPTO','IND_','FILTER','DROSSEL','UEBTR','WIDERSTAND','KONDENSATOR','CAP','STECKER','CONNECTOR','ZUBEHOER','GND','BORDER','INFO','TESTPUNKT')
+                if any(t in n for t in exclude):
+                    return False
+                tokens = ('CONTROLLER','PROZESSOR','PROCESSOR','CPU','SOC','FPGA','CPLD','DSP','ASIC','MCU','MPU','PMIC','BGA','LOGIK','LOGIC','MULTIFUNKTIONS','MUTLIFUNKTIONS','MULTIFUNCTION','VERSTAERKER_IC','AMPLIFIER_IC')
+                return any(t in n for t in tokens)
+
+            def base_from_name(name: str):
+                leaf = leaf_name(name)
+                leaf = re.sub(r'\.(sym|json)$', '', leaf, flags=re.IGNORECASE)
+                leaf = re.sub(r'\.\d{1,3}$', '', leaf)
+                chunks = re.split(r'[_-]+', leaf)
+                if len(chunks) >= 2 and len(chunks[0]) >= 5 and re.search(r'\d', chunks[0]):
+                    return chunks[0]
+                m = re.match(r'^(?P<base>.+?)[_-](?:\d{1,3}[a-z]?|[A-Z]|PWR|POWER|SUPPLY|GND[A-Z]?|VDD|VSS|VCC|PS_POWER|VCCINT_VCU|GPIO|BANK\d*|ADC|DAC|USB|PCIE|ETH|DDR|IO|CORE|CTRL|CONTROL)$', leaf, flags=re.IGNORECASE)
+                if m and len(m.group('base')) >= 3:
+                    return m.group('base')
+                return None
+
+            groups = {}
+            for key, meta in templates.items():
+                part = str((meta or {}).get('partition') or '')
+                name = str((meta or {}).get('name') or key.split(' / ')[-1])
+                if not is_large_ic_partition(part):
+                    continue
+                base = base_from_name(name)
+                if not base:
+                    continue
+                gk = f'Split Symbols / {part} / {base}'
+                groups.setdefault(gk, []).append(key)
+
+            def sort_key(k):
+                nm = leaf_name(k)
+                nm0 = re.sub(r'\.\d{1,3}$', '', nm)
+                tail = re.split(r'[_-]+', nm0)[-1].lower()
+                m = re.search(r'[._-](\d{1,3})([a-zA-Z]?)(?:\.\d+)?$', nm)
+                if m:
+                    suffix = (m.group(2) or '').lower()
+                    suffix_ord = (ord(suffix) - 96) if suffix else 0
+                    return (0, int(m.group(1)), suffix_ord, nm.lower())
+                order = ['control','ctrl','core','bank','gpio','io','ddr','mem','usb','pcie','sata','eth','rgmii','phy','adc','dac','ps','power','pwr','supply','gnd','vss','vdd','vccint','vcu']
+                for i, token in enumerate(order, start=1):
+                    if token in tail or token in nm.lower():
+                        return (1, i, nm.lower())
+                return (2, 9999, nm.lower())
+
+            split_templates = {}
+            for gk, keys in groups.items():
+                unique = sorted(set(keys), key=sort_key)
+                if len(unique) >= 2:
+                    split_templates[gk] = unique
+            data['split_templates'] = split_templates
+        except Exception:
+            pass
+        return data
+
     def load_template_manifest(self) -> dict:
         """Fast metadata-only template index.
 
@@ -6177,6 +6331,11 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
             if mf.exists():
                 data = json.loads(mf.read_text(encoding='utf-8'))
                 if isinstance(data, dict) and 'templates' in data:
+                    data = self._normalize_template_manifest(data)
+                    try:
+                        mf.write_text(json.dumps(data, ensure_ascii=False, separators=(',', ':')), encoding='utf-8')
+                    except Exception:
+                        pass
                     self._template_manifest_cache_key = cache_key
                     self._template_manifest_cache = data
                     return data
@@ -6196,13 +6355,14 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
                 entries = payload if isinstance(payload, list) else [payload]
                 rel = fp.relative_to(root).with_suffix('')
                 parts = list(rel.parts)
-                part = parts[-1] if parts and parts[0] == 'mentor_known' and len(parts) >= 2 else (parts[-2] if len(parts) >= 2 else rel.name)
+                part = parts[1] if parts and parts[0] == 'mentor_known' and len(parts) >= 2 else (parts[-2] if len(parts) >= 2 else rel.name)
                 for i, entry in enumerate(entries):
                     if not isinstance(entry, dict):
                         continue
                     entry_name = str(entry.get('template_name') or entry.get('name') or rel.name).strip() or rel.name
                     key = f'{part} / {entry_name}' if part and part != entry_name else entry_name
                     data['templates'][key] = {'file': str(fp.relative_to(root)).replace('\\\\','/'), 'index': i, 'name': entry_name, 'partition': part}
+            data = self._normalize_template_manifest(data)
             try:
                 mf.write_text(json.dumps(data, ensure_ascii=False, separators=(',', ':')), encoding='utf-8')
             except Exception:
@@ -6328,7 +6488,12 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         manifest = self.load_template_manifest()
         keys = (manifest.get('split_templates') or {}).get(key) or []
         if keys:
-            return [self.load_template_unit(k) for k in keys]
+            units = []
+            for k in keys:
+                u = self.load_template_unit(k)
+                if u is not None and (getattr(u, 'pins', None) or getattr(u, 'graphics', None) or getattr(u, 'texts', None)):
+                    units.append(u)
+            return units
         split_units = (getattr(self, '_external_split_templates', {}) or {}).get(key)
         if split_units:
             return [copy.deepcopy(u) for u in split_units]
@@ -6357,7 +6522,7 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
             files = tuple()
         # Path independent cache key: a release ZIP can contain a ready-made
         # index and still validate after extraction into another directory.
-        cache_key = ('template-index-v4', files)
+        cache_key = ('template-index-v5-pin-count-split-base', files)
         if getattr(self, '_external_template_cache_key', None) == cache_key:
             self._external_split_templates = getattr(self, '_external_split_template_cache', {}) or {}
             return getattr(self, '_external_template_cache', {}) or {}
@@ -6478,6 +6643,16 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
             # 14stage_bincount_01/_02 and lpa0110_adc/_pwr while staying
             # restricted to the large-IC partitions by the caller.
             chunks = re.split(r'[_-]+', s)
+            # Large FPGA/SoC symbols are often split into many bank/power pages as
+            # <device>_<page>.1.  The page token may itself contain underscores
+            # (e.g. PS_POWER or VCCINT_VCU), so grouping by all chunks except the
+            # last loses pages.  When the first chunk looks like a concrete device
+            # code/package, use it as stable split base.  This fixes devices such
+            # as XCZU3EGSFVC784B where 20 library pages must become one template.
+            if len(chunks) >= 2 and len(chunks[0]) >= 5 and re.search(r'\d', chunks[0]):
+                tail = '_'.join(chunks[1:])
+                if re.match(r'^[A-Za-z0-9_+-]{1,32}$', tail):
+                    return chunks[0], tail
             if len(chunks) >= 2 and len(chunks[0]) >= 3:
                 last = chunks[-1]
                 if re.match(r'^(?:\d{1,3}|[A-Z]|[A-Z]{2,6}\d*)$', last, re.IGNORECASE):
@@ -6570,9 +6745,11 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
             def _part_sort(u):
                 nm = str(getattr(u, 'name', '') or '')
                 # stable human order: numeric pages first, then functional pages
-                m = re.search(r'[._-](\d{1,3})(?:\.\d+)?$', nm)
+                m = re.search(r'[._-](\d{1,3})([a-zA-Z]?)(?:\.\d+)?$', nm)
                 if m:
-                    return (0, int(m.group(1)), nm.lower())
+                    suffix = (m.group(2) or '').lower()
+                    suffix_ord = (ord(suffix) - 96) if suffix else 0
+                    return (0, int(m.group(1)), suffix_ord, nm.lower())
                 order = ['control','ctrl','core','bank','gpio','io','ddr','mem','usb','pcie','sata','eth','rgmii','phy','adc','dac','power','pwr','supply','gnd','vss','vdd']
                 low = nm.lower()
                 for i, token in enumerate(order, start=1):

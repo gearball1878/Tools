@@ -5,7 +5,7 @@ from symbol_wizard.models.document import *
 
 root = Path(__file__).parent / 'symbol_wizard' / 'symbol_templates'
 files = tuple(sorted((str(fp.relative_to(root)), fp.stat().st_mtime_ns, fp.stat().st_size) for fp in root.rglob('*.json')))
-cache_key = ('template-index-v4', files)
+cache_key = ('template-index-v5-pin-count-split-base', files)
 
 def coerce_font(font, default_size=0.75):
     if isinstance(font, FontModel): return font
@@ -48,6 +48,10 @@ def split_base_from_name(name):
     m=re.match(r'^(?P<base>[A-Za-z][A-Za-z0-9]{2,})-(?P<part>\d{1,3})$',s)
     if m: return m.group('base'),m.group('part')
     chunks=re.split(r'[_-]+',s)
+    if len(chunks)>=2 and len(chunks[0])>=5 and re.search(r'\d', chunks[0]):
+        tail='_'.join(chunks[1:])
+        if re.match(r'^[A-Za-z0-9_+-]{1,32}$', tail):
+            return chunks[0], tail
     if len(chunks)>=2 and len(chunks[0])>=3:
         last=chunks[-1]
         if re.match(r'^(?:\d{1,3}|[A-Z]|[A-Z]{2,6}\d*)$',last,re.I): return '_'.join(chunks[:-1]),last
