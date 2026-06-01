@@ -19751,3 +19751,162 @@ try:
     MainWindow.load_split_template_units = _sw101_load_split_template_units
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# Liebherr v105: unify Mentor template raster and Wizard canvas/edit grid
+# ---------------------------------------------------------------------------
+# Mentor template JSON coordinates are stored in Symbol-Wizard model units.  For
+# DB-unit Mentor symbols (for example MENTOR_GRID_UNIT=254000) many graphical
+# endpoints are valid tenth-grid coordinates such as 2.2, 3.7 or 4.5.  The old UI
+# only switched the edit/display grid between 1.0 and 0.5 model units, so those
+# valid Mentor endpoints looked off-grid even though the data was correct.  The
+# canvas grid and editor snap now derive the required sub-grid from the active
+# symbol geometry and include 0.010" (0.1 model unit) as a first-class edit grid.
+
+def _sw105_float_values_for_unit(unit):
+    vals = []
+    try:
+        b = unit.body
+        for attr in ('x', 'y', 'width', 'height'):
+            vals.append(getattr(b, attr))
+        for tm in (getattr(b, 'attribute_texts', {}) or {}).values():
+            vals.extend([getattr(tm, 'x', None), getattr(tm, 'y', None), getattr(tm, 'font_size_grid', None)])
+    except Exception:
+        pass
+    for p in getattr(unit, 'pins', []) or []:
+        for attr in ('x', 'y', 'length', 'mentor_x1', 'mentor_y1', 'mentor_x2', 'mentor_y2', 'label_x', 'label_y', 'number_x', 'number_y'):
+            vals.append(getattr(p, attr, None))
+        try:
+            vals.extend([getattr(p.number_font, 'size_grid', None), getattr(p.label_font, 'size_grid', None)])
+        except Exception:
+            pass
+        for tm in (getattr(p, 'attribute_texts', {}) or {}).values():
+            vals.extend([getattr(tm, 'x', None), getattr(tm, 'y', None), getattr(tm, 'font_size_grid', None)])
+    for t in getattr(unit, 'texts', []) or []:
+        vals.extend([getattr(t, 'x', None), getattr(t, 'y', None), getattr(t, 'font_size_grid', None)])
+    for g in getattr(unit, 'graphics', []) or []:
+        for attr in ('x', 'y', 'w', 'h', 'ctrl_x', 'ctrl_y', 'curve_radius'):
+            vals.append(getattr(g, attr, None))
+    out = []
+    for v in vals:
+        try:
+            if v is None:
+                continue
+            f = float(v)
+            if math.isfinite(f):
+                out.append(f)
+        except Exception:
+            pass
+    return out
+
+
+def _sw105_model_grid_step_for_symbol(symbol) -> float:
+    """Smallest useful model-grid step for the active symbol.
+
+    Return value is in Symbol-Wizard model units, where 1.0 normally represents
+    the 0.100" base grid.  Mentor DB-unit templates commonly require 0.1 model
+    units, which corresponds to 0.010" in the edit-grid combo.
+    """
+    try:
+        vals = []
+        mentor_like = False
+        for u in getattr(symbol, 'units', []) or []:
+            vals.extend(_sw105_float_values_for_unit(u))
+            attrs = getattr(getattr(u, 'body', None), 'attributes', {}) or {}
+            if str(attrs.get('MENTOR_GRID_UNIT', '')).strip() not in ('', '10', '10.0'):
+                mentor_like = True
+            if any(str(attrs.get(k, '0')) == '1' for k in ('MENTOR_GRAPHICS_AS_BODY', 'MENTOR_HAS_BODY', 'MENTOR_BODY_GRAPHICS_LOCKED', 'TEMPLATE_GRAPHICS_AS_BODY')):
+                mentor_like = True
+        if not vals:
+            return 1.0
+        # Prefer the coarsest grid that still represents every coordinate without
+        # visible drift. This keeps Symbol 1 on 0.100" while Mentor/passive art
+        # automatically receives the finer 0.010" raster it was authored on.
+        for step in (1.0, 0.5, 0.25, 0.1, 0.05, 0.025):
+            if all(abs((v / step) - round(v / step)) < 1e-6 for v in vals):
+                if mentor_like and step == 1.0:
+                    # Mentor templates with integer-only endpoints still benefit
+                    # from a tenth model grid because arcs/labels/control points
+                    # may be edited later on the native Mentor raster.
+                    return 0.1
+                return step
+        return 0.1 if mentor_like else 0.025
+    except Exception:
+        return 1.0
+
+
+def _sw105_edit_grid_text_for_symbol(symbol) -> str:
+    try:
+        base = float(getattr(symbol, 'grid_inch', 0.100) or 0.100)
+    except Exception:
+        base = 0.100
+    step = _sw105_model_grid_step_for_symbol(symbol)
+    inch = max(0.001, base * step)
+    # Match the existing UI spelling.
+    return f'{inch:.3f}"'
+
+
+def _sw105_ensure_edit_grid_items(self):
+    try:
+        combo = getattr(self, 'edit_grid_combo', None)
+        if combo is None:
+            return
+        existing = {combo.itemText(i) for i in range(combo.count())}
+        wanted = ['0.100"', '0.050"', '0.025"', '0.010"', '0.005"', '0.003"']
+        for text in wanted:
+            if text not in existing:
+                combo.addItem(text)
+                existing.add(text)
+    except Exception:
+        pass
+
+
+try:
+    _sw105_prev_sync_edit_grid_combo_to_symbol = MainWindow._sync_edit_grid_combo_to_symbol
+except Exception:
+    _sw105_prev_sync_edit_grid_combo_to_symbol = None
+
+
+def _sw105_sync_edit_grid_combo_to_symbol(self):
+    if not hasattr(self, 'edit_grid_combo'):
+        return
+    _sw105_ensure_edit_grid_items(self)
+    try:
+        target = _sw105_edit_grid_text_for_symbol(self.symbol)
+    except Exception:
+        target = '0.100"'
+    try:
+        self.edit_grid_combo.blockSignals(True)
+        if self.edit_grid_combo.findText(target) < 0:
+            self.edit_grid_combo.addItem(target)
+        self.edit_grid_combo.setCurrentText(target)
+    finally:
+        try:
+            self.edit_grid_combo.blockSignals(False)
+        except Exception:
+            pass
+    self.set_edit_grid(target)
+
+
+try:
+    MainWindow._sync_edit_grid_combo_to_symbol = _sw105_sync_edit_grid_combo_to_symbol
+except Exception:
+    pass
+
+
+try:
+    _sw105_prev_ribbon = MainWindow._ribbon
+except Exception:
+    _sw105_prev_ribbon = None
+
+
+def _sw105_ribbon(self, *args, **kwargs):
+    result = _sw105_prev_ribbon(self, *args, **kwargs) if _sw105_prev_ribbon is not None else None
+    _sw105_ensure_edit_grid_items(self)
+    return result
+
+
+try:
+    MainWindow._ribbon = _sw105_ribbon
+except Exception:
+    pass
