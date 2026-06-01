@@ -9996,3 +9996,262 @@ try:
         _cls._normalize_unit_body_anchor_to_symbol_origin = _lh5_normalize_noop
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# Liebherr transform correction v6
+# ---------------------------------------------------------------------------
+# Finalized rules for imported/template BODY symbols:
+# - BODY artwork is the real BODY, not a proxy rectangle.
+# - Rotate is baked into the actual BODY graphics around canvas origin (0,0).
+# - Flip H mirrors at the canvas Y-axis, Flip V mirrors at the canvas X-axis.
+# - Pin geometry follows via side remapping so pin text remains readable.
+# - Text/attributes/pin labels move with the group but glyphs are never rotated
+#   or mirrored.
+# - Scaling target dimensions are snapped to the edit grid.
+
+def _lh6_clean(self, v):
+    try:
+        v = round(float(v), 9)
+        return 0.0 if abs(v) < 1e-9 else v
+    except Exception:
+        return v
+
+
+def _lh6_pt(op, x, y):
+    x = float(x); y = float(y)
+    if op[0] == 'rotate':
+        d = int(round(float(op[1]) / 90.0)) % 4
+        if d == 0: return x, y
+        if d == 1: return -y, x
+        if d == 2: return -x, -y
+        return y, -x
+    if op[0] == 'flip_h':
+        return -x, y
+    if op[0] == 'flip_v':
+        return x, -y
+    if op[0] == 'scale':
+        return x * float(op[1]), y * float(op[2])
+    return x, y
+
+
+def _lh6_side(side, op):
+    s = str(side or '')
+    if s not in (PinSide.LEFT.value, PinSide.RIGHT.value, PinSide.TOP.value, PinSide.BOTTOM.value):
+        return s
+    if op[0] == 'flip_h':
+        return {PinSide.LEFT.value: PinSide.RIGHT.value, PinSide.RIGHT.value: PinSide.LEFT.value}.get(s, s)
+    if op[0] == 'flip_v':
+        return {PinSide.TOP.value: PinSide.BOTTOM.value, PinSide.BOTTOM.value: PinSide.TOP.value}.get(s, s)
+    if op[0] == 'rotate':
+        d = int(round(float(op[1]) / 90.0)) % 4
+        ccw = {
+            PinSide.RIGHT.value: PinSide.TOP.value,
+            PinSide.TOP.value: PinSide.LEFT.value,
+            PinSide.LEFT.value: PinSide.BOTTOM.value,
+            PinSide.BOTTOM.value: PinSide.RIGHT.value,
+        }
+        for _ in range(d):
+            s = ccw.get(s, s)
+    return s
+
+
+def _lh6_text_readable(tm):
+    try: tm.rotation = 0.0
+    except Exception: pass
+    try: tm.scale_x = 1.0
+    except Exception: pass
+    try: tm.scale_y = 1.0
+    except Exception: pass
+
+
+def _lh6_move_text(self, tm, op, font_factor=1.0):
+    if tm is None:
+        return
+    try:
+        nx, ny = _lh6_pt(op, tm.x, tm.y)
+        tm.x, tm.y = _lh6_clean(self, nx), _lh6_clean(self, ny)
+    except Exception:
+        pass
+    _lh6_text_readable(tm)
+    try:
+        if op[0] == 'scale':
+            tm.font_size_grid = max(0.1, _lh6_clean(self, float(getattr(tm, 'font_size_grid', 0.75) or 0.75) * float(font_factor)))
+    except Exception:
+        pass
+
+
+def _lh6_graphic_corners(g):
+    x = float(getattr(g, 'x', 0.0) or 0.0)
+    y = float(getattr(g, 'y', 0.0) or 0.0)
+    w = float(getattr(g, 'w', 0.0) or 0.0)
+    h = float(getattr(g, 'h', 0.0) or 0.0)
+    return [(x, y), (x + w, y), (x + w, y - h), (x, y - h)]
+
+
+def _lh6_transform_graphic(self, g, op):
+    if g is None:
+        return
+    shape = str(getattr(g, 'shape', '') or '')
+    clean = lambda v: _lh6_clean(self, v)
+    try:
+        if shape in ('line', 'arc'):
+            x1 = float(getattr(g, 'x', 0.0) or 0.0); y1 = float(getattr(g, 'y', 0.0) or 0.0)
+            x2 = x1 + float(getattr(g, 'w', 0.0) or 0.0)
+            y2 = y1 - float(getattr(g, 'h', 0.0) or 0.0)
+            nx1, ny1 = _lh6_pt(op, x1, y1); nx2, ny2 = _lh6_pt(op, x2, y2)
+            ctrl_x, ctrl_y = getattr(g, 'ctrl_x', None), getattr(g, 'ctrl_y', None)
+            g.x, g.y = clean(nx1), clean(ny1)
+            g.w, g.h = clean(nx2 - nx1), clean(ny1 - ny2)
+            g.rotation = 0.0; g.scale_x = 1.0; g.scale_y = 1.0
+            if ctrl_x is not None and ctrl_y is not None:
+                try:
+                    cx, cy = _lh6_pt(op, x1 + float(ctrl_x), y1 - float(ctrl_y))
+                    g.ctrl_x, g.ctrl_y = clean(cx - nx1), clean(ny1 - cy)
+                except Exception:
+                    pass
+            try:
+                if op[0] in ('flip_h', 'flip_v'):
+                    g.curve_radius = clean(-float(getattr(g, 'curve_radius', 0.0) or 0.0))
+                elif op[0] == 'scale':
+                    g.curve_radius = clean(float(getattr(g, 'curve_radius', 0.0) or 0.0) * max(abs(float(op[1])), abs(float(op[2]))))
+            except Exception:
+                pass
+        else:
+            # Bake rect/ellipse/circle transformations into coordinates instead
+            # of relying on a proxy item rotation.  For 90° rotations the real
+            # BODY extents become the transformed extents directly.
+            pts = [_lh6_pt(op, px, py) for px, py in _lh6_graphic_corners(g)]
+            xs = [p[0] for p in pts]; ys = [p[1] for p in pts]
+            minx, maxx = min(xs), max(xs); miny, maxy = min(ys), max(ys)
+            g.x, g.y = clean(minx), clean(maxy)
+            g.w, g.h = clean(maxx - minx), clean(maxy - miny)
+            g.rotation = 0.0; g.scale_x = 1.0; g.scale_y = 1.0
+    except Exception:
+        pass
+
+
+def _lh6_snap_target(self, value, mn=0.01):
+    try:
+        step = float(self._edit_grid_step())
+        if step <= 0: step = float(getattr(self, 'edit_grid_inch', 0.1) or 0.1)
+        return max(float(mn), round(float(value) / step) * step)
+    except Exception:
+        try: return self._snap_to_edit_grid(value, mn)
+        except Exception: return max(float(mn), float(value))
+
+
+def _lh6_transform_unit_as_body_group(self, op_name, value=None, refresh=True):
+    u = getattr(self, 'current_unit', None) or getattr(self, 'unit', None)
+    if u is None or getattr(u, 'body', None) is None:
+        return
+    try: _lh4_prepare_graphics_as_body(self, u)
+    except Exception: pass
+    try: _lh2_sync_body_model_to_body_graphics(self, u)
+    except Exception: pass
+
+    if op_name == 'rotate':
+        deg = round(float(value or 0.0) / 90.0) * 90.0
+        if abs(deg) < 1e-9:
+            return
+        op = ('rotate', deg)
+    elif op_name == 'flip_h':
+        op = ('flip_h',)
+    elif op_name == 'flip_v':
+        op = ('flip_v',)
+    elif op_name in ('scale', 'scale_x_to', 'scale_y_to'):
+        cur_w = max(1e-9, float(getattr(u.body, 'width', 1.0) or 1.0))
+        cur_h = max(1e-9, float(getattr(u.body, 'height', 1.0) or 1.0))
+        if op_name == 'scale_x_to':
+            target_w = _lh6_snap_target(self, float(value), 0.01); sx, sy = target_w / cur_w, 1.0
+        elif op_name == 'scale_y_to':
+            target_h = _lh6_snap_target(self, float(value), 0.01); sx, sy = 1.0, target_h / cur_h
+        else:
+            f = float(value or 1.0)
+            target_w = _lh6_snap_target(self, cur_w * f, 0.01)
+            target_h = _lh6_snap_target(self, cur_h * f, 0.01)
+            sx, sy = target_w / cur_w, target_h / cur_h
+        op = ('scale', sx, sy)
+    else:
+        return
+
+    font_factor = 1.0
+    if op[0] == 'scale':
+        font_factor = max(0.1, (abs(float(op[1])) + abs(float(op[2]))) / 2.0)
+
+    body_graphics = []
+    try: body_graphics = list(_lh2_body_graphics(self, u))
+    except Exception: body_graphics = []
+
+    if body_graphics:
+        for g in body_graphics:
+            _lh6_transform_graphic(self, g, op)
+        try: _lh2_sync_body_model_to_body_graphics(self, u)
+        except Exception: pass
+        try: u.body.rotation = 0.0; u.body.scale_x = 1.0; u.body.scale_y = 1.0
+        except Exception: pass
+    else:
+        # Internal <NONE>-style body: transform its own rectangle exactly.
+        try:
+            b = u.body
+            pts = [_lh6_pt(op, b.x, b.y), _lh6_pt(op, b.x + b.width, b.y), _lh6_pt(op, b.x + b.width, b.y - b.height), _lh6_pt(op, b.x, b.y - b.height)]
+            xs = [p[0] for p in pts]; ys = [p[1] for p in pts]
+            b.x, b.y = _lh6_clean(self, min(xs)), _lh6_clean(self, max(ys))
+            b.width, b.height = _lh6_clean(self, max(xs)-min(xs)), _lh6_clean(self, max(ys)-min(ys))
+            b.rotation = 0.0; b.scale_x = 1.0; b.scale_y = 1.0
+        except Exception:
+            pass
+
+    for g in getattr(u, 'graphics', []) or []:
+        if g not in body_graphics:
+            _lh6_transform_graphic(self, g, op)
+
+    for p in getattr(u, 'pins', []) or []:
+        try:
+            p.x, p.y = (_lh6_clean(self, v) for v in _lh6_pt(op, p.x, p.y))
+            p.side = _lh6_side(getattr(p, 'side', ''), op)
+            # Pin side now carries geometry. Keep item rotation neutral so pin
+            # number/name/function are painted readable by PinItem.
+            p.rotation = 0.0; p.scale_x = 1.0; p.scale_y = 1.0
+            if op[0] == 'scale':
+                p.length = max(0.1, _lh6_clean(self, float(getattr(p, 'length', 1.0) or 1.0) * font_factor))
+        except Exception:
+            pass
+        for ax, ay in (('label_x', 'label_y'), ('number_x', 'number_y')):
+            if getattr(p, ax, None) is not None and getattr(p, ay, None) is not None:
+                try:
+                    nx, ny = _lh6_pt(op, getattr(p, ax), getattr(p, ay))
+                    setattr(p, ax, _lh6_clean(self, nx)); setattr(p, ay, _lh6_clean(self, ny))
+                except Exception: pass
+        for tm in (getattr(p, 'attribute_texts', {}) or {}).values():
+            _lh6_move_text(self, tm, op, font_factor)
+        try:
+            if op[0] == 'scale':
+                p.number_font.size_grid = max(0.1, _lh6_clean(self, float(getattr(p.number_font, 'size_grid', .45) or .45) * font_factor))
+                p.label_font.size_grid = max(0.1, _lh6_clean(self, float(getattr(p.label_font, 'size_grid', .55) or .55) * font_factor))
+        except Exception:
+            pass
+
+    for tm in getattr(u, 'texts', []) or []:
+        _lh6_move_text(self, tm, op, font_factor)
+    for tm in (getattr(u.body, 'attribute_texts', {}) or {}).values():
+        _lh6_move_text(self, tm, op, font_factor)
+
+    try:
+        if hasattr(u, '_body_group_transform'):
+            delattr(u, '_body_group_transform')
+    except Exception: pass
+    if refresh:
+        # Rebuild after BODY graphic transformations so QGraphicsItems cannot
+        # retain stale proxy/rotation state.
+        try: self.rebuild_scene()
+        except Exception:
+            try: self.update_current_unit_canvas_positions()
+            except Exception: pass
+        try: self.rebuild_tree(); self.rebuild_pin_table()
+        except Exception: pass
+
+try:
+    for _cls in (MainWindow, TemplateEditorDialog):
+        _cls._transform_unit_as_body_group = _lh6_transform_unit_as_body_group
+except Exception:
+    pass
