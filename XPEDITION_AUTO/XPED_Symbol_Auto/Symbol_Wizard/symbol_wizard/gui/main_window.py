@@ -13126,3 +13126,77 @@ try:
     globals()['_lh47_select_one_logical_body'] = _lh51_select_one_logical_body
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# Liebherr v52: synchronize toolbar CW/CCW BODY rotation with BODY property
+# dropdown (0/90/180/270).  The geometric transform stays untouched; only the
+# logical BODY rotation attribute is updated after toolbar rotation so the
+# property panel reflects the actual last 90° operation.
+# ---------------------------------------------------------------------------
+try:
+    _lh52_prev_rotate_selected = MainWindow.rotate_selected
+except Exception:
+    _lh52_prev_rotate_selected = None
+
+
+def _lh52_body_selected_for_rotation(self):
+    try:
+        return bool(self._selected_body_active())
+    except Exception:
+        try:
+            return any(getattr(i, 'data', lambda *_: None)(0) == 'BODY' for i in self.scene.selectedItems())
+        except Exception:
+            return False
+
+
+def _lh52_sync_body_rotation_after_toolbar(self, deg, before_rotation):
+    try:
+        body = getattr(getattr(self, 'current_unit', None), 'body', None)
+        if body is None:
+            return
+        # Keep the UI representation constrained to the four valid values.
+        # Toolbar buttons are 90° steps; non-90 values are snapped defensively.
+        step = int(round(float(deg or 0.0) / 90.0)) * 90
+        before = int(round(float(before_rotation or 0.0) / 90.0)) * 90
+        body.rotation = float((before + step) % 360)
+        try: self._lh50_last_property_kind = 'BODY'
+        except Exception: pass
+    except Exception:
+        pass
+
+
+def _lh52_rotate_selected(self, deg):
+    body_active = _lh52_body_selected_for_rotation(self)
+    body = getattr(getattr(self, 'current_unit', None), 'body', None)
+    try:
+        before = float(getattr(body, 'rotation', 0.0) or 0.0) if (body_active and body is not None) else None
+    except Exception:
+        before = 0.0
+    result = None
+    if _lh52_prev_rotate_selected is not None:
+        result = _lh52_prev_rotate_selected(self, deg)
+    if body_active:
+        _lh52_sync_body_rotation_after_toolbar(self, deg, before)
+        try: self.dirty = True
+        except Exception: pass
+        # Rebuild the property panel asynchronously so the dropdown shows the
+        # new value, while preserving the BODY selection/filter state.
+        try:
+            sig = _lh46_selected_signature(self) if '_lh46_selected_signature' in globals() else []
+            fs = _lh47_selection_filter_state(self) if '_lh47_selection_filter_state' in globals() else None
+            if '_lh50_restore_body_or_signature' in globals():
+                QTimer.singleShot(0, lambda: _lh50_restore_body_or_signature(self, sig=sig, fs=fs, refresh_panel=True))
+            elif '_lh47_restore_selection_after_action' in globals():
+                QTimer.singleShot(0, lambda: _lh47_restore_selection_after_action(self, sig=sig, filter_state=fs, force_body=True, refresh=True))
+            else:
+                QTimer.singleShot(0, self.refresh_properties)
+        except Exception:
+            try: self.refresh_properties()
+            except Exception: pass
+    return result
+
+try:
+    for _cls in (MainWindow, TemplateEditorDialog):
+        _cls.rotate_selected = _lh52_rotate_selected
+except Exception:
+    pass
