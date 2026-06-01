@@ -379,11 +379,18 @@ class PinItem(TransformMixin, QGraphicsItem):
             pass
         painter.setPen(pen_for(line_color, m.line_width, m.line_style, g))
         painter.setBrush(QBrush(Qt.NoBrush))
-        x1, x2 = (-L, 0) if m.side == PinSide.LEFT.value else (0, L)
-        painter.drawLine(QPointF(x1, 0), QPointF(x2, 0))
+        if m.side == PinSide.LEFT.value:
+            x1, y1, x2, y2 = -L, 0, 0, 0
+        elif m.side == PinSide.TOP.value:
+            x1, y1, x2, y2 = 0, -L, 0, 0
+        elif m.side == PinSide.BOTTOM.value:
+            x1, y1, x2, y2 = 0, L, 0, 0
+        else:
+            x1, y1, x2, y2 = 0, 0, L, 0
+        painter.drawLine(QPointF(x1, y1), QPointF(x2, y2))
         if m.inverted:
             r = .18 * g
-            painter.drawEllipse(QPointF((-r if m.side == PinSide.LEFT.value else r), 0), r, r)
+            painter.drawEllipse(QPointF((-r if m.side == PinSide.LEFT.value else (r if m.side == PinSide.RIGHT.value else 0)), (0 if m.side in (PinSide.LEFT.value, PinSide.RIGHT.value) else (-r if m.side == PinSide.TOP.value else r))), r, r)
         num_color = getattr(m.number_font, 'color', (0, 0, 0))
         try:
             if getattr(self.window.symbol, 'template_name', '') == 'mentor_native_origin' and is_default_black(num_color):
@@ -393,7 +400,7 @@ class PinItem(TransformMixin, QGraphicsItem):
         painter.setPen(pen_for(num_color, m.line_width, m.line_style, g))
         painter.setFont(QFont(m.number_font.family, max(6, int(g * m.number_font.size_grid * .45))))
         if m.visible_number:
-            painter.drawText(QRectF(min(x1, x2), -.85 * g, abs(x2 - x1), .5 * g), Qt.AlignCenter, m.number)
+            painter.drawText(QRectF(min(x1, x2) - .4*g, min(y1, y2) - .85 * g, max(abs(x2 - x1), .8*g), max(abs(y2-y1), .5*g)), Qt.AlignCenter, m.number)
         # Pin name and pin function are independent display attributes.
         # If both are visible, both are shown; if only one is visible, only that
         # value is shown. This keeps Template/Wizard visibility controls honest.
@@ -414,6 +421,10 @@ class PinItem(TransformMixin, QGraphicsItem):
             painter.setFont(QFont(m.label_font.family, max(8, int(g * m.label_font.size_grid * .45))))
             if m.side == PinSide.LEFT.value:
                 painter.drawText(QRectF(.25 * g, -.35 * g, 6 * g, .7 * g), Qt.AlignVCenter | Qt.AlignLeft, label)
+            elif m.side == PinSide.TOP.value:
+                painter.drawText(QRectF(-3 * g, .15 * g, 6 * g, .7 * g), Qt.AlignCenter, label)
+            elif m.side == PinSide.BOTTOM.value:
+                painter.drawText(QRectF(-3 * g, -.85 * g, 6 * g, .7 * g), Qt.AlignCenter, label)
             else:
                 painter.drawText(QRectF(-6.25 * g, -.35 * g, 6 * g, .7 * g), Qt.AlignVCenter | Qt.AlignRight, label)
         if self.isSelected():

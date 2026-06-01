@@ -15,7 +15,7 @@ from symbol_wizard.graphics.scene import SymbolScene, SHEET_INCHES, sheet_rect_f
 from symbol_wizard.graphics.view import SymbolView
 from symbol_wizard.graphics.items import BodyItem, PinItem, TextItem, GraphicItem, pen_for
 from symbol_wizard.io.json_store import save_library, load_library, save_symbol, load_symbol
-from symbol_wizard.io.mentor_sym import import_mentor_sym, export_mentor_sym
+from symbol_wizard.io.mentor_sym import import_mentor_sym, import_mentor_symbols, export_mentor_sym
 
 
 class NoWheelOnValueWidgets(QObject):
@@ -6134,20 +6134,23 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         if not p:
             return
         try:
-            s = import_mentor_sym(p)
+            symbols = import_mentor_symbols(p)
         except Exception as exc:
             QMessageBox.critical(self, 'Import Mentor Symbol .sym', f'Die Mentor Symboldatei konnte nicht importiert werden:\n{exc}')
             return
-        # Imported symbols are initially aligned by the BODY anchor, never by pins or other elements.
-        self.normalize_symbol_origins_for_import(s)
-        s.name = self.library.unique_import_name(s.name)
-        self.library.symbols.append(s)
+        imported = 0
+        for s in symbols:
+            # Imported symbols are initially aligned by the BODY anchor, never by pins or other elements.
+            self.normalize_symbol_origins_for_import(s)
+            s.name = self.library.unique_import_name(s.name)
+            self.library.symbols.append(s)
+            imported += 1
         self.library.current_symbol_index = len(self.library.symbols) - 1
         self.current_unit_index = 0
         self.dirty = True
         self.undo_stack.clear(); self.redo_stack.clear()
         self.rebuild_all()
-        self.statusBar().showMessage(f'Mentor Symbol importiert: {Path(p).name}', 5000)
+        self.statusBar().showMessage(f'Mentor Import abgeschlossen: {imported} Symbol(e) aus {Path(p).name}', 5000)
 
     def export_current_mentor_symbol(self):
         if not self.validate_pins():

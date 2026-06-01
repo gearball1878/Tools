@@ -80,6 +80,31 @@ def _mentor_revision_timestamp(dt: datetime | None = None) -> str:
     return f"{dt.hour}:{dt.minute:02d}:{dt.second:02d}_{dt.month}-{dt.day}-{dt.year % 100:02d}"
 
 
+
+
+def _logical_mentor_lines(text: str) -> list[str]:
+    """Return Mentor ASCII records with continuation rows merged.
+
+    Native Mentor line/polyline records can be wrapped over multiple physical
+    rows.  Continuations either start with `+` or are bare, indented numeric
+    rows.  Import and grid detection must see the full logical record,
+    otherwise long polylines lose their tail points.
+    """
+    out: list[str] = []
+    for raw in text.splitlines():
+        stripped = raw.strip()
+        if not stripped:
+            continue
+        is_plus = stripped.startswith('+')
+        is_numeric_cont = bool(out) and raw[:1].isspace() and bool(re.match(r"^[+\-]?\d", stripped))
+        if (is_plus or is_numeric_cont) and out:
+            cont = stripped[1:].strip() if is_plus else stripped
+            if cont:
+                out[-1] = out[-1].rstrip() + " " + cont
+        else:
+            out.append(stripped)
+    return out
+
 def _json_payload(line: str) -> dict[str, Any] | None:
     try:
         _tag, payload = line.split("\t", 1)
@@ -129,6 +154,42 @@ def import_mentor_sym(path: str | Path) -> SymbolModel:
     s.template_name = MENTOR_NATIVE_TEMPLATE
     return s
 
+
+
+
+def import_mentor_symbols(path: str | Path) -> list[SymbolModel]:
+    """Import one Mentor symbol, a split-symbol ZIP, or a library ZIP.
+
+    `import_mentor_sym()` keeps the legacy single-symbol contract.  This helper
+    is used by the GUI so ZIP archives like `SymbolLibs.zip` with nested
+    `*/sym/*.1` files are imported as many symbols instead of one huge split
+    symbol.
+    """
+    p = Path(path)
+    if p.suffix.lower() != ".zip":
+        return [import_mentor_sym(p)]
+    with zipfile.ZipFile(p, "r") as zf:
+        names = [n for n in zf.namelist() if not n.endswith("/") and not Path(n).name.startswith(".")]
+    mentor_names = [n for n in names if re.search(r"(?:\.sym|\.\d+)$", Path(n).name, re.I)]
+    nested = any("/" in n.strip("/") for n in mentor_names)
+    if nested or len(mentor_names) > 20:
+        symbols: list[SymbolModel] = []
+        with zipfile.ZipFile(p, "r") as zf:
+            for n in sorted(mentor_names, key=lambda x: _natural_sort_key(x)):
+                try:
+                    text = zf.read(n).decode("utf-8", errors="ignore")
+                    sym = _import_native_single(text, Path(n))
+                    sym.template_name = MENTOR_NATIVE_TEMPLATE
+                    symbols.append(sym)
+                except Exception:
+                    # Keep batch import robust: a broken legacy file must not block
+                    # the whole library import.  The failed file can be inspected
+                    # separately with the single-symbol importer.
+                    continue
+        if not symbols:
+            raise ValueError("ZIP enthält keine lesbaren Mentor Symboldateien.")
+        return symbols
+    return [import_mentor_sym(p)]
 
 def _import_mentor_zip(path: Path) -> SymbolModel:
     units: list[SymbolUnitModel] = []
@@ -213,8 +274,7 @@ def _to_mentor(v: float, z: float) -> int:
 def _numeric_tokens_for_grid_detection(text: str) -> list[int]:
     vals: list[int] = []
     coord_tags = {"D", "U", "b", "T", "P", "L", "A", "l", "c", "a"}
-    for raw in text.splitlines():
-        line = raw.strip()
+    for line in _logical_mentor_lines(text):
         if not line or line.startswith("|"):
             # TVRNT/variant rows are not part of the 0° master geometry.
             continue
@@ -357,8 +417,7 @@ def _import_native_single(text: str, path: Path) -> SymbolModel:
     mentor_raw_unknown: list[str] = []
     body_box_seen = False
 
-    for raw in text.splitlines():
-        line = raw.strip()
+    for line in _logical_mentor_lines(text):
         if not line or line == "E":
             continue
         # Use only the 0° master representation. Mentor TVRNT lines are historical
@@ -405,7 +464,11 @@ def _import_native_single(text: str, path: Path) -> SymbolModel:
                 # Mentor line/polyline: l <point-count> x1 y1 x2 y2 [x3 y3 ...]
                 try:
                     npts = int(float(parts[1]))
-                    nums = [float(v) for v in parts[2:2 + 2 * npts]]
+                    nums = [float(v) for v in parts[2:] if re.match(r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$", v)]
+                    if len(nums) >= 2 * npts:
+                        nums = nums[:2 * npts]
+                    if len(nums) < 4:
+                        raise ValueError("Mentor l record has too few coordinates")
                     pts = list(zip(nums[0::2], nums[1::2]))
                     graphics.extend(_graphic_line_from_points(pts, z, line))
                 except Exception:
@@ -430,13 +493,20 @@ def _import_native_single(text: str, path: Path) -> SymbolModel:
                 pid = int(parts[1])
                 x1, y1, x2, y2 = map(float, parts[2:6])
                 side_code = parts[7]
-                side = "right" if side_code == "3" or x1 > x2 else "left"
-                edge_x = x2 if side == "left" else x2
-                length = abs(x2 - x1) or abs(y2 - y1) or z * 3
+                dx, dy = x2 - x1, y2 - y1
+                if abs(dx) >= abs(dy):
+                    side = "right" if side_code == "3" or x1 > x2 else "left"
+                else:
+                    side = "top" if side_code == "1" or y1 < y2 else "bottom"
+                edge_x, edge_y = x2, y2
+                length = abs(dx) or abs(dy) or z * 3
                 pins_tmp[pid] = {
                     "number": str(pid), "name": f"PIN{pid}", "function": f"PIN{pid}",
                     "pin_type": "BIDI", "side": side,
-                    "x": _to_grid(edge_x, z), "y": _to_grid(y1, z), "length": _to_grid(length, z),
+                    "x": _to_grid(edge_x, z), "y": _to_grid(edge_y, z), "length": _to_grid(length, z),
+                    "mentor_x1": _to_grid(x1, z), "mentor_y1": _to_grid(y1, z),
+                    "mentor_x2": _to_grid(x2, z), "mentor_y2": _to_grid(y2, z),
+                    "mentor_side_code": str(side_code),
                 }
             elif tag == "L" and len(parts) >= 10 and pins_tmp:
                 # Pin label follows the most recently declared pin in native files.
@@ -689,29 +759,39 @@ def _export_native_unit(symbol: SymbolModel, unit: SymbolUnitModel, index: int, 
         y = _to_mentor(pin.y, z)
         length = max(1, _to_mentor(pin.length, z))
         if pin.side == "right":
-            x1, x2, side_code = edge + length, edge, 3
-            lx, lalign = edge - 5, 8
-            ax_num, anum_align = edge + 10, 3
-            ax_type, atype_align = edge + length, 2
+            x1, y1, x2, y2, side_code = edge + length, y, edge, y, 3
+            lx, ly, lalign = edge - 5, y, 8
+            ax_num, ay_num, anum_align = edge + 10, y, 3
+            ax_type, ay_type, atype_align = edge + length, y, 2
+        elif pin.side == "top":
+            x1, y1, x2, y2, side_code = edge, y + length, edge, y, 1
+            lx, ly, lalign = edge, y - 5, 5
+            ax_num, ay_num, anum_align = edge, y + 10, 5
+            ax_type, ay_type, atype_align = edge, y + length, 5
+        elif pin.side == "bottom":
+            x1, y1, x2, y2, side_code = edge, y - length, edge, y, 0
+            lx, ly, lalign = edge, y + 5, 5
+            ax_num, ay_num, anum_align = edge, y - 10, 5
+            ax_type, ay_type, atype_align = edge, y - length, 5
         else:
-            x1, x2, side_code = edge - length, edge, 2
-            lx, lalign = edge + 5, 2
-            ax_num, anum_align = edge - 10, 9
-            ax_type, atype_align = edge - length, 8
-        lines.append(f"P {idx} {x1} {y} {x2} {y} 0 {side_code} 0")
-        lines.append(f"L {lx} {y} 10 0 {lalign} 0 1 0 {pin.name}")
-        lines.append(f"A {ax_num} {y} 8 0 {anum_align} 3 #={pin.number}")
-        lines.append(f"A {ax_type} {y} 10 0 {atype_align} 0 PINTYPE={_pin_type_to_mentor(pin.pin_type)}")
+            x1, y1, x2, y2, side_code = edge - length, y, edge, y, 2
+            lx, ly, lalign = edge + 5, y, 2
+            ax_num, ay_num, anum_align = edge - 10, y, 9
+            ax_type, ay_type, atype_align = edge - length, y, 8
+        lines.append(f"P {idx} {x1} {y1} {x2} {y2} 0 {side_code} 0")
+        lines.append(f"L {lx} {ly} 10 0 {lalign} 0 1 0 {pin.name}")
+        lines.append(f"A {ax_num} {ay_num} 8 0 {anum_align} 3 #={pin.number}")
+        lines.append(f"A {ax_type} {ay_type} 10 0 {atype_align} 0 PINTYPE={_pin_type_to_mentor(pin.pin_type)}")
         # Export pin function separately from pin name. Mentor treats these as
         # independent pin attributes; visibility 0 keeps the symbol native-clean.
         if str(getattr(pin, 'function', '') or '').strip() and str(pin.function) != str(pin.name):
-            lines.append(f"A {ax_type} {y} 10 0 {atype_align} 0 PINFUNCTION={pin.function}")
+            lines.append(f"A {ax_type} {ay_type} 10 0 {atype_align} 0 PINFUNCTION={pin.function}")
         # Preserve additional invisible/custom pin attributes when present.
         for an, av in sorted((getattr(pin, 'attributes', {}) or {}).items()):
             if str(an).upper() in ('#', 'PINTYPE', 'PINFUNCTION', 'FUNCTION', 'PIN_FUNCTION'):
                 continue
             vis = 3 if (getattr(pin, 'visible_attributes', {}) or {}).get(an, False) else 0
-            lines.append(f"A {ax_type} {y} 10 0 {atype_align} {vis} {an}={av}")
+            lines.append(f"A {ax_type} {ay_type} 10 0 {atype_align} {vis} {an}={av}")
 
     lines.append("E")
     return "\n".join(lines) + "\n"

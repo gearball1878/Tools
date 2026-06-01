@@ -6,7 +6,7 @@ from typing import Dict, List, Tuple
 class PinType(str, Enum):
     IN='IN'; OUT='OUT'; BIDI='BIDI'; PASSIVE='PASSIVE'; POWER='POWER'; GROUND='GROUND'; ANALOG='ANALOG'
 class PinSide(str, Enum):
-    LEFT='left'; RIGHT='right'
+    LEFT='left'; RIGHT='right'; TOP='top'; BOTTOM='bottom'
 class OriginMode(str, Enum):
     BOTTOM_LEFT='bottom_left'; BOTTOM_RIGHT='bottom_right'; CENTER='center'; TOP_LEFT='top_left'; TOP_RIGHT='top_right'
 class DrawTool(str, Enum):
@@ -67,6 +67,10 @@ class PinModel(TransformModel):
     label_font: FontModel=field(default_factory=lambda: FontModel(size_grid=0.55))
     attributes: Dict[str,str]=field(default_factory=dict)
     visible_attributes: Dict[str,bool]=field(default_factory=dict)
+    # Native Mentor endpoint metadata for loss-minimized import/export/debug.
+    mentor_x1: float|None=None; mentor_y1: float|None=None
+    mentor_x2: float|None=None; mentor_y2: float|None=None
+    mentor_side_code: str=''
 
 @dataclass
 class TextModel(TransformModel):
