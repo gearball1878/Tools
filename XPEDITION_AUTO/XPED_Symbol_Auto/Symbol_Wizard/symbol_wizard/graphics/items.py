@@ -850,7 +850,7 @@ class GraphicItem(TransformMixin, QGraphicsItem):
             painter.drawRect(QRectF(0, 0, m.w * g, m.h * g))
         elif m.shape in ('ellipse', 'circle'):
             painter.drawEllipse(QRectF(0, 0, m.w * g, m.h * g))
-        if self.isSelected() and not getattr(self.model, 'locked_to_body', False):
+        if self.isSelected() and (not getattr(self.model, 'locked_to_body', False) or getattr(self.window, 'is_template_editor', False)):
             painter.save()
             painter.setPen(QPen(QColor(80, 80, 80), 1, Qt.DashLine))
             painter.drawRect(self._rect())

@@ -56,6 +56,10 @@ class GraphicModel(TransformModel):
     # True for imported Mentor body artwork: geometry is part of the BODY group
     # and is intentionally not individually editable/selectable.
     locked_to_body: bool=False
+    # Role separates template/Mentor body artwork from user-drawn graphics.
+    # In the Symbol Wizard only template_body graphics are treated as BODY;
+    # user_graphic remains a normal selectable/editable graphic.
+    graphic_role: str=''
     style: StyleModel=field(default_factory=StyleModel)
 
 @dataclass

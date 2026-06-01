@@ -1266,10 +1266,14 @@ class TemplateEditorDialog(QDialog):
         if not name: return
         self._loading_template = True
         self.unit = self.main.load_template_unit(name); self.symbol.units=[self.unit]
-        # In the Template Editor all body artwork primitives are deliberately editable.
-        for _g in getattr(self.unit, 'graphics', []) or []:
-            try: _g.locked_to_body = False
-            except Exception: pass
+        # Template graphics remain Body-owned.  They are individually editable only
+        # because this is the Template Editor; when the same template is used in the
+        # Symbol Wizard, the graphics are selected/moved only through the Body.
+        try:
+            self.unit.body.attributes['TEMPLATE_GRAPHICS_AS_BODY'] = '1'
+        except Exception:
+            pass
+        self._lock_template_body_graphics(self.unit)
         if hasattr(self, 'origin_combo'):
             self.origin_combo.blockSignals(True)
             self.origin_combo.setCurrentText(getattr(self.symbol, 'origin', OriginMode.CENTER.value))
@@ -1289,9 +1293,15 @@ class TemplateEditorDialog(QDialog):
         part = self.partition_combo.currentText().strip() if hasattr(self, 'partition_combo') else ''
         sym_name = self.rename_edit.text().strip() or self.template_combo.currentText() or 'Template'
         name = f'{part} / {sym_name}' if part and part != 'General' else sym_name
-        # Saved templates are editable templates, not locked Wizard body groups.
+        # Every graphic primitive stored by the Template Editor is part of the
+        # template Body.  The Template Editor may edit the primitives individually;
+        # the Symbol Wizard must treat them as one Body-owned graphic group.
+        try:
+            self.unit.body.attributes['TEMPLATE_GRAPHICS_AS_BODY'] = '1'
+        except Exception:
+            pass
         for _g in getattr(self.unit, 'graphics', []) or []:
-            try: _g.locked_to_body = False
+            try: _g.locked_to_body = True
             except Exception: pass
         self.templates[name] = copy.deepcopy(self.unit)
         if hasattr(self.main, 'merge_save_template_to_file'):
@@ -1488,6 +1498,10 @@ class TemplateEditorDialog(QDialog):
             tm.text = f'{key}: {value}' if str(value).strip() else str(key)
         self.dirty = True
         self.rebuild_scene()
+
+    def rebuild_props(self):
+        """Compatibility wrapper for older callbacks: rebuild the property panel."""
+        return self.refresh_properties()
 
     def _line(self, value, fn):
         w=QLineEdit(str(value)); w.returnPressed.connect(lambda widget=w: fn(widget.text())); return w
@@ -1778,6 +1792,62 @@ class TemplateEditorDialog(QDialog):
         QTimer.singleShot(0, self.refresh_properties)
 
 
+
+    def _body_graphics_are_locked(self, unit) -> bool:
+        """True when a unit's graphics originate from a template/Mentor body.
+
+        In the normal Symbol Wizard these graphic primitives are the visible BODY,
+        not standalone user graphics.  They may only be edited in the Template
+        Editor.  This is especially important for split-symbol templates loaded
+        through the fast manifest path, where older cached JSON still contains
+        locked_to_body=false on the primitive records.
+        """
+        try:
+            attrs = getattr(getattr(unit, 'body', None), 'attributes', {}) or {}
+            if str(attrs.get('MENTOR_GRAPHICS_AS_BODY', '0')) == '1':
+                return True
+            if str(attrs.get('MENTOR_BODY_GRAPHICS_LOCKED', '0')) == '1':
+                return True
+            if str(attrs.get('MENTOR_HAS_BODY', '0')) == '1':
+                return True
+            if str(attrs.get('TEMPLATE_GRAPHICS_AS_BODY', '0')) == '1':
+                return True
+        except Exception:
+            pass
+        return False
+
+    def _lock_template_body_graphics(self, unit):
+        """Normalize template/import body artwork without locking user graphics.
+
+        A unit may contain two different graphic classes:
+        - template_body: artwork from Template Editor / Mentor import; it is the BODY
+          in the Symbol Wizard and is not individually selectable there.
+        - user_graphic: graphic objects drawn later in the Symbol Wizard; these stay
+          normal selectable/editable GRAPHIC objects.
+
+        Older templates only had body-level flags such as TEMPLATE_GRAPHICS_AS_BODY.
+        For those legacy records, unmarked graphics are migrated to template_body.
+        User-created graphics are explicitly marked when created/pasted and are
+        therefore never re-locked by this migration.
+        """
+        try:
+            if self._body_graphics_are_locked(unit):
+                for _g in getattr(unit, 'graphics', []) or []:
+                    try:
+                        role = str(getattr(_g, 'graphic_role', '') or '')
+                        marker = str(getattr(_g, 'mentor_raw', '') or '')
+                        if role == 'user_graphic' or marker == '__USER_GRAPHIC__':
+                            _g.graphic_role = 'user_graphic'
+                            _g.locked_to_body = False
+                        else:
+                            _g.graphic_role = 'template_body'
+                            _g.locked_to_body = True
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        return unit
+
     def _capture_selection_ids(self):
         return {id(getattr(i, 'model', None)) for i in self.scene.selectedItems() if getattr(i, 'model', None) is not None}
 
@@ -1958,7 +2028,9 @@ class TemplateEditorDialog(QDialog):
         self.unit.pins.append(p); self.dock_pins_to_body(self.unit); self.rebuild_scene()
     def add_graphic(self, tool, x, y):
         self.push_undo_state(); shape={DrawTool.LINE.value:'line',DrawTool.RECT.value:'rect',DrawTool.ELLIPSE.value:'ellipse'}[tool]
-        self.unit.graphics.append(GraphicModel(shape=shape, x=x, y=y, w=2, h=0 if shape=='line' else 2)); self.rebuild_scene()
+        model = GraphicModel(shape=shape, x=x, y=y, w=2, h=0 if shape=='line' else 2)
+        model.locked_to_body = False; model.graphic_role = 'user_graphic'; model.mentor_raw = '__USER_GRAPHIC__'
+        self.unit.graphics.append(model); self.rebuild_scene()
     def select_model_after_rebuild(self, model): pass
     def new_body(self): self.push_undo_state(); self.unit.body=SymbolBodyModel(); self.rebuild_scene()
     def delete_body(self): self.push_undo_state(); self.unit.body.width=0.01; self.unit.body.height=0.01; self.rebuild_scene()
@@ -1992,7 +2064,9 @@ class TemplateEditorDialog(QDialog):
                     m.name = self._unique_pin_name(getattr(m, 'name', 'PIN'))
                 self.unit.pins.append(m)
             elif kind=='TEXT': self.unit.texts.append(m)
-            elif kind=='GRAPHIC': self.unit.graphics.append(m)
+            elif kind=='GRAPHIC':
+                m.locked_to_body = False; m.graphic_role = 'user_graphic'; m.mentor_raw = '__USER_GRAPHIC__'
+                self.unit.graphics.append(m)
             elif kind=='BODY': self.unit.body=m
         self.clipboard_is_cut = False
         self.rebuild_scene()
@@ -3815,6 +3889,62 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         self.unit_tabs.blockSignals(False)
         self.update_name_editors()
 
+
+    def _body_graphics_are_locked(self, unit) -> bool:
+        """True when a unit's graphics originate from a template/Mentor body.
+
+        In the normal Symbol Wizard these graphic primitives are the visible BODY,
+        not standalone user graphics.  They may only be edited in the Template
+        Editor.  This is especially important for split-symbol templates loaded
+        through the fast manifest path, where older cached JSON still contains
+        locked_to_body=false on the primitive records.
+        """
+        try:
+            attrs = getattr(getattr(unit, 'body', None), 'attributes', {}) or {}
+            if str(attrs.get('MENTOR_GRAPHICS_AS_BODY', '0')) == '1':
+                return True
+            if str(attrs.get('MENTOR_BODY_GRAPHICS_LOCKED', '0')) == '1':
+                return True
+            if str(attrs.get('MENTOR_HAS_BODY', '0')) == '1':
+                return True
+            if str(attrs.get('TEMPLATE_GRAPHICS_AS_BODY', '0')) == '1':
+                return True
+        except Exception:
+            pass
+        return False
+
+    def _lock_template_body_graphics(self, unit):
+        """Normalize template/import body artwork without locking user graphics.
+
+        A unit may contain two different graphic classes:
+        - template_body: artwork from Template Editor / Mentor import; it is the BODY
+          in the Symbol Wizard and is not individually selectable there.
+        - user_graphic: graphic objects drawn later in the Symbol Wizard; these stay
+          normal selectable/editable GRAPHIC objects.
+
+        Older templates only had body-level flags such as TEMPLATE_GRAPHICS_AS_BODY.
+        For those legacy records, unmarked graphics are migrated to template_body.
+        User-created graphics are explicitly marked when created/pasted and are
+        therefore never re-locked by this migration.
+        """
+        try:
+            if self._body_graphics_are_locked(unit):
+                for _g in getattr(unit, 'graphics', []) or []:
+                    try:
+                        role = str(getattr(_g, 'graphic_role', '') or '')
+                        marker = str(getattr(_g, 'mentor_raw', '') or '')
+                        if role == 'user_graphic' or marker == '__USER_GRAPHIC__':
+                            _g.graphic_role = 'user_graphic'
+                            _g.locked_to_body = False
+                        else:
+                            _g.graphic_role = 'template_body'
+                            _g.locked_to_body = True
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+        return unit
+
     def _capture_selection_ids(self):
         ids = set()
         for item in self.scene.selectedItems():
@@ -3838,7 +3968,8 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         self.dock_pins_to_body(u)
 
         body_attrs = getattr(u.body, 'attributes', {}) or {}
-        graphics_as_body = str(body_attrs.get('MENTOR_GRAPHICS_AS_BODY', '0')) == '1'
+        graphics_as_body = str(body_attrs.get('MENTOR_GRAPHICS_AS_BODY', '0')) == '1' or str(body_attrs.get('MENTOR_BODY_GRAPHICS_LOCKED', '0')) == '1' or str(body_attrs.get('MENTOR_HAS_BODY', '0')) == '1'
+        self._lock_template_body_graphics(u)
 
         # Imported Mentor/Xpedition symbols still need a real Wizard body object:
         # pins, graphics and visible attributes are anchored to it exactly like
@@ -4223,6 +4354,10 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         elif kind in ('TEXT', 'ATTR_REF_DES', 'ATTR_BODY'): self.text_props(item)
         elif kind == 'GRAPHIC': self.graphic_props(item)
 
+    def rebuild_props(self):
+        """Compatibility wrapper for older callbacks: rebuild the property panel."""
+        return self.refresh_properties()
+
     def _line(self, value, fn):
         w = QLineEdit(str(value))
         # Commit text edits only with Enter. This prevents live rebuilds while typing.
@@ -4428,6 +4563,57 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
             l.addWidget(cb)
             l.addWidget(ed)
             self.form.addRow(k, row)
+        add_attr_btn = QPushButton('Add Attribute')
+        add_attr_btn.clicked.connect(lambda _checked=False, body=m: self.add_body_attribute_dialog(body))
+        self.form.addRow('', add_attr_btn)
+
+    def add_body_attribute_dialog(self, body):
+        dlg = QDialog(self)
+        dlg.setWindowTitle('Add BODY Attribute')
+        layout = QFormLayout(dlg)
+        name_edit = QLineEdit()
+        value_edit = QLineEdit()
+        visible_cb = QCheckBox('visible')
+        visible_cb.setChecked(True)
+        layout.addRow('Name', name_edit)
+        layout.addRow('Value', value_edit)
+        layout.addRow('Visibility', visible_cb)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        layout.addRow(buttons)
+
+        def accept_if_valid():
+            name = name_edit.text().strip()
+            if not name:
+                QMessageBox.warning(dlg, 'Attribute', 'Bitte einen Attributnamen eingeben.')
+                return
+            if name in (getattr(body, 'attributes', {}) or {}):
+                QMessageBox.warning(dlg, 'Attribute', f'Das Attribut "{name}" existiert bereits.')
+                return
+            dlg.accept()
+
+        buttons.accepted.connect(accept_if_valid)
+        buttons.rejected.connect(dlg.reject)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        name = name_edit.text().strip()
+        value = value_edit.text()
+        visible = visible_cb.isChecked()
+        self.push_undo_state()
+        for target in self._body_attr_sync_targets(body):
+            if getattr(target, 'attributes', None) is None:
+                target.attributes = {}
+            if getattr(target, 'visible_attributes', None) is None:
+                target.visible_attributes = {}
+            target.attributes[name] = value
+            target.visible_attributes[name] = visible
+            if getattr(target, 'attribute_texts', None) is None:
+                target.attribute_texts = {}
+            # Let the normal attribute layout create/show the text item on rebuild.
+            self._sync_body_attribute_text_models(target, name)
+        self.update_attribute_items_for_unit()
+        self.rebuild_tree()
+        self.refresh_properties()
+        self.schedule_scene_refresh(visual_only=True)
 
 
     def pin_props(self, item):
@@ -5039,6 +5225,9 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
             model = GraphicModel(shape=shape, x=x, y=y, w=2.0, h=0.0, style=StyleModel(stroke=self.default_color, line_width=self.line_width.value(), line_style=self.line_style.currentText()))
         else:
             model = GraphicModel(shape=shape, x=x, y=y, style=StyleModel(stroke=self.default_color, line_width=self.line_width.value(), line_style=self.line_style.currentText()))
+        model.locked_to_body = False
+        model.graphic_role = 'user_graphic'
+        model.mentor_raw = '__USER_GRAPHIC__'
         self.current_unit.graphics.append(model)
         self.select_model_after_rebuild(model)
         self.rebuild_scene(); self.rebuild_tree()
@@ -5116,6 +5305,9 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
                 self.current_unit.texts.append(m)
                 pasted_models.append(m)
             elif kind == 'GRAPHIC':
+                m.locked_to_body = False
+                m.graphic_role = 'user_graphic'
+                m.mentor_raw = '__USER_GRAPHIC__'
                 self.current_unit.graphics.append(m)
                 pasted_models.append(m)
             elif kind == 'BODY':
@@ -6412,6 +6604,11 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
             split_keys = list((manifest.get('split_templates') or {}).keys())
             keys.extend(split_keys)
             keys.extend([k for k in mkeys if k.startswith('IC /') or k.startswith('Digital IC /')])
+            # Generic/passive single-symbol templates do not belong in the
+            # split-symbol creation dialog.  A deliberate empty start is offered
+            # by the special <NONE> template instead.
+            keys = [k for k in keys if not str(k).startswith('Passive') and ' / Passive' not in str(k)]
+            keys.append('<NONE>')
         else:
             keys.extend(mkeys)
         if not keys:
@@ -6452,18 +6649,35 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
             # individually editable in the Template Editor.
             try:
                 attrs = getattr(body, 'attributes', {}) or {}
-                if str(attrs.get('MENTOR_GRAPHICS_AS_BODY', '0')) == '1' or str(attrs.get('MENTOR_BODY_GRAPHICS_LOCKED', '0')) == '1':
+                if (str(attrs.get('MENTOR_GRAPHICS_AS_BODY', '0')) == '1'
+                        or str(attrs.get('MENTOR_BODY_GRAPHICS_LOCKED', '0')) == '1'
+                        or str(attrs.get('MENTOR_HAS_BODY', '0')) == '1'
+                        or str(attrs.get('TEMPLATE_GRAPHICS_AS_BODY', '0')) == '1'):
                     for _g in graphics:
                         _g.locked_to_body = True
             except Exception:
                 pass
-            return SymbolUnitModel(name=str(src.get('name', payload.get('name', 'Template'))), body=body, pins=pins, texts=texts, graphics=graphics)
+            unit = SymbolUnitModel(name=str(src.get('name', payload.get('name', 'Template'))), body=body, pins=pins, texts=texts, graphics=graphics)
+            self._lock_template_body_graphics(unit)
+            return unit
         except Exception:
             return None
+
+    def _blank_template_unit(self, name: str = '<NONE>') -> SymbolUnitModel:
+        """Minimal internal body used when the user explicitly selects no template."""
+        body = SymbolBodyModel(width=10.0, height=8.0)
+        try:
+            body.attributes = {'RefDes': '?', 'Part Name': name if name != '<NONE>' else '', 'VALUE': 'VALUE', 'Package': 'BAUFORM', 'CLASS': ''}
+            body.visible_attributes = {'RefDes': True, 'Part Name': True, 'VALUE': True, 'Package': True, 'CLASS': True}
+        except Exception:
+            pass
+        return SymbolUnitModel(name=name if name and name != '<NONE>' else 'Unit A', body=body, pins=[], texts=[], graphics=[])
 
     def load_template_unit(self, key: str) -> SymbolUnitModel:
         """Load one concrete template by key, lazily and with a small LRU cache."""
         key = str(key or '').strip()
+        if key in ('<NONE>', 'None', 'NONE', ''):
+            return self._blank_template_unit('<NONE>')
         lru = getattr(self, '_template_unit_lru', None)
         if lru is None:
             lru = {}
@@ -6495,6 +6709,7 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
                     unit = self._unit_from_payload_fast(entries[idx])
                     if unit is not None:
                         unit.name = str(meta.get('name') or key.split(' / ')[-1])
+                        self._lock_template_body_graphics(unit)
                         if len(lru) > 64:
                             lru.clear()
                         lru[key] = copy.deepcopy(unit)
@@ -6515,6 +6730,9 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         return SymbolUnitModel(name=key or 'Template')
 
     def load_split_template_units(self, key: str) -> list[SymbolUnitModel]:
+        key = str(key or '').strip()
+        if key in ('<NONE>', 'None', 'NONE', ''):
+            return [self._blank_template_unit('<NONE>')]
         manifest = self.load_template_manifest()
         keys = (manifest.get('split_templates') or {}).get(key) or []
         if keys:
@@ -6522,7 +6740,7 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
             for k in keys:
                 u = self.load_template_unit(k)
                 if u is not None and (getattr(u, 'pins', None) or getattr(u, 'graphics', None) or getattr(u, 'texts', None)):
-                    units.append(u)
+                    units.append(self._lock_template_body_graphics(u))
             return units
         split_units = (getattr(self, '_external_split_templates', {}) or {}).get(key)
         if split_units:
@@ -7105,6 +7323,8 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         huge flat list.
         """
         key = str(key or '').strip()
+        if key == '<NONE>':
+            return '<NONE>', '<NONE>'
         if ' / ' not in key:
             return 'General', key or 'Template'
         parts = [p.strip() for p in key.split(' / ') if p.strip()]
@@ -7115,6 +7335,8 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
     def _template_key_from_dialog_parts(self, partition: str, symbol: str):
         partition = str(partition or '').strip()
         symbol = str(symbol or '').strip()
+        if partition == '<NONE>' or symbol == '<NONE>':
+            return '<NONE>'
         if not partition or partition == 'General':
             return symbol
         return f'{partition} / {symbol}' if symbol else partition
@@ -7137,13 +7359,18 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
 
         by_partition: dict[str, list[str]] = {}
         for key in sorted(template_keys):
+            if kind == SymbolKind.SPLIT.value and str(key).startswith('Passive'):
+                continue
             part, sym = parts_for(key)
+            if kind == SymbolKind.SPLIT.value and part.startswith('Passive'):
+                continue
             by_partition.setdefault(part, []).append(sym)
 
-        partitions = sorted(by_partition.keys()) or ['General']
-        # For split-symbol creation, put grouped Mentor split templates first.
+        partitions = sorted(by_partition.keys()) or ['<NONE>']
+        # For split-symbol creation, put the empty template and grouped Mentor
+        # split templates first. Passive single-symbol templates are suppressed.
         if kind == SymbolKind.SPLIT.value:
-            partitions = sorted(partitions, key=lambda p: (0 if p.startswith('Split Symbols') else 1, p.lower()))
+            partitions = sorted(partitions, key=lambda p: (0 if p == '<NONE>' else (1 if p.startswith('Split Symbols') else 2), p.lower()))
         partition_combo.addItems(partitions)
 
         def rebuild_symbols():
@@ -7160,6 +7387,8 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         def update_default_name():
             if not name_edit.text().strip():
                 txt = symbol_combo.currentText().strip() or partition_combo.currentText().split('/')[-1].strip()
+                if txt == '<NONE>':
+                    txt = 'Split_Symbol' if kind == SymbolKind.SPLIT.value else 'Symbol'
                 base = txt.replace(' ', '_') or ('Split_Symbol' if kind == SymbolKind.SPLIT.value else 'Symbol')
                 # Avoid trailing .1-style suffixes in the symbol name suggestion.
                 base = re.sub(r'[._-]\d{1,3}$', '', base)
