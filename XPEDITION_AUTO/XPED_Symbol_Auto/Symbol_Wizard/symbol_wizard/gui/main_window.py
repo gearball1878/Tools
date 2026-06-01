@@ -4690,12 +4690,12 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         m = item.model
         head = QLabel('<b>BODY</b>')
         self.form.addRow(head)
-        self.form.addRow('Width [grid]', self._dbl(m.width, lambda v: self.set_body_dim(item, 'width', max(1.0, round(float(v)))), 1, 300, 1))
-        self.form.addRow('Height [grid]', self._dbl(m.height, lambda v: self.set_body_dim(item, 'height', max(1.0, round(float(v)))), 1, 300, 1))
-        self.form.addRow('Line style', self._combo([x.value for x in LineStyle], m.line_style, lambda v: self.set_and_refresh(m, 'line_style', v)))
-        self.form.addRow('Line width', self._dbl(m.line_width, lambda v: self.set_and_refresh(m, 'line_width', v), .01, 1, .01))
+        self.form.addRow('Width [grid]', self._dbl(m.width, lambda v, body=m: self._set_body_width_grid(body, float(v)), .01, 300, self._edit_grid_step()))
+        self.form.addRow('Height [grid]', self._dbl(m.height, lambda v, body=m: self._set_body_height_grid(body, float(v)), .01, 300, self._edit_grid_step()))
+        self.form.addRow('Line style', self._combo([x.value for x in LineStyle], m.line_style, lambda v, body=m: self.set_body_visual_attr(body, 'line_style', v)))
+        self.form.addRow('Line width', self._dbl(m.line_width, lambda v, body=m: self.set_body_visual_attr(body, 'line_width', float(v)), .01, 1, .01))
         self.transform_props(m)
-        self.form.addRow('Color', self._color_button_row('Color RGB', m.color, lambda _checked=False: self.color_model(m)))
+        self.form.addRow('Color', self._color_button_row('Color RGB', m.color, lambda _checked=False, body=m: self.color_body_model(body)))
         self.form.addRow(QLabel('<b>BODY-Attribute</b>'))
         if self._is_split_body_attr_sync_active():
             sync_info = QLabel('Split sync active: BODY attribute values, visibility and fonts are applied to all split parts.')
@@ -4952,7 +4952,7 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         def _set_rotation(v, model=m):
             try:
                 if model is self.current_unit.body:
-                    target = (round(float(v) / 15.0) * 15.0) % 360.0
+                    target = (round(float(v) / 90.0) * 90.0) % 360.0
                     current = float(getattr(model, 'rotation', 0.0) or 0.0) % 360.0
                     delta = target - current
                     if abs(delta) > 180.0:
@@ -4963,7 +4963,7 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
                     self.set_and_refresh(model, 'rotation', v)
             except Exception:
                 self.set_and_refresh(model, 'rotation', v)
-        self.form.addRow('Rotation [deg]', self._dbl(getattr(m, 'rotation', 0), _set_rotation, -360, 360, 15))
+        self.form.addRow('Rotation [deg]', self._dbl(getattr(m, 'rotation', 0), _set_rotation, -360, 360, 90))
 
     # ------------------------------------------------------------------ Model updates
     def set_font_attr(self, f, a, v, refresh_attrs=False):
@@ -5465,6 +5465,77 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         self.select_model_after_rebuild(model)
         self.rebuild_scene(); self.rebuild_tree()
 
+    def _edit_grid_step(self):
+        try:
+            return max(0.001, float(getattr(self, 'edit_grid_step', None) or self.edit_grid.value() or self.grid_inch))
+        except Exception:
+            return 1.0
+
+    def _shift_current_unit_all(self, dx: float, dy: float):
+        """Shift BODY and every child by the same delta.
+
+        Used after non-center-origin resize/scale to keep the selected origin
+        exactly at its designated grid position.  This prevents text/attributes
+        drifting away from imported BODY graphics after repeated transforms.
+        """
+        u = self.current_unit
+        b = u.body
+        b.x = self._clean_float(float(b.x) + dx)
+        b.y = self._clean_float(float(b.y) + dy)
+        for p in getattr(u, 'pins', []) or []:
+            p.x = self._clean_float(float(p.x) + dx)
+            p.y = self._clean_float(float(p.y) + dy)
+            self._move_pin_owned_texts(p, dx, dy)
+        for t in getattr(u, 'texts', []) or []:
+            t.x = self._clean_float(float(t.x) + dx)
+            t.y = self._clean_float(float(t.y) + dy)
+        for t in (getattr(b, 'attribute_texts', {}) or {}).values():
+            try:
+                t.x = self._clean_float(float(t.x) + dx)
+                t.y = self._clean_float(float(t.y) + dy)
+            except Exception:
+                pass
+        for gr in getattr(u, 'graphics', []) or []:
+            gr.x = self._clean_float(float(gr.x) + dx)
+            gr.y = self._clean_float(float(gr.y) + dy)
+
+    def _body_owned_graphics(self, body=None):
+        out=[]
+        for gr in getattr(self.current_unit, 'graphics', []) or []:
+            if getattr(gr, 'locked_to_body', False) or str(getattr(gr, 'graphic_role', '')).lower() in ('body','template_body','imported_body'):
+                out.append(gr)
+        return out
+
+    def set_body_visual_attr(self, body, attr, value):
+        """Edit BODY visual style for normal and imported/template bodies.
+
+        Imported symbols often render the visible BODY through locked GraphicModel
+        primitives.  BODY style edits therefore have to be propagated to those
+        primitives as well; otherwise the property panel appears to do nothing.
+        """
+        if attr not in ('line_style', 'line_width', 'color'):
+            return
+        self.push_undo_state()
+        setattr(body, attr, value)
+        for gr in self._body_owned_graphics(body):
+            st = getattr(gr, 'style', None)
+            if st is None:
+                continue
+            if attr == 'line_style':
+                st.line_style = value
+            elif attr == 'line_width':
+                st.line_width = float(value)
+            elif attr == 'color':
+                st.stroke = tuple(value)
+        self.dirty = True
+        self.update_current_unit_canvas_positions()
+        self.schedule_scene_refresh(visual_only=True)
+
+    def color_body_model(self, body):
+        c = QColorDialog.getColor(QColor(*getattr(body, 'color', (0,0,0))), self)
+        if c.isValid():
+            self.set_body_visual_attr(body, 'color', (c.red(), c.green(), c.blue()))
+
     def _symbol_group_pivot_grid(self):
         """Return the active BODY origin/pivot in grid coordinates.
 
@@ -5572,7 +5643,7 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
     def _snap_to_edit_grid(self, value, minimum=0.01):
         """Snap a model-space value to the current edit-grid multiple."""
         try:
-            step = float(getattr(self, 'edit_grid_step', 1.0) or 1.0)
+            step = self._edit_grid_step()
         except Exception:
             step = 1.0
         try:
@@ -5733,6 +5804,18 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
                     gr.ctrl_x = -float(gr.ctrl_x) if horizontal else float(gr.ctrl_x)
                 if getattr(gr, 'ctrl_y', None) is not None:
                     gr.ctrl_y = float(gr.ctrl_y) if horizontal else -float(gr.ctrl_y)
+
+        # Keep the selected/oriented origin fixed for every BODY transform,
+        # including imported symbols and non-center origins.  Width/height snapping
+        # may otherwise move the raw rectangle anchor and cause cumulative drift of
+        # pins/text/attributes after repeated transforms.
+        try:
+            ax, ay = self.body_anchor_point_oriented(b, getattr(self.symbol, 'origin', OriginMode.CENTER.value))
+            dx, dy = self._clean_float(px - ax), self._clean_float(py - ay)
+            if abs(dx) > 1e-9 or abs(dy) > 1e-9:
+                self._shift_current_unit_all(dx, dy)
+        except Exception:
+            pass
 
         if refresh:
             self.update_current_unit_canvas_positions()

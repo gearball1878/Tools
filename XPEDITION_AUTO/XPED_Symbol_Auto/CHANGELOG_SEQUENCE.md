@@ -420,3 +420,9 @@ Imported snapshot from `Symbol_Wizard_22.zip`.
 
 Archive version: `v22`; imported as: `v97`; offset: `75`.
 
+## v98
+
+Imported snapshot from `Symbol_Wizard_23.zip`.
+
+Archive version: `v23`; imported as: `v98`; offset: `75`.
+
