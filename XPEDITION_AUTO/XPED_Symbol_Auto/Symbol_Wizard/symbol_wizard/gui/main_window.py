@@ -5278,7 +5278,12 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         # Mentor-native imports already contain exact pin endpoints.  Re-docking
         # during every scene rebuild would move left/right/top/bottom pins to a
         # generated bounding box and destroy the imported placement.
-        if str(attrs.get('MENTOR_DISABLE_AUTO_DOCK', '0')) == '1' or str(attrs.get('MENTOR_GRAPHICS_AS_BODY', '0')) == '1':
+        if (str(attrs.get('MENTOR_DISABLE_AUTO_DOCK', '0')) == '1'
+                or str(attrs.get('MENTOR_GRAPHICS_AS_BODY', '0')) == '1'
+                or str(attrs.get('MENTOR_BODY_GRAPHICS_LOCKED', '0')) == '1'
+                or str(attrs.get('MENTOR_HAS_BODY', '0')) == '1'
+                or str(attrs.get('TEMPLATE_GRAPHICS_AS_BODY', '0')) == '1'
+                or abs(float(getattr(b, 'rotation', 0.0) or 0.0)) > 1e-9):
             return
         for p in u.pins:
             if p.side == PinSide.LEFT.value:
@@ -5397,6 +5402,18 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         except Exception:
             pass
 
+    def _graphic_center(self, gr):
+        return (float(getattr(gr, 'x', 0.0) or 0.0) + float(getattr(gr, 'w', 0.0) or 0.0) / 2.0,
+                float(getattr(gr, 'y', 0.0) or 0.0) + float(getattr(gr, 'h', 0.0) or 0.0) / 2.0)
+
+    def _set_graphic_center(self, gr, cx, cy):
+        gr.x = float(cx) - float(getattr(gr, 'w', 0.0) or 0.0) / 2.0
+        gr.y = float(cy) - float(getattr(gr, 'h', 0.0) or 0.0) / 2.0
+
+    def _rot_angle_after_flip(self, angle, horizontal=True):
+        r = float(angle or 0.0)
+        return (-r) % 360.0 if horizontal else (180.0 - r) % 360.0
+
     def _transform_pin_anchors(self, p, point_fn, rotate_deg=None, scale_factor=None, flip_horizontal=None):
         for ax, ay in (('label_x', 'label_y'), ('number_x', 'number_y')):
             if getattr(p, ax, None) is not None and getattr(p, ay, None) is not None:
@@ -5429,13 +5446,14 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
                 pass
 
     def _transform_unit_as_body_group(self, op, value=None):
-        """Transform the real symbol objects, not a temporary body frame.
+        """Transform the real symbol object group around the BODY center.
 
-        Imported Mentor/template symbols use graphics as the visible BODY.  Internally
-        created symbols use the rectangular body.  Both must behave identically here:
-        pins, pin labels/attributes, body attributes, user graphics and body graphics
-        are transformed together around the BODY center, so their relative layout does
-        not drift and no proxy rectangle becomes part of the model.
+        No proxy/bounding rectangle is transformed or persisted.  Imported
+        Mentor/template graphics that form the visible BODY, normal user
+        graphics, pins, pin labels, pin attributes, body attributes and free
+        text are all transformed as one rigid group.  Therefore their relative
+        coordinates stay unchanged; only the group's rotation/scale/mirror state
+        changes.
         """
         u = self.current_unit
         b = u.body
@@ -5443,38 +5461,53 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
 
         if op == 'rotate':
             deg = float(value or 0.0)
+            if abs(deg) < 1e-12:
+                return
             def pf(x, y): return self._rot_point(x, y, cx, cy, deg)
             self._add_rotation(b, deg)
             for p in u.pins:
-                p.x, p.y = pf(p.x, p.y)
+                p.x, p.y = pf(float(p.x), float(p.y))
                 self._add_rotation(p, deg)
                 self._transform_pin_anchors(p, pf, rotate_deg=deg)
             for t in u.texts:
-                t.x, t.y = pf(t.x, t.y); self._add_rotation(t, deg)
+                t.x, t.y = pf(float(t.x), float(t.y))
+                self._add_rotation(t, deg)
             self._transform_body_attribute_texts(b, pf, rotate_deg=deg)
             for gr in u.graphics:
-                gr.x, gr.y = pf(gr.x, gr.y); self._add_rotation(gr, deg)
+                gcx, gcy = self._graphic_center(gr)
+                ngcx, ngcy = pf(gcx, gcy)
+                self._set_graphic_center(gr, ngcx, ngcy)
+                self._add_rotation(gr, deg)
 
         elif op == 'scale':
             factor = float(value or 1.0)
+            if abs(factor - 1.0) < 1e-12:
+                return
             def pf(x, y): return self._scale_point(x, y, cx, cy, factor)
-            # Keep the body center fixed while resizing.
+            # Keep the BODY center fixed.  For imported symbols the logical
+            # rectangle is only the group anchor; visible geometry is scaled via
+            # its real GraphicModel primitives below.
             new_w = max(0.1, float(b.width) * factor)
             new_h = max(0.1, float(b.height) * factor)
-            b.x = cx - new_w / 2.0; b.y = cy + new_h / 2.0
-            b.width = new_w; b.height = new_h
+            b.x = cx - new_w / 2.0
+            b.y = cy + new_h / 2.0
+            b.width = new_w
+            b.height = new_h
             for p in u.pins:
-                p.x, p.y = pf(p.x, p.y)
+                p.x, p.y = pf(float(p.x), float(p.y))
                 p.length = max(0.1, float(getattr(p, 'length', 1.0) or 1.0) * factor)
-                self._scale_font_model(p.number_font, factor); self._scale_font_model(p.label_font, factor)
+                self._scale_font_model(p.number_font, factor)
+                self._scale_font_model(p.label_font, factor)
                 self._transform_pin_anchors(p, pf, scale_factor=factor)
             for t in u.texts:
-                t.x, t.y = pf(t.x, t.y)
+                t.x, t.y = pf(float(t.x), float(t.y))
                 t.font_size_grid = max(0.1, float(getattr(t, 'font_size_grid', 0.75) or 0.75) * factor)
-            self._scale_font_model(b.attribute_font, factor); self._scale_font_model(b.refdes_font, factor)
+            self._scale_font_model(b.attribute_font, factor)
+            self._scale_font_model(b.refdes_font, factor)
             self._transform_body_attribute_texts(b, pf, scale_factor=factor)
             for gr in u.graphics:
-                gr.x, gr.y = pf(gr.x, gr.y)
+                gcx, gcy = self._graphic_center(gr)
+                ngcx, ngcy = pf(gcx, gcy)
                 gr.w = float(getattr(gr, 'w', 0.0) or 0.0) * factor
                 gr.h = float(getattr(gr, 'h', 0.0) or 0.0) * factor
                 try:
@@ -5485,35 +5518,29 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
                     gr.ctrl_x = float(gr.ctrl_x) * factor
                 if getattr(gr, 'ctrl_y', None) is not None:
                     gr.ctrl_y = float(gr.ctrl_y) * factor
+                self._set_graphic_center(gr, ngcx, ngcy)
 
         elif op in ('flip_h', 'flip_v'):
             horizontal = op == 'flip_h'
             def pf(x, y): return self._flip_point(x, y, cx, cy, horizontal)
-            r = float(getattr(b, 'rotation', 0.0) or 0.0)
-            b.rotation = (-r) % 360.0 if horizontal else (180.0 - r) % 360.0
+            b.rotation = self._rot_angle_after_flip(getattr(b, 'rotation', 0.0), horizontal)
             for p in u.pins:
-                p.x, p.y = pf(p.x, p.y)
-                pr = float(getattr(p, 'rotation', 0.0) or 0.0)
-                p.rotation = (-pr) % 360.0 if horizontal else (180.0 - pr) % 360.0
+                p.x, p.y = pf(float(p.x), float(p.y))
+                p.rotation = self._rot_angle_after_flip(getattr(p, 'rotation', 0.0), horizontal)
                 if horizontal and p.side in (PinSide.LEFT.value, PinSide.RIGHT.value):
                     p.side = PinSide.RIGHT.value if p.side == PinSide.LEFT.value else PinSide.LEFT.value
                 if (not horizontal) and p.side in (PinSide.TOP.value, PinSide.BOTTOM.value):
                     p.side = PinSide.BOTTOM.value if p.side == PinSide.TOP.value else PinSide.TOP.value
                 self._transform_pin_anchors(p, pf, flip_horizontal=horizontal)
             for t in u.texts:
-                t.x, t.y = pf(t.x, t.y)
-                tr = float(getattr(t, 'rotation', 0.0) or 0.0)
-                t.rotation = (-tr) % 360.0 if horizontal else (180.0 - tr) % 360.0
+                t.x, t.y = pf(float(t.x), float(t.y))
+                t.rotation = self._rot_angle_after_flip(getattr(t, 'rotation', 0.0), horizontal)
             self._transform_body_attribute_texts(b, pf, flip_horizontal=horizontal)
             for gr in u.graphics:
-                # Reflect both endpoints/corners so line endpoints and rect bounds remain real geometry.
-                x1, y1 = pf(float(gr.x), float(gr.y))
-                x2, y2 = pf(float(gr.x) + float(getattr(gr, 'w', 0.0) or 0.0),
-                            float(gr.y) + float(getattr(gr, 'h', 0.0) or 0.0))
-                gr.x, gr.y = x1, y1
-                gr.w, gr.h = x2 - x1, y2 - y1
-                rr = float(getattr(gr, 'rotation', 0.0) or 0.0)
-                gr.rotation = (-rr) % 360.0 if horizontal else (180.0 - rr) % 360.0
+                gcx, gcy = self._graphic_center(gr)
+                ngcx, ngcy = pf(gcx, gcy)
+                self._set_graphic_center(gr, ngcx, ngcy)
+                gr.rotation = self._rot_angle_after_flip(getattr(gr, 'rotation', 0.0), horizontal)
                 if getattr(gr, 'ctrl_x', None) is not None:
                     gr.ctrl_x = -float(gr.ctrl_x) if horizontal else float(gr.ctrl_x)
                 if getattr(gr, 'ctrl_y', None) is not None:
