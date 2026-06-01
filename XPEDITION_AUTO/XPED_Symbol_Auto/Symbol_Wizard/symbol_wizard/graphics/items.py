@@ -103,8 +103,7 @@ class TransformMixin:
             if snap_enabled:
                 # Use the active edit grid in the normal Symbol Wizard as well.
                 # This keeps copied/pasted pins on the same raster that the user is
-                # currently editing with (0.100/0.050/0.025 inch). Locked imported
-                # BODY primitives bypass this branch above.
+                # currently editing with (0.100/0.050/0.025 inch).
                 g = float(getattr(win, 'edit_grid_px', self.scene().grid_px) or self.scene().grid_px)
                 return QPointF(snap(value.x(), g), snap(value.y(), g))
         if change == QGraphicsItem.ItemPositionHasChanged and self.scene():
@@ -182,11 +181,7 @@ def _angle_from(center: QPointF, p: QPointF):
 
 
 def _hit_tolerance_px(window, factor: float = 0.26, minimum: float = 10.0) -> float:
-    """Comfort hit width for selecting thin canvas objects.
-
-    Painting stays unchanged; only QGraphicsItem.shape() becomes slightly
-    larger so pins/lines/text are easier to click on dense grids.
-    """
+    """Comfort hit width for selecting thin canvas objects."""
     try:
         return max(float(minimum), float(getattr(window, 'grid_px', 40.0) or 40.0) * float(factor))
     except Exception:
@@ -242,10 +237,19 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
         except Exception:
             pass
         if graphics_as_body:
-            # No proxy/highlight rectangle for template/import bodies.  The real
-            # BODY-owned GraphicItems draw the selection highlight directly on
-            # the artwork, exactly so this helper cannot be confused with or used
-            # as geometry.
+            # Imported/template symbols behave like internally created symbols,
+            # but their visible BODY is the imported artwork itself.  Do not draw
+            # a proxy rectangle.  When selected, show only lightweight corner /
+            # rotation handles so the user sees the BODY selection without
+            # mistaking a helper frame for real geometry.
+            if self.isSelected():
+                painter.save()
+                painter.setPen(QPen(QColor(0, 150, 170), 1))
+                painter.setBrush(QBrush(QColor(255, 255, 255)))
+                for r in self._handles().values():
+                    painter.drawRect(r)
+                painter.drawEllipse(_rotation_handle(self.rect(), self.window.grid_px * self.rotate_handle_factor))
+                painter.restore()
             return
         super().paint(painter, option, widget)
         if self.isSelected():
@@ -256,13 +260,6 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
                 painter.drawRect(r)
             painter.drawEllipse(_rotation_handle(self.rect(), self.window.grid_px * self.rotate_handle_factor))
             painter.restore()
-
-    def shape(self):
-        path = QPainterPath()
-        path.addRect(self.rect())
-        stroker = QPainterPathStroker()
-        stroker.setWidth(_hit_tolerance_px(self.window, 0.22, 9.0))
-        return path.united(stroker.createStroke(path))
 
     def hoverMoveEvent(self, event):
         if self.isSelected():
@@ -295,24 +292,16 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
             h = _hit_handle(self._handles(), event.pos())
             if h:
                 self._resizing = h
-                # Capture the same geometry state that the Symbol-1/body resize
-                # pipeline uses.  The visual BODY item is only a selection/highlight
-                # proxy for template/imported bodies; the real geometry lives in
-                # BODY-owned GraphicModel primitives.  Therefore resizing handles
-                # must update that real geometry, not just this proxy rectangle.
-                try:
-                    self._resize_start = self.window._capture_symbol1_body_resize_state(self.window.current_unit)
-                except Exception:
-                    self._resize_start = {
-                        'x': float(self.model.x),
-                        'y': float(self.model.y),
-                        'w': float(self.model.width),
-                        'h': float(self.model.height),
-                        'pins': [(p, float(p.x), float(p.y), float(p.length), bool(getattr(p, 'auto_dock', True))) for p in self.window.current_unit.pins],
-                        'texts': [(t, float(t.x), float(t.y), float(getattr(t, 'font_size_grid', 0.75) or 0.75)) for t in self.window.current_unit.texts],
-                        'attributes': [(t, float(t.x), float(t.y), float(getattr(t, 'font_size_grid', 0.75) or 0.75)) for t in getattr(self.window.current_unit.body, 'attribute_texts', {}).values()],
-                        'graphics': [(gr, float(gr.x), float(gr.y), float(gr.w), float(gr.h), getattr(gr, 'ctrl_x', None), getattr(gr, 'ctrl_y', None), float(getattr(gr, 'curve_radius', 0.0) or 0.0)) for gr in self.window.current_unit.graphics],
-                    }
+                self._resize_start = {
+                    'x': float(self.model.x),
+                    'y': float(self.model.y),
+                    'w': float(self.model.width),
+                    'h': float(self.model.height),
+                    'pins': [(p, float(p.x), float(p.y), float(p.length)) for p in self.window.current_unit.pins],
+                    'texts': [(t, float(t.x), float(t.y)) for t in self.window.current_unit.texts],
+                    'attributes': [(t, float(t.x), float(t.y)) for t in getattr(self.window.current_unit.body, 'attribute_texts', {}).values()],
+                    'graphics': [(gr, float(gr.x), float(gr.y), float(gr.w), float(gr.h)) for gr in self.window.current_unit.graphics],
+                }
                 event.accept()
                 return
         super().mousePressEvent(event)
@@ -384,13 +373,7 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
             self.model.x, self.model.y, self.model.width, self.model.height = new_x, new_y, new_w, new_h
             self._last_model_pos = (new_x, new_y)
 
-            # Apply the unified Symbol-1 resize pipeline.  This scales the
-            # actual template/import BODY graphics plus pins/text/attributes; the
-            # dashed/highlight BODY item remains only a visual selector.
-            try:
-                self.window._apply_symbol1_body_resize_state(st, self.model)
-            except Exception:
-                self.window.scale_current_unit_children_from_body_resize(st, self.model)
+            self.window.scale_current_unit_children_from_body_resize(st, self.model)
             self.window.update_current_unit_canvas_positions()
             try:
                 self.window.notify_canvas_model_changed()
@@ -507,7 +490,6 @@ class PinItem(TransformMixin, QGraphicsItem):
         stroker = QPainterPathStroker()
         stroker.setWidth(_hit_tolerance_px(self.window, 0.30, 12.0))
         return stroker.createStroke(path).united(path)
-
     def paint(self, painter, option, widget=None):
         g, m = self.window.grid_px, self.model
         L = m.length * g
@@ -681,6 +663,7 @@ class PinItem(TransformMixin, QGraphicsItem):
         self.apply_transform_from_model()
         self.update()
 
+
     def scale_by(self, factor):
         return self.scale_selected(factor)
 
@@ -700,17 +683,6 @@ class TextItem(TransformMixin, QGraphicsTextItem):
         self.setData(0, 'TEXT')
         self._rotating = False
         self.apply_text_from_model()
-
-    def shape(self):
-        path = super().shape()
-        try:
-            pad = _hit_tolerance_px(self.window, 0.18, 8.0)
-            br = self._visual_text_rect().adjusted(-pad, -pad, pad, pad)
-            padded = QPainterPath()
-            padded.addRect(br)
-            return path.united(padded)
-        except Exception:
-            return path
 
     def itemChange(self, change, value):
         # Text/attribute objects are positioned by their selected grid anchor
@@ -895,15 +867,15 @@ class GraphicItem(TransformMixin, QGraphicsItem):
         self.common_flags()
         self.setData(0, 'GRAPHIC')
         if getattr(model, 'locked_to_body', False) and not getattr(window, 'is_template_editor', False):
-            # Imported/template BODY primitives are the real BODY selection
-            # surface. They are selectable for BODY semantics, but never movable
-            # individually; transforms are routed through MainWindow's BODY
-            # pipeline and operate on real geometry.
+            # Imported/template BODY primitives are paint/highlight only in the
+            # Symbol Wizard. They must never become real selected objects; the
+            # logical BodyItem is the only selected item. This prevents the
+            # property panel from switching to "2 objects selected".
             self.setFlag(QGraphicsItem.ItemIsMovable, False)
-            self.setFlag(QGraphicsItem.ItemIsSelectable, True)
+            self.setFlag(QGraphicsItem.ItemIsSelectable, False)
             self.setFlag(QGraphicsItem.ItemIsFocusable, False)
-            self.setAcceptedMouseButtons(Qt.AllButtons)
-            self.setAcceptHoverEvents(True)
+            self.setAcceptedMouseButtons(Qt.NoButton)
+            self.setAcceptHoverEvents(False)
         self.apply_transform_from_model()
 
     def _raw_rect(self):
@@ -928,35 +900,6 @@ class GraphicItem(TransformMixin, QGraphicsItem):
     def boundingRect(self):
         g = self.window.grid_px
         return self._rect().adjusted(-.35 * g, -.35 * g, .35 * g, .35 * g)
-
-    def shape(self):
-        g = self.window.grid_px
-        m = self.model
-        path = QPainterPath()
-        try:
-            if m.shape in ('line', 'arc'):
-                ctrl_x = getattr(m, 'ctrl_x', None)
-                ctrl_y = getattr(m, 'ctrl_y', None)
-                path.moveTo(QPointF(0, 0))
-                if ctrl_x is not None and ctrl_y is not None:
-                    path.quadTo(QPointF(float(ctrl_x) * g, -float(ctrl_y) * g), QPointF(m.w * g, -m.h * g))
-                else:
-                    r = float(getattr(m, 'curve_radius', 0.0) or 0.0)
-                    if abs(r) > 1e-9:
-                        path.quadTo(QPointF(m.w * g / 2, m.h * g / 2 - r * g), QPointF(m.w * g, m.h * g))
-                    else:
-                        path.lineTo(QPointF(m.w * g, m.h * g))
-            elif m.shape == 'rect':
-                path.addRect(QRectF(0, 0, m.w * g, m.h * g))
-            elif m.shape in ('ellipse', 'circle'):
-                path.addEllipse(QRectF(0, 0, m.w * g, m.h * g))
-            else:
-                path.addRect(self._rect())
-            stroker = QPainterPathStroker()
-            stroker.setWidth(_hit_tolerance_px(self.window, 0.24, 10.0))
-            return path.united(stroker.createStroke(path))
-        except Exception:
-            return super().shape() if hasattr(super(), 'shape') else path
 
     def _handles(self):
         g = self.window.grid_px
@@ -1004,11 +947,13 @@ class GraphicItem(TransformMixin, QGraphicsItem):
         except Exception:
             pass
         if getattr(self.model, 'locked_to_body', False) and not getattr(self.window, 'is_template_editor', False):
-            # BODY-owned template/import artwork is the visible reference geometry.
-            # It must not draw an additional cyan/dashed BODY highlight when the
-            # logical BODY is selected. Selection/handles belong only to BodyItem
-            # (same behavior as Symbol 1).
-            selected_for_highlight = False
+            try:
+                selected_for_highlight = selected_for_highlight or any(
+                    getattr(i, 'data', lambda *_: None)(0) == 'BODY' and i.isSelected()
+                    for i in self.scene().items()
+                )
+            except Exception:
+                pass
         if selected_for_highlight:
             painter.save()
             if getattr(self.model, 'locked_to_body', False) and not getattr(self.window, 'is_template_editor', False):
@@ -2638,69 +2583,5 @@ try:
     BodyItem.mousePressEvent = _lh85_body_mouse_press
     BodyItem.mouseMoveEvent = _lh85_body_mouse_move
     BodyItem.mouseReleaseEvent = _lh85_body_mouse_release
-except Exception:
-    pass
-
-# ---------------------------------------------------------------------------
-# Final harmonization: template/import BODY uses the same visible BodyItem
-# selection/handle rendering as native Symbol 1.  The item is no longer a hidden
-# proxy and it does not suppress paint() for MENTOR_GRAPHICS_AS_BODY.
-# ---------------------------------------------------------------------------
-def _lh_final_bodyitem_paint(self, painter, option, widget=None):
-    # Use the normal Symbol-1 BODY outline + handles for every BODY, including
-    # template/import bodies.  The real artwork is still stored in GraphicModels;
-    # this BODY item is the logical editor surface and transform handle owner.
-    QGraphicsRectItem.paint(self, painter, option, widget)
-    if self.isSelected():
-        painter.save()
-        painter.setPen(QPen(QColor(40, 40, 40), 1))
-        painter.setBrush(QBrush(QColor(255, 255, 255)))
-        for r in self._handles().values():
-            painter.drawRect(r)
-        painter.drawEllipse(_rotation_handle(self.rect(), self.window.grid_px * self.rotate_handle_factor))
-        painter.restore()
-
-try:
-    BodyItem.paint = _lh_final_bodyitem_paint
-except Exception:
-    pass
-
-# ---------------------------------------------------------------------------
-# LH v104: BODY item is the actual visible BODY, not a highlight/proxy frame.
-# ---------------------------------------------------------------------------
-# Imported/template symbols previously had two visual concepts:
-#   1) BODY-owned GraphicItems containing the imported artwork
-#   2) a logical BodyItem rectangle painted like a dashed highlight/proxy
-# The user-visible result was confusing because the rectangle that retained
-# handles looked like a highlight box, while geometry edits appeared to affect a
-# different object.  From here on BodyItem always paints the real BODY outline
-# with the model's normal line style/color.  Selection only adds the small
-# Symbol-1 handles, never a separate dashed highlight rectangle.
-def _lh104_bodyitem_paint_actual_body(self, painter, option, widget=None):
-    painter.save()
-    try:
-        g = float(getattr(self.window, 'grid_px', 40.0) or 40.0)
-        m = getattr(self, 'model', None)
-        color = getattr(m, 'color', (0, 0, 0)) if m is not None else (0, 0, 0)
-        lw = getattr(m, 'line_width', 0.03) if m is not None else 0.03
-        ls = getattr(m, 'line_style', LineStyle.SOLID.value) if m is not None else LineStyle.SOLID.value
-        painter.setPen(pen_for(color, lw, ls, g))
-        painter.setBrush(QBrush(Qt.NoBrush))
-        painter.drawRect(self.rect())
-    finally:
-        painter.restore()
-    if self.isSelected():
-        painter.save()
-        try:
-            painter.setPen(QPen(QColor(40, 40, 40), 1, Qt.SolidLine))
-            painter.setBrush(QBrush(QColor(255, 255, 255)))
-            for r in self._handles().values():
-                painter.drawRect(r)
-            painter.drawEllipse(_rotation_handle(self.rect(), self.window.grid_px * self.rotate_handle_factor))
-        finally:
-            painter.restore()
-
-try:
-    BodyItem.paint = _lh104_bodyitem_paint_actual_body
 except Exception:
     pass
