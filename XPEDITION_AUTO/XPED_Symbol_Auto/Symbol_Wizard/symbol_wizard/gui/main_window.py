@@ -9717,3 +9717,282 @@ try:
     TemplateEditorDialog.rebuild_scene = _lh4_rebuild_scene_wrapper(TemplateEditorDialog.rebuild_scene)
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# Liebherr final transform fix: BODY graphics are transformed as real objects;
+# Flip H/V use canvas axes; text is only moved, never mirrored/rotated.
+# This override deliberately avoids the old proxy/base-stack path.
+# ---------------------------------------------------------------------------
+def _lh5_clean(self, v):
+    try:
+        v = round(float(v), 9)
+        return 0.0 if abs(v) < 1e-9 else v
+    except Exception:
+        return v
+
+
+def _lh5_apply_op_point(op, x, y):
+    x = float(x); y = float(y)
+    typ = op[0]
+    if typ == 'rotate':
+        deg = float(op[1])
+        # Only 90° steps are allowed here. Use exact matrices to avoid drift.
+        d = int(round(deg / 90.0)) % 4
+        if d == 0: return x, y
+        if d == 1: return -y, x
+        if d == 2: return -x, -y
+        return y, -x
+    if typ == 'flip_h':      # mirror at Y-axis: x -> -x
+        return -x, y
+    if typ == 'flip_v':      # mirror at X-axis: y -> -y
+        return x, -y
+    if typ == 'scale':
+        sx, sy = float(op[1]), float(op[2])
+        return x * sx, y * sy
+    return x, y
+
+
+def _lh5_transform_angle(angle, op):
+    """Transform a non-text object's orientation angle by the operation."""
+    try:
+        a = float(angle or 0.0)
+    except Exception:
+        a = 0.0
+    typ = op[0]
+    if typ == 'rotate':
+        return (a + float(op[1])) % 360.0
+    if typ == 'flip_h':
+        return (180.0 - a) % 360.0
+    if typ == 'flip_v':
+        return (-a) % 360.0
+    return a % 360.0
+
+
+def _lh5_text_readable(tm):
+    """Text must stay readable: no negative scale and no transform rotation."""
+    try: tm.scale_x = 1.0
+    except Exception: pass
+    try: tm.scale_y = 1.0
+    except Exception: pass
+    # Keep already user-defined text rotation if it exists, but never add flip/rotate.
+    try:
+        r = float(getattr(tm, 'rotation', 0.0) or 0.0)
+        # Imported pin/body attribute labels in this tool are expected horizontal.
+        # Normalize accidental 180/negative mirror rotations back to a readable 0°.
+        if abs((r % 360.0) - 180.0) < 1e-6 or abs((r % 360.0) - 360.0) < 1e-6:
+            tm.rotation = 0.0
+    except Exception:
+        pass
+
+
+def _lh5_transform_text_model(self, tm, op, font_factor=1.0):
+    if tm is None: return
+    try:
+        tm.x, tm.y = (_lh5_clean(self, v) for v in _lh5_apply_op_point(op, tm.x, tm.y))
+    except Exception:
+        pass
+    _lh5_text_readable(tm)
+    try:
+        tm.font_size_grid = max(0.1, _lh5_clean(self, float(getattr(tm, 'font_size_grid', 0.75) or 0.75) * float(font_factor)))
+    except Exception:
+        pass
+
+
+def _lh5_transform_graphic(self, gr, op):
+    if gr is None: return
+    shape = str(getattr(gr, 'shape', '') or '')
+    try:
+        if shape in ('line', 'arc'):
+            x1, y1 = float(gr.x), float(gr.y)
+            x2, y2 = float(gr.x) + float(getattr(gr, 'w', 0.0) or 0.0), float(gr.y) - float(getattr(gr, 'h', 0.0) or 0.0)
+            nx1, ny1 = _lh5_apply_op_point(op, x1, y1)
+            nx2, ny2 = _lh5_apply_op_point(op, x2, y2)
+            old_ctrl_x, old_ctrl_y = getattr(gr, 'ctrl_x', None), getattr(gr, 'ctrl_y', None)
+            gr.x, gr.y = _lh5_clean(self, nx1), _lh5_clean(self, ny1)
+            gr.w, gr.h = _lh5_clean(self, nx2 - nx1), _lh5_clean(self, ny1 - ny2)
+            gr.rotation = 0.0
+            gr.scale_x = 1.0; gr.scale_y = 1.0
+            if old_ctrl_x is not None and old_ctrl_y is not None:
+                try:
+                    cx, cy = _lh5_apply_op_point(op, x1 + float(old_ctrl_x), y1 - float(old_ctrl_y))
+                    gr.ctrl_x = _lh5_clean(self, cx - nx1)
+                    gr.ctrl_y = _lh5_clean(self, ny1 - cy)
+                except Exception:
+                    pass
+            # curve_radius is a local distance; keep sign under rotation, mirror it under one-axis flips.
+            try:
+                if op[0] in ('flip_h', 'flip_v'):
+                    gr.curve_radius = _lh5_clean(self, -float(getattr(gr, 'curve_radius', 0.0) or 0.0))
+                elif op[0] == 'scale':
+                    gr.curve_radius = _lh5_clean(self, float(getattr(gr, 'curve_radius', 0.0) or 0.0) * max(abs(float(op[1])), abs(float(op[2]))))
+            except Exception:
+                pass
+        else:
+            # Rect/ellipse/circle: transform center and orientation.  Keep glyph-free geometry mirrored/rotated.
+            x = float(getattr(gr, 'x', 0.0) or 0.0); y = float(getattr(gr, 'y', 0.0) or 0.0)
+            w = float(getattr(gr, 'w', 0.0) or 0.0); h = float(getattr(gr, 'h', 0.0) or 0.0)
+            cx, cy = x + w/2.0, y - h/2.0
+            ncx, ncy = _lh5_apply_op_point(op, cx, cy)
+            if op[0] == 'scale':
+                w, h = abs(w * float(op[1])), abs(h * float(op[2]))
+            # For 90° rotations keep model w/h and use model.rotation. This matches GraphicItem.
+            gr.x, gr.y = _lh5_clean(self, ncx - w/2.0), _lh5_clean(self, ncy + h/2.0)
+            gr.w, gr.h = _lh5_clean(self, w), _lh5_clean(self, h)
+            gr.rotation = _lh5_clean(self, _lh5_transform_angle(getattr(gr, 'rotation', 0.0), op))
+            gr.scale_x = float(getattr(gr, 'scale_x', 1.0) or 1.0)
+            gr.scale_y = float(getattr(gr, 'scale_y', 1.0) or 1.0)
+            if op[0] == 'flip_h':
+                gr.scale_x = -gr.scale_x
+            elif op[0] == 'flip_v':
+                gr.scale_y = -gr.scale_y
+    except Exception:
+        pass
+
+
+def _lh5_transform_body_rect(self, b, op):
+    if b is None: return
+    try:
+        x, y, w, h = float(b.x), float(b.y), float(b.width), float(b.height)
+        cx, cy = x + w/2.0, y - h/2.0
+        ncx, ncy = _lh5_apply_op_point(op, cx, cy)
+        if op[0] == 'scale':
+            w, h = abs(w * float(op[1])), abs(h * float(op[2]))
+        b.x, b.y = _lh5_clean(self, ncx - w/2.0), _lh5_clean(self, ncy + h/2.0)
+        b.width, b.height = _lh5_clean(self, max(0.01, w)), _lh5_clean(self, max(0.01, h))
+        b.rotation = _lh5_clean(self, _lh5_transform_angle(getattr(b, 'rotation', 0.0), op))
+        if op[0] == 'flip_h':
+            b.scale_x = -float(getattr(b, 'scale_x', 1.0) or 1.0)
+        elif op[0] == 'flip_v':
+            b.scale_y = -float(getattr(b, 'scale_y', 1.0) or 1.0)
+    except Exception:
+        pass
+
+
+def _lh5_body_graphics(self, unit):
+    try:
+        return _lh2_body_graphics(self, unit)
+    except Exception:
+        out=[]
+        for g in getattr(unit, 'graphics', []) or []:
+            role = str(getattr(g, 'graphic_role', '') or '').lower()
+            raw = str(getattr(g, 'mentor_raw', '') or '')
+            if getattr(g, 'locked_to_body', False) or role in ('body','template_body','imported_body') or (raw != '__USER_GRAPHIC__' and role != 'user_graphic'):
+                out.append(g)
+        return out
+
+
+def _lh5_transform_unit_as_body_group(self, op_name, value=None, refresh=True):
+    u = getattr(self, 'current_unit', None) or getattr(self, 'unit', None)
+    if u is None or getattr(u, 'body', None) is None:
+        return
+    # Build exact operation around the canvas origin (0,0).
+    if op_name == 'rotate':
+        deg = round(float(value or 0.0) / 90.0) * 90.0
+        if abs(deg) < 1e-9: return
+        op = ('rotate', deg)
+    elif op_name == 'flip_h':
+        op = ('flip_h',)
+    elif op_name == 'flip_v':
+        op = ('flip_v',)
+    elif op_name in ('scale', 'scale_x_to', 'scale_y_to'):
+        try: _lh2_sync_body_model_to_body_graphics(self, u)
+        except Exception: pass
+        cur_w = max(1e-9, float(getattr(u.body, 'width', 1.0) or 1.0))
+        cur_h = max(1e-9, float(getattr(u.body, 'height', 1.0) or 1.0))
+        try: snap = self._snap_to_edit_grid
+        except Exception: snap = lambda vv, mn=0.01: max(mn, float(vv))
+        if op_name == 'scale_x_to':
+            sx = float(snap(float(value), 0.01)) / cur_w; sy = 1.0
+        elif op_name == 'scale_y_to':
+            sx = 1.0; sy = float(snap(float(value), 0.01)) / cur_h
+        else:
+            f = float(value or 1.0)
+            sx = float(snap(cur_w * f, 0.01)) / cur_w
+            sy = float(snap(cur_h * f, 0.01)) / cur_h
+        op = ('scale', sx, sy)
+    else:
+        return
+    font_factor = 1.0
+    if op[0] == 'scale':
+        font_factor = max(0.1, (abs(float(op[1])) + abs(float(op[2]))) / 2.0)
+
+    # BODY: imported/template graphics are the BODY. Internal <NONE> uses BodyModel.
+    body_graphics = _lh5_body_graphics(self, u)
+    if body_graphics:
+        for gr in body_graphics:
+            _lh5_transform_graphic(self, gr, op)
+        try: _lh2_sync_body_model_to_body_graphics(self, u)
+        except Exception:
+            try: self._sync_body_model_to_body_bounds_only(u)
+            except Exception: pass
+        # Keep logical proxy rotation neutral for imported artwork; visual rotation is in graphics.
+        try: u.body.rotation = 0.0
+        except Exception: pass
+    else:
+        _lh5_transform_body_rect(self, u.body, op)
+
+    # User/free graphics are attached to the symbol too, but not part of BODY bounds.
+    for gr in getattr(u, 'graphics', []) or []:
+        if gr not in body_graphics:
+            _lh5_transform_graphic(self, gr, op)
+
+    # Pins and pin-owned text.
+    for p in getattr(u, 'pins', []) or []:
+        try:
+            p.x, p.y = (_lh5_clean(self, v) for v in _lh5_apply_op_point(op, p.x, p.y))
+            p.rotation = _lh5_clean(self, _lh5_transform_angle(getattr(p, 'rotation', 0.0), op))
+            if op[0] == 'scale':
+                p.length = max(0.1, _lh5_clean(self, float(getattr(p, 'length', 1.0) or 1.0) * font_factor))
+        except Exception: pass
+        for ax, ay in (('label_x','label_y'), ('number_x','number_y')):
+            if getattr(p, ax, None) is not None and getattr(p, ay, None) is not None:
+                try:
+                    nx, ny = _lh5_apply_op_point(op, getattr(p, ax), getattr(p, ay))
+                    setattr(p, ax, _lh5_clean(self, nx)); setattr(p, ay, _lh5_clean(self, ny))
+                except Exception: pass
+        for tm in (getattr(p, 'attribute_texts', {}) or {}).values():
+            _lh5_transform_text_model(self, tm, op, font_factor)
+        try:
+            if op[0] == 'scale':
+                p.number_font.size_grid = max(0.1, _lh5_clean(self, float(getattr(p.number_font, 'size_grid', .45) or .45) * font_factor))
+                p.label_font.size_grid = max(0.1, _lh5_clean(self, float(getattr(p.label_font, 'size_grid', .55) or .55) * font_factor))
+        except Exception: pass
+
+    for tm in getattr(u, 'texts', []) or []:
+        _lh5_transform_text_model(self, tm, op, font_factor)
+    for tm in (getattr(u.body, 'attribute_texts', {}) or {}).values():
+        _lh5_transform_text_model(self, tm, op, font_factor)
+
+    # Transformation is now directly applied; stale accumulated base would reapply old geometry.
+    try:
+        if hasattr(u, '_body_group_transform'):
+            delattr(u, '_body_group_transform')
+    except Exception: pass
+    if refresh:
+        try: self.update_current_unit_canvas_positions()
+        except Exception:
+            try: self.rebuild_scene()
+            except Exception: pass
+        try: self.rebuild_tree(); self.rebuild_pin_table()
+        except Exception: pass
+
+
+def _lh5_normalize_noop(self, unit=None):
+    # Do not silently renormalize on every rebuild. Origin placement is handled
+    # explicitly by Origin Reset / template import. Rebuild must not undo a
+    # user transform or shift imported body graphics.
+    try:
+        u = unit or getattr(self, 'current_unit', None) or getattr(self, 'unit', None)
+        if u is not None:
+            if _lh5_body_graphics(self, u):
+                try: _lh2_sync_body_model_to_body_graphics(self, u)
+                except Exception: pass
+    except Exception:
+        pass
+
+try:
+    for _cls in (MainWindow, TemplateEditorDialog):
+        _cls._transform_unit_as_body_group = _lh5_transform_unit_as_body_group
+        _cls._normalize_unit_body_anchor_to_symbol_origin = _lh5_normalize_noop
+except Exception:
+    pass
