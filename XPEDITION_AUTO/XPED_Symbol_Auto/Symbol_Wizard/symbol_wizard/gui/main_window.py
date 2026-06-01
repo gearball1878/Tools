@@ -820,6 +820,14 @@ class TemplateEditorDialog(QDialog):
         self.template_snap_check.toggled.connect(lambda _checked: self.scene.update())
         grid_row.addWidget(self.template_snap_check)
         grid_row.addWidget(QLabel('Base symbol grid remains 0.100"; fine grid is only for edit/snap.'))
+        analyze_btn = QPushButton('Analyze Geometry')
+        analyze_btn.setToolTip('Prüft Body-Grafik, Pin-Andockpunkte und Rasterlage, ohne das Template zu ändern.')
+        analyze_btn.clicked.connect(self.analyze_template_geometry)
+        grid_row.addWidget(analyze_btn)
+        optimize_btn = QPushButton('Optimize Pin Docking')
+        optimize_btn.setToolTip('Optional: Pin-Anker auf die nächste Body-Kante legen. Grafik bleibt unverändert.')
+        optimize_btn.clicked.connect(self.optimize_template_pin_docking)
+        grid_row.addWidget(optimize_btn)
         grid_row.addStretch()
         layout.addLayout(grid_row)
 
@@ -970,12 +978,147 @@ class TemplateEditorDialog(QDialog):
         except Exception:
             pass
 
+    def _template_graphic_bounds(self):
+        """Return body-artwork bounds in model grid coordinates.
+
+        Imported/native templates can have an invisible logical body rectangle
+        plus separate graphic primitives. For geometry quality checks the pins
+        should dock to the visible artwork, not necessarily to the logical rect.
+        """
+        xs, ys = [], []
+        for gr in getattr(self.unit, 'graphics', []) or []:
+            try:
+                x = float(getattr(gr, 'x', 0.0) or 0.0)
+                y = float(getattr(gr, 'y', 0.0) or 0.0)
+                w = float(getattr(gr, 'w', 0.0) or 0.0)
+                h = float(getattr(gr, 'h', 0.0) or 0.0)
+                if str(getattr(gr, 'shape', '')).lower() in ('line', 'arc'):
+                    xs.extend([x, x + w])
+                    ys.extend([y, y + h])
+                    cx = getattr(gr, 'ctrl_x', None); cy = getattr(gr, 'ctrl_y', None)
+                    if cx is not None and cy is not None:
+                        xs.append(x + float(cx)); ys.append(y + float(cy))
+                else:
+                    xs.extend([x, x + w])
+                    ys.extend([y, y - h])
+            except Exception:
+                continue
+        if xs and ys:
+            return (min(xs), min(ys), max(xs), max(ys))
+        b = getattr(self.unit, 'body', None)
+        if b:
+            try:
+                return (float(b.x), float(b.y) - float(b.height), float(b.x) + float(b.width), float(b.y))
+            except Exception:
+                pass
+        return (0.0, 0.0, 0.0, 0.0)
+
+    def _nearest_body_edge_point(self, x, y, bounds=None):
+        if bounds is None:
+            bounds = self._template_graphic_bounds()
+        left, bottom, right, top = bounds
+        candidates = [
+            (left, min(max(y, bottom), top), 'left'),
+            (right, min(max(y, bottom), top), 'right'),
+            (min(max(x, left), right), top, 'top'),
+            (min(max(x, left), right), bottom, 'bottom'),
+        ]
+        def d2(c):
+            return (float(x) - c[0]) ** 2 + (float(y) - c[1]) ** 2
+        return min(candidates, key=d2)
+
+    def analyze_template_geometry(self):
+        bounds = self._template_graphic_bounds()
+        left, bottom, right, top = bounds
+        pins = list(getattr(self.unit, 'pins', []) or [])
+        issues = []
+        for p in pins:
+            try:
+                x, y = float(p.x), float(p.y)
+                nx, ny, edge = self._nearest_body_edge_point(x, y, bounds)
+                dist = ((x - nx) ** 2 + (y - ny) ** 2) ** 0.5
+                side = str(getattr(p, 'side', '')).lower()
+                if dist > 0.15:
+                    issues.append(f'Pin {getattr(p, "number", "?")} / {getattr(p, "name", "")}: Anker {x:g},{y:g} liegt {dist:.2f} Grid von der sichtbaren Body-Kante entfernt.')
+                elif edge and side and edge != side:
+                    issues.append(f'Pin {getattr(p, "number", "?")} / {getattr(p, "name", "")}: Side={side}, nächste sichtbare Kante={edge}.')
+            except Exception:
+                continue
+        frac = []
+        def _frac(v):
+            try: return abs(float(v) - round(float(v))) > 1e-6
+            except Exception: return False
+        for p in pins:
+            if _frac(getattr(p, 'x', 0)) or _frac(getattr(p, 'y', 0)):
+                frac.append(f'Pin {getattr(p, "number", "?")}')
+        msg = [
+            f'Template: {self.current_template_key()}',
+            f'Sichtbare Body-Bounds: x={left:g}..{right:g}, y={bottom:g}..{top:g}',
+            f'Pins: {len(pins)}',
+        ]
+        if frac:
+            msg.append('Pins mit Zwischenraster: ' + ', '.join(frac[:20]) + (' ...' if len(frac) > 20 else ''))
+        if issues:
+            msg.append('\nAuffälligkeiten:')
+            msg.extend('• ' + x for x in issues[:40])
+            if len(issues) > 40:
+                msg.append(f'• ... {len(issues)-40} weitere')
+        else:
+            msg.append('\nKeine offensichtlichen Pin-/Body-Andockprobleme gefunden.')
+        QMessageBox.information(self, 'Template Geometry Analysis', '\n'.join(msg))
+
+    def optimize_template_pin_docking(self):
+        pins = list(getattr(self.unit, 'pins', []) or [])
+        if not pins:
+            QMessageBox.information(self, 'Optimize Pin Docking', 'Dieses Template enthält keine Pins.')
+            return
+        ans = QMessageBox.question(
+            self,
+            'Optimize Pin Docking',
+            'Pin-Anker auf die nächste sichtbare Body-Kante legen?\n\nDie Body-Grafik wird nicht verändert. Diese Funktion ist bewusst optional, weil einige Library-Symbole absichtlich so aufgebaut sein können.',
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if ans != QMessageBox.Yes:
+            return
+        self.push_undo_state()
+        bounds = self._template_graphic_bounds()
+        changed = 0
+        for p in pins:
+            try:
+                x, y = float(p.x), float(p.y)
+                nx, ny, edge = self._nearest_body_edge_point(x, y, bounds)
+                if ((x - nx) ** 2 + (y - ny) ** 2) ** 0.5 > 0.05:
+                    dx, dy = nx - x, ny - y
+                    p.x, p.y = nx, ny
+                    try:
+                        p.side = edge
+                    except Exception:
+                        pass
+                    for ax_name, ay_name in (('label_x', 'label_y'), ('number_x', 'number_y')):
+                        if getattr(p, ax_name, None) is not None and getattr(p, ay_name, None) is not None:
+                            setattr(p, ax_name, float(getattr(p, ax_name)) + dx)
+                            setattr(p, ay_name, float(getattr(p, ay_name)) + dy)
+                    for tm in (getattr(p, 'attribute_texts', {}) or {}).values():
+                        try:
+                            tm.x = float(tm.x) + dx
+                            tm.y = float(tm.y) + dy
+                        except Exception:
+                            pass
+                    changed += 1
+            except Exception:
+                continue
+        self.rebuild_scene()
+        QMessageBox.information(self, 'Optimize Pin Docking', f'{changed} Pin-Anker angepasst.')
+
     def set_tool(self, t):
         self.draw_tool = t
         for k, b in self.tool_buttons.items(): b.setChecked(k == t)
         self.view.setDragMode(QGraphicsView.RubberBandDrag if t == DrawTool.SELECT.value else QGraphicsView.NoDrag)
 
     def push_undo_state(self):
+        if getattr(self, '_loading_template', False):
+            return
         self.dirty = True
         self.undo_stack.append(copy.deepcopy(self.unit))
         if len(self.undo_stack) > self.max_history: self.undo_stack.pop(0)
@@ -1014,18 +1157,45 @@ class TemplateEditorDialog(QDialog):
         self.live_refresh()
 
     def _template_state(self):
-        """Stable serializable state used to detect unsaved template edits."""
+        """Stable serializable state used to detect real unsaved template edits.
+
+        QGraphicsScene rebuilds may transiently normalize dataclass/dict/font objects.
+        Store a deterministic JSON-compatible representation, otherwise merely
+        opening/viewing a template can look dirty and trigger a false save prompt.
+        """
+        def _norm(v):
+            if hasattr(v, '__dataclass_fields__'):
+                return _norm(asdict(v))
+            if isinstance(v, dict):
+                return {str(k): _norm(v[k]) for k in sorted(v.keys(), key=str)}
+            if isinstance(v, (list, tuple)):
+                return [_norm(x) for x in v]
+            if isinstance(v, float):
+                return round(v, 9)
+            return v
         try:
-            return asdict(self.unit)
+            return _norm(self.unit)
         except Exception:
-            return copy.deepcopy(self.unit)
+            try:
+                return json.loads(json.dumps(asdict(self.unit), sort_keys=True, default=str))
+            except Exception:
+                return repr(self.unit)
+
+    def _capture_clean_template_snapshot(self):
+        self._clean_template_snapshot = self._template_state()
+        self.dirty = False
+        self.undo_stack.clear()
+        self.redo_stack.clear()
 
     def _template_has_unsaved_changes(self) -> bool:
         """Detect real template content changes by comparing with the saved snapshot."""
-        try:
-            return getattr(self, '_clean_template_snapshot', None) is not None and self._template_state() != self._clean_template_snapshot
-        except Exception:
+        if getattr(self, '_loading_template', False):
             return False
+        try:
+            snap = getattr(self, '_clean_template_snapshot', None)
+            return snap is not None and self._template_state() != snap
+        except Exception:
+            return bool(getattr(self, 'dirty', False))
 
     def _ask_save_if_dirty(self) -> bool:
         """Return True when the pending action may continue."""
@@ -1086,10 +1256,12 @@ class TemplateEditorDialog(QDialog):
         if hasattr(self, 'template_grid_combo'):
             self._sync_template_grid_combo_to_unit()
         self._current_template_name = name
-        self._clean_template_snapshot = self._template_state()
-        self.dirty = False
-        self._loading_template = False
         self.rebuild_scene()
+        # Rebuild may normalize attribute/text/font helper models. Snapshot only
+        # after the scene has been built, so viewing a template is never treated
+        # as an edit.
+        self._capture_clean_template_snapshot()
+        self._loading_template = False
 
     def save_template(self, show_message=True):
         part = self.partition_combo.currentText().strip() if hasattr(self, 'partition_combo') else ''
@@ -1109,8 +1281,7 @@ class TemplateEditorDialog(QDialog):
             self.main.apply_template_style_to_matching_symbols(name, self.unit)
         self.rebuild_template_partition_combos(name)
         self._current_template_name = name
-        self._clean_template_snapshot = self._template_state()
-        self.dirty = False
+        self._capture_clean_template_snapshot()
         self.main.rebuild_all()
         if show_message:
             QMessageBox.information(self, 'Template', f'Template "{name}" saved.')
