@@ -19910,3 +19910,306 @@ try:
     MainWindow._ribbon = _sw105_ribbon
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# Liebherr v106: dedicated clean pin raster
+# ---------------------------------------------------------------------------
+# Mentor/Wizard graphics may use fine vector geometry, but editable pin anchors
+# need one deterministic raster in the drawing tool.  Pin X/Y anchors, docking,
+# BODY-resize redocking, import/template normalization and pin length scaling now
+# use a dedicated model-space pin grid.  This keeps pins visually and electrically
+# clean without rounding coil/arc/body graphics to a destructive coarse grid.
+
+_SW106_DEFAULT_PIN_GRID_STEP = 0.1  # model grid units = 0.010" when grid_inch is 0.100"
+
+
+def _sw106_float(v, default=0.0):
+    try:
+        return float(v)
+    except Exception:
+        return float(default)
+
+
+def _sw106_clean(v):
+    try:
+        v = round(float(v), 9)
+        return 0.0 if abs(v) < 1e-9 else v
+    except Exception:
+        return v
+
+
+def _sw106_pin_grid_step(self):
+    """Return the dedicated pin-anchor raster in model units.
+
+    The raster is intentionally independent from graphic/vector detail.  The
+    default 0.1 model unit matches Mentor tenth-grid templates such as coils,
+    while still being exact enough for drawing and editing pins.
+    """
+    candidates = []
+    try:
+        candidates.append(getattr(self.symbol, 'pin_grid_step', None))
+    except Exception:
+        pass
+    try:
+        candidates.append((getattr(self.current_unit.body, 'attributes', {}) or {}).get('PIN_GRID_STEP'))
+    except Exception:
+        pass
+    for c in candidates:
+        try:
+            f = float(c)
+            if f > 0:
+                return f
+        except Exception:
+            pass
+    return _SW106_DEFAULT_PIN_GRID_STEP
+
+
+def _sw106_snap_pin_value(self, value):
+    step = _sw106_pin_grid_step(self)
+    try:
+        return _sw106_clean(round(float(value) / step) * step)
+    except Exception:
+        return _sw106_clean(value)
+
+
+def _sw106_snap_pin_point(self, x, y):
+    return _sw106_snap_pin_value(self, x), _sw106_snap_pin_value(self, y)
+
+
+def _sw106_pin_grid_px(self):
+    try:
+        return max(1e-9, float(self.grid_px) * _sw106_pin_grid_step(self))
+    except Exception:
+        return 1.0
+
+
+def _sw106_snap_pin_model(self, pin, move_owned_text=False):
+    if pin is None:
+        return pin
+    ox, oy = _sw106_float(getattr(pin, 'x', 0.0)), _sw106_float(getattr(pin, 'y', 0.0))
+    nx, ny = _sw106_snap_pin_point(self, ox, oy)
+    try:
+        pin.x = nx
+        pin.y = ny
+        pin.pin_grid_step = _sw106_pin_grid_step(self)
+    except Exception:
+        return pin
+    dx, dy = nx - ox, ny - oy
+    if move_owned_text and (abs(dx) > 1e-12 or abs(dy) > 1e-12):
+        try:
+            self._move_pin_owned_texts(pin, dx, dy)
+        except Exception:
+            pass
+    # If the import already has absolute label/number anchors, keep them on the
+    # same electrical raster as the pin.  Generated fallback labels without
+    # anchors are unaffected.
+    for ax, ay in (('label_x', 'label_y'), ('number_x', 'number_y')):
+        try:
+            if getattr(pin, ax, None) is not None and getattr(pin, ay, None) is not None:
+                setattr(pin, ax, _sw106_snap_pin_value(self, getattr(pin, ax)))
+                setattr(pin, ay, _sw106_snap_pin_value(self, getattr(pin, ay)))
+        except Exception:
+            pass
+    return pin
+
+
+def _sw106_snap_unit_pins(self, unit=None, move_owned_text=False):
+    try:
+        unit = unit or self.current_unit
+    except Exception:
+        return unit
+    for p in list(getattr(unit, 'pins', []) or []):
+        _sw106_snap_pin_model(self, p, move_owned_text=move_owned_text)
+    return unit
+
+
+# Make the pin grid available to graphics/items.py without importing this module.
+try:
+    MainWindow.pin_grid_step = property(lambda self: _sw106_pin_grid_step(self))
+    MainWindow.pin_grid_px = property(lambda self: _sw106_pin_grid_px(self))
+    MainWindow.snap_pin_value = _sw106_snap_pin_value
+    MainWindow.snap_pin_point = _sw106_snap_pin_point
+    MainWindow.snap_pin_model = _sw106_snap_pin_model
+    MainWindow.snap_unit_pins = _sw106_snap_unit_pins
+except Exception:
+    pass
+
+
+# Override the loose-docking helper used by the pin tool and rebuild redock.
+def _sw106_place_pin_on_body(win, unit, pin, x=None, y=None, side=None, move_owned_text=True):
+    b = getattr(unit, 'body', None)
+    if b is None or pin is None:
+        return
+    try:
+        l, t, r, bot = _sw94_body_outline(win, unit, b) if '_sw94_body_outline' in globals() else (b.x, b.y, b.x + b.width, b.y - b.height)
+    except Exception:
+        l, t, r, bot = b.x, b.y, b.x + b.width, b.y - b.height
+    side = side or getattr(pin, 'side', PinSide.LEFT.value) or PinSide.LEFT.value
+    old_x, old_y = _sw106_float(getattr(pin, 'x', 0.0)), _sw106_float(getattr(pin, 'y', 0.0))
+    cx = _sw106_float(x, old_x)
+    cy = _sw106_float(y, old_y)
+    try:
+        clamp = _sw94_clamp if '_sw94_clamp' in globals() else (lambda v, lo, hi: max(min(lo, hi), min(max(lo, hi), v)))
+        if side == PinSide.RIGHT.value:
+            nx, ny = r, clamp(cy, bot, t)
+        elif side == PinSide.TOP.value:
+            nx, ny = clamp(cx, l, r), t
+        elif side == PinSide.BOTTOM.value:
+            nx, ny = clamp(cx, l, r), bot
+        else:
+            side = PinSide.LEFT.value
+            nx, ny = l, clamp(cy, bot, t)
+        nx, ny = _sw106_snap_pin_point(win, nx, ny)
+        pin.side = side
+        pin.x = nx
+        pin.y = ny
+        pin.pin_grid_step = _sw106_pin_grid_step(win)
+    except Exception:
+        return
+    if move_owned_text:
+        try:
+            win._move_pin_owned_texts(pin, nx - old_x, ny - old_y)
+        except Exception:
+            pass
+    _sw106_snap_pin_model(win, pin, move_owned_text=False)
+
+
+try:
+    # The historical loose-docking code calls this global name dynamically.
+    _sw94_place_pin_on_body = _sw106_place_pin_on_body
+except Exception:
+    pass
+
+
+try:
+    _sw106_prev_add_pin = MainWindow.add_pin
+except Exception:
+    _sw106_prev_add_pin = None
+
+
+def _sw106_add_pin(self, side=None, x=None, y=None):
+    result = _sw106_prev_add_pin(self, side, x, y) if _sw106_prev_add_pin is not None else None
+    try:
+        _sw106_snap_unit_pins(self, self.current_unit, move_owned_text=False)
+        self.update_current_unit_canvas_positions()
+    except Exception:
+        pass
+    return result
+
+
+try:
+    _sw106_prev_dock = MainWindow.dock_pins_to_body
+except Exception:
+    _sw106_prev_dock = None
+
+
+def _sw106_dock_pins_to_body(self, unit):
+    if _sw106_prev_dock is not None:
+        _sw106_prev_dock(self, unit)
+    return _sw106_snap_unit_pins(self, unit, move_owned_text=False)
+
+
+try:
+    _sw106_prev_set_pin_attr = MainWindow.set_pin_attr
+except Exception:
+    _sw106_prev_set_pin_attr = None
+
+
+def _sw106_set_pin_attr(self, m, a, v):
+    result = _sw106_prev_set_pin_attr(self, m, a, v) if _sw106_prev_set_pin_attr is not None else setattr(m, a, v)
+    if a in ('x', 'y', 'side', 'auto_dock', 'length'):
+        try:
+            _sw106_snap_pin_model(self, m, move_owned_text=False)
+            self.schedule_scene_refresh(visual_only=True)
+        except Exception:
+            pass
+    return result
+
+
+try:
+    _sw106_prev_scale_resize = MainWindow.scale_current_unit_children_from_body_resize
+except Exception:
+    _sw106_prev_scale_resize = None
+
+
+def _sw106_scale_current_unit_children_from_body_resize(self, start_state, body):
+    result = _sw106_prev_scale_resize(self, start_state, body) if _sw106_prev_scale_resize is not None else None
+    try:
+        _sw106_snap_unit_pins(self, self.current_unit, move_owned_text=False)
+    except Exception:
+        pass
+    return result
+
+
+try:
+    _sw106_prev_load_template_unit = MainWindow.load_template_unit
+except Exception:
+    _sw106_prev_load_template_unit = None
+
+
+def _sw106_load_template_unit(self, key: str):
+    unit = _sw106_prev_load_template_unit(self, key) if _sw106_prev_load_template_unit is not None else SymbolUnitModel(name=str(key or 'Template'))
+    try:
+        _sw106_snap_unit_pins(self, unit, move_owned_text=False)
+    except Exception:
+        pass
+    return unit
+
+
+try:
+    _sw106_prev_load_split_template_units = MainWindow.load_split_template_units
+except Exception:
+    _sw106_prev_load_split_template_units = None
+
+
+def _sw106_load_split_template_units(self, key: str):
+    units = _sw106_prev_load_split_template_units(self, key) if _sw106_prev_load_split_template_units is not None else []
+    try:
+        for u in units or []:
+            _sw106_snap_unit_pins(self, u, move_owned_text=False)
+    except Exception:
+        pass
+    return units
+
+
+try:
+    _sw106_prev_import_mentor_symbol = MainWindow.import_mentor_symbol
+except Exception:
+    _sw106_prev_import_mentor_symbol = None
+
+
+def _sw106_import_mentor_symbol(self):
+    # Keep the original dialog/workflow, then normalize all imported pins in the
+    # active library.  This is intentionally broad and harmless: already-clean
+    # pins remain unchanged.
+    result = _sw106_prev_import_mentor_symbol(self) if _sw106_prev_import_mentor_symbol is not None else None
+    try:
+        for s in getattr(self.library, 'symbols', []) or []:
+            for u in getattr(s, 'units', []) or []:
+                _sw106_snap_unit_pins(self, u, move_owned_text=False)
+        self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table(); self.refresh_properties()
+    except Exception:
+        pass
+    return result
+
+
+try:
+    MainWindow.add_pin = _sw106_add_pin
+    MainWindow.dock_pins_to_body = _sw106_dock_pins_to_body
+    MainWindow.set_pin_attr = _sw106_set_pin_attr
+    MainWindow.scale_current_unit_children_from_body_resize = _sw106_scale_current_unit_children_from_body_resize
+    MainWindow.load_template_unit = _sw106_load_template_unit
+    MainWindow.load_split_template_units = _sw106_load_split_template_units
+    MainWindow.import_mentor_symbol = _sw106_import_mentor_symbol
+    if 'TemplateEditorDialog' in globals():
+        TemplateEditorDialog.pin_grid_step = MainWindow.pin_grid_step
+        TemplateEditorDialog.pin_grid_px = MainWindow.pin_grid_px
+        TemplateEditorDialog.snap_pin_value = _sw106_snap_pin_value
+        TemplateEditorDialog.snap_pin_point = _sw106_snap_pin_point
+        TemplateEditorDialog.snap_pin_model = _sw106_snap_pin_model
+        TemplateEditorDialog.snap_unit_pins = _sw106_snap_unit_pins
+        TemplateEditorDialog.add_pin = _sw106_add_pin
+        TemplateEditorDialog.dock_pins_to_body = _sw106_dock_pins_to_body
+        TemplateEditorDialog.scale_current_unit_children_from_body_resize = _sw106_scale_current_unit_children_from_body_resize
+except Exception:
+    pass

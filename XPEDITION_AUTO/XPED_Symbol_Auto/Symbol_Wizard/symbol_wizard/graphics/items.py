@@ -2840,3 +2840,122 @@ try:
     GraphicItem.update = _sw102_graphic_safe_update
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# Liebherr v106: use dedicated pin raster for pin canvas edits
+# ---------------------------------------------------------------------------
+# Pin anchors are electrical edit objects and must snap to the dedicated pin
+# raster, not to arbitrary graphic/vector/grid settings.  Other item classes keep
+# using the active edit grid.
+
+try:
+    _sw106_prev_transform_item_change = TransformMixin.itemChange
+except Exception:
+    _sw106_prev_transform_item_change = None
+
+
+def _sw106_pin_grid_px_from_item(item):
+    try:
+        win = item.scene().window
+        return float(getattr(win, 'pin_grid_px', 0.0) or 0.0)
+    except Exception:
+        return 0.0
+
+
+def _sw106_transform_item_change(self, change, value):
+    try:
+        if change == QGraphicsItem.ItemPositionChange and self.scene() and self.data(0) == 'PIN':
+            win = self.scene().window
+            if bool(getattr(win, 'template_snap_check', None) and not win.template_snap_check.isChecked()):
+                return super(TransformMixin, self).itemChange(change, value)
+            g = _sw106_pin_grid_px_from_item(self) or float(getattr(win, 'edit_grid_px', self.scene().grid_px) or self.scene().grid_px)
+            return QPointF(snap(value.x(), g), snap(value.y(), g))
+    except Exception:
+        pass
+    if _sw106_prev_transform_item_change is not None:
+        return _sw106_prev_transform_item_change(self, change, value)
+    return super(TransformMixin, self).itemChange(change, value)
+
+
+try:
+    TransformMixin.itemChange = _sw106_transform_item_change
+except Exception:
+    pass
+
+
+try:
+    _sw106_prev_pin_update_model_pos = PinItem.update_model_pos
+except Exception:
+    _sw106_prev_pin_update_model_pos = None
+
+
+def _sw106_pin_update_model_pos(self):
+    g = self.window.grid_px
+    old_x, old_y = float(self.model.x), float(self.model.y)
+    raw_x = self.pos().x() / g
+    raw_y = -self.pos().y() / g
+    try:
+        self.model.x = self.window.snap_pin_value(raw_x)
+        self.model.y = self.window.snap_pin_value(raw_y)
+        self.model.pin_grid_step = getattr(self.window, 'pin_grid_step', 0.1)
+    except Exception:
+        self.model.x = raw_x
+        self.model.y = raw_y
+    dx, dy = float(self.model.x) - old_x, float(self.model.y) - old_y
+    if abs(dx) > 1e-9 or abs(dy) > 1e-9:
+        try:
+            if QApplication.mouseButtons() & Qt.LeftButton:
+                self.model.auto_dock = False
+        except Exception:
+            pass
+        for ax_name, ay_name in (('label_x', 'label_y'), ('number_x', 'number_y')):
+            if getattr(self.model, ax_name, None) is not None and getattr(self.model, ay_name, None) is not None:
+                try:
+                    setattr(self.model, ax_name, self.window.snap_pin_value(float(getattr(self.model, ax_name)) + dx))
+                    setattr(self.model, ay_name, self.window.snap_pin_value(float(getattr(self.model, ay_name)) + dy))
+                except Exception:
+                    setattr(self.model, ax_name, float(getattr(self.model, ax_name)) + dx)
+                    setattr(self.model, ay_name, float(getattr(self.model, ay_name)) + dy)
+        for tm in (getattr(self.model, 'attribute_texts', {}) or {}).values():
+            try:
+                tm.x = self.window.snap_pin_value(float(tm.x) + dx)
+                tm.y = self.window.snap_pin_value(float(tm.y) + dy)
+            except Exception:
+                try:
+                    tm.x = float(tm.x) + dx
+                    tm.y = float(tm.y) + dy
+                except Exception:
+                    pass
+
+
+try:
+    PinItem.update_model_pos = _sw106_pin_update_model_pos
+except Exception:
+    pass
+
+
+try:
+    _sw106_prev_pin_scale_selected = PinItem.scale_selected
+except Exception:
+    _sw106_prev_pin_scale_selected = None
+
+
+def _sw106_pin_scale_selected(self, factor):
+    try:
+        step = float(getattr(self.window, 'pin_grid_step', 0.1) or 0.1)
+    except Exception:
+        step = 0.1
+    try:
+        value = float(self.model.length) * float(factor)
+        self.model.length = max(step, round(value / step) * step)
+    except Exception:
+        self.model.length = max(step, float(getattr(self.model, 'length', step) or step))
+    self.apply_transform_from_model()
+    self.update()
+
+
+try:
+    PinItem.scale_selected = _sw106_pin_scale_selected
+    PinItem.scale_by = _sw106_pin_scale_selected
+except Exception:
+    pass
