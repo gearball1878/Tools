@@ -16657,3 +16657,455 @@ try:
         _cls.flip_selected_vertical = _lh64_flip_v
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# Liebherr v65: real vector-group interaction.
+# ---------------------------------------------------------------------------
+# Final override for grouped user graphics:
+# - A group is selectable/draggable over its full maximum-extent rectangle.
+# - Transformations use one vector pivot: lower-left corner of the group bbox.
+# - Scale, mirror and rotate transform the object endpoints with one matrix;
+#   children are not independently normalized, so the group shape stays intact.
+# - Edit menu/toolbar duplicate Group/Ungroup entries are removed.
+try:
+    from PySide6.QtWidgets import QGraphicsRectItem
+    from PySide6.QtCore import QRectF, QPointF, Qt
+    from PySide6.QtGui import QPen, QColor, QBrush, QPainterPath, QAction
+except Exception:
+    pass
+
+
+def _lh65_is_user_graphic(gr):
+    try:
+        role = str(getattr(gr, 'graphic_role', '') or '').lower()
+        return (not bool(getattr(gr, 'locked_to_body', False))) and role not in ('body','template_body','imported_body','body_graphic')
+    except Exception:
+        return False
+
+
+def _lh65_gid(gr):
+    try:
+        gid = str(getattr(gr, 'group_id', '') or '')
+        if gid:
+            return gid
+        role = str(getattr(gr, 'graphic_role', '') or '')
+        if role.startswith('user_graphic_group:'):
+            return role.split(':', 1)[1]
+    except Exception:
+        pass
+    return ''
+
+
+def _lh65_set_gid(gr, gid):
+    gid = str(gid or '')
+    try: gr.group_id = gid
+    except Exception: pass
+    try: gr.graphic_role = ('user_graphic_group:' + gid) if gid else 'user_graphic'
+    except Exception: pass
+
+
+def _lh65_all_graphics(self):
+    try: return list(getattr(getattr(self, 'current_unit', None), 'graphics', []) or [])
+    except Exception: return []
+
+
+def _lh65_group_models(self, gid):
+    return [gr for gr in _lh65_all_graphics(self) if _lh65_is_user_graphic(gr) and _lh65_gid(gr) == gid]
+
+
+def _lh65_endpoints(gr):
+    x = float(getattr(gr, 'x', 0.0) or 0.0)
+    y = float(getattr(gr, 'y', 0.0) or 0.0)
+    w = float(getattr(gr, 'w', 0.0) or 0.0)
+    h = float(getattr(gr, 'h', 0.0) or 0.0)
+    return x, y, x + w, y - h
+
+
+def _lh65_points_for_bbox(gr):
+    x1, y1, x2, y2 = _lh65_endpoints(gr)
+    pts = [(x1,y1),(x2,y2)]
+    if str(getattr(gr, 'shape', '') or '').lower() not in ('line','arc'):
+        pts += [(x1,y2),(x2,y1)]
+    try:
+        if getattr(gr, 'ctrl_x', None) is not None and getattr(gr, 'ctrl_y', None) is not None:
+            pts.append((x1 + float(gr.ctrl_x), y1 - float(gr.ctrl_y)))
+    except Exception: pass
+    return pts
+
+
+def _lh65_bbox(models):
+    pts = []
+    for gr in models:
+        pts.extend(_lh65_points_for_bbox(gr))
+    if not pts: return None
+    xs = [p[0] for p in pts]; ys = [p[1] for p in pts]
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def _lh65_step(self):
+    try: return max(float(self._edit_grid_step()), 1e-9)
+    except Exception: return 1.0
+
+
+def _lh65_snap(self, v):
+    st = _lh65_step(self)
+    try: return float(self._snap_to_edit_grid(float(v), st))
+    except Exception: return round(float(v)/st)*st
+
+
+def _lh65_snap_point(self, p):
+    return (_lh65_snap(self, p[0]), _lh65_snap(self, p[1]))
+
+
+def _lh65_apply_endpoints(gr, p1, p2):
+    x1, y1 = p1; x2, y2 = p2
+    try:
+        gr.x = x1; gr.y = y1; gr.w = x2 - x1; gr.h = y1 - y2
+    except Exception:
+        pass
+
+
+def _lh65_selected_gid(self):
+    try:
+        for it in list(self.scene.selectedItems()):
+            d = it.data(0)
+            if d == 'GRAPHIC_GROUP_PROXY':
+                gid = str(it.data(1) or '')
+                if gid: return gid
+            if d == 'GRAPHIC':
+                gid = _lh65_gid(getattr(it, 'model', None))
+                if gid: return gid
+    except Exception: pass
+    return ''
+
+
+def _lh65_selected_models(self, expand_groups=True):
+    selected = []
+    gids = set()
+    try: items = list(self.scene.selectedItems())
+    except Exception: items = []
+    for it in items:
+        try:
+            d = it.data(0)
+            if d == 'GRAPHIC_GROUP_PROXY':
+                gid = str(it.data(1) or '')
+                if gid: gids.add(gid)
+            elif d == 'GRAPHIC':
+                gr = getattr(it, 'model', None)
+                if gr is not None and _lh65_is_user_graphic(gr):
+                    if gr not in selected: selected.append(gr)
+                    gid = _lh65_gid(gr)
+                    if gid: gids.add(gid)
+        except Exception: pass
+    if expand_groups and gids:
+        out = []
+        for gr in _lh65_all_graphics(self):
+            if _lh65_is_user_graphic(gr) and _lh65_gid(gr) in gids:
+                if gr not in out: out.append(gr)
+        return out
+    return selected
+
+
+class _LH65GroupProxy(QGraphicsRectItem):
+    def __init__(self, window, gid):
+        super().__init__()
+        self.window = window
+        self.gid = gid
+        self._press_scene = None
+        self._start = None
+        self.setData(0, 'GRAPHIC_GROUP_PROXY')
+        self.setData(1, gid)
+        self.setFlag(QGraphicsRectItem.ItemIsSelectable, True)
+        self.setFlag(QGraphicsRectItem.ItemIsMovable, False)
+        self.setAcceptedMouseButtons(Qt.LeftButton)
+        self.setZValue(1000000)
+        self.setPen(QPen(QColor(80,80,80), 1, Qt.DashLine))
+        self.setBrush(QBrush(QColor(0,0,0,1)))  # practically transparent, but hit-testable
+
+    def mousePressEvent(self, event):
+        try:
+            self.setSelected(True)
+            self._press_scene = event.scenePos()
+            self._start = [(gr, float(getattr(gr,'x',0.0) or 0.0), float(getattr(gr,'y',0.0) or 0.0)) for gr in _lh65_group_models(self.window, self.gid)]
+        except Exception:
+            self._press_scene = None; self._start = None
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._press_scene is None or not self._start:
+            return super().mouseMoveEvent(event)
+        try:
+            g = float(getattr(self.window, 'grid_px', 20) or 20)
+            dx = (event.scenePos().x() - self._press_scene.x()) / g
+            dy = -(event.scenePos().y() - self._press_scene.y()) / g
+            dx = _lh65_snap(self.window, dx); dy = _lh65_snap(self.window, dy)
+            for gr, sx, sy in self._start:
+                gr.x = sx + dx; gr.y = sy + dy
+            _lh65_refresh(self.window)
+        except Exception:
+            pass
+
+    def mouseReleaseEvent(self, event):
+        try:
+            self._press_scene = None; self._start = None
+            _lh65_refresh(self.window)
+        except Exception: pass
+        super().mouseReleaseEvent(event)
+
+
+def _lh65_clear_proxy(self):
+    try:
+        item = getattr(self, '_lh65_group_proxy', None)
+        if item is not None and item.scene() is not None:
+            self.scene.removeItem(item)
+    except Exception: pass
+    try: self._lh65_group_proxy = None
+    except Exception: pass
+    try:
+        old = getattr(self, '_lh62_group_outline_item', None) or getattr(self, '_lh61_group_outline_item', None)
+        if old is not None: old.hide()
+    except Exception: pass
+
+
+def _lh65_update_group_proxy(self):
+    gid = _lh65_selected_gid(self)
+    if not gid:
+        _lh65_clear_proxy(self); return
+    models = _lh65_group_models(self, gid)
+    if len(models) < 2:
+        _lh65_clear_proxy(self); return
+    b = _lh65_bbox(models)
+    if not b:
+        _lh65_clear_proxy(self); return
+    minx, miny, maxx, maxy = b
+    g = float(getattr(self, 'grid_px', 20) or 20)
+    pad = max(3.0, g*0.15)
+    rect = QRectF(minx*g, -maxy*g, (maxx-minx)*g, (maxy-miny)*g).normalized().adjusted(-pad,-pad,pad,pad)
+    item = getattr(self, '_lh65_group_proxy', None)
+    try:
+        if item is None or getattr(item, 'gid', None) != gid or item.scene() is None:
+            if item is not None and item.scene() is not None:
+                self.scene.removeItem(item)
+            item = _LH65GroupProxy(self, gid)
+            self.scene.addItem(item)
+            self._lh65_group_proxy = item
+        item.gid = gid; item.setData(1, gid); item.setRect(rect); item.show()
+        # Keep proxy selected, children visually selected only through proxy outline.
+        if not item.isSelected(): item.setSelected(True)
+    except Exception: pass
+
+
+def _lh65_refresh(self):
+    try: self.dirty = True
+    except Exception: pass
+    try: self.update_current_unit_canvas_positions()
+    except Exception:
+        try: self.schedule_scene_refresh()
+        except Exception: pass
+    try: _lh65_update_group_proxy(self)
+    except Exception: pass
+    try: self.refresh_properties()
+    except Exception: pass
+    try: self.rebuild_tree()
+    except Exception: pass
+    try: self.view.viewport().update()
+    except Exception: pass
+
+
+def _lh65_group_selected_graphics(self):
+    models = _lh65_selected_models(self, expand_groups=False)
+    clean = []
+    for gr in models:
+        if gr not in clean: clean.append(gr)
+    if len(clean) < 2:
+        try: QMessageBox.information(self, 'Group Graphics', 'Bitte mindestens zwei eingefügte Grafikobjekte auswählen.')
+        except Exception: pass
+        return
+    try: self.push_undo_state()
+    except Exception: pass
+    import uuid as _uuid
+    gid = 'G' + _uuid.uuid4().hex[:8]
+    for gr in clean:
+        _lh65_set_gid(gr, gid)
+    try:
+        self.scene.clearSelection()
+    except Exception: pass
+    _lh65_refresh(self)
+    try:
+        _lh65_update_group_proxy(self)
+        p = getattr(self, '_lh65_group_proxy', None)
+        if p is not None: p.setSelected(True)
+    except Exception: pass
+
+
+def _lh65_ungroup_selected_graphics(self):
+    models = _lh65_selected_models(self, expand_groups=True)
+    if not models: return
+    try: self.push_undo_state()
+    except Exception: pass
+    for gr in models:
+        _lh65_set_gid(gr, '')
+    _lh65_clear_proxy(self)
+    _lh65_refresh(self)
+
+
+def _lh65_transform_models(self, models, fn, scale_factor=None):
+    if not models: return False
+    b = _lh65_bbox(models)
+    if not b: return False
+    minx, miny, maxx, maxy = b
+    ox, oy = _lh65_snap(self, minx), _lh65_snap(self, miny)  # lower-left pivot/axis intersection
+    step = _lh65_step(self)
+    try: self.push_undo_state()
+    except Exception: pass
+    for gr in models:
+        try:
+            x1,y1,x2,y2 = _lh65_endpoints(gr)
+            nx1,ny1 = _lh65_snap_point(self, fn(x1,y1,ox,oy))
+            nx2,ny2 = _lh65_snap_point(self, fn(x2,y2,ox,oy))
+            # For scaling, keep non-line shapes at least one edit-grid on both axes.
+            if scale_factor is not None and str(getattr(gr,'shape','') or '').lower() not in ('line','arc'):
+                if abs(nx2-nx1) < step:
+                    nx2 = nx1 + (step if (x2-x1) >= 0 else -step)
+                if abs(ny1-ny2) < step:
+                    ny2 = ny1 - (step if (y1-y2) >= 0 else -step)
+            # Control point/curve radius follows the same vector transform where possible.
+            ctrl_abs = None
+            try:
+                if getattr(gr, 'ctrl_x', None) is not None and getattr(gr, 'ctrl_y', None) is not None:
+                    ctrl_abs = (x1 + float(gr.ctrl_x), y1 - float(gr.ctrl_y))
+            except Exception: ctrl_abs = None
+            _lh65_apply_endpoints(gr, (nx1,ny1), (nx2,ny2))
+            if ctrl_abs is not None:
+                ncx,ncy = _lh65_snap_point(self, fn(ctrl_abs[0], ctrl_abs[1], ox, oy))
+                gr.ctrl_x = ncx - gr.x; gr.ctrl_y = gr.y - ncy
+            if scale_factor is not None:
+                try:
+                    if getattr(gr, 'curve_radius', None) not in (None, 0, 0.0):
+                        gr.curve_radius = _lh65_snap(self, float(gr.curve_radius) * float(scale_factor))
+                except Exception: pass
+        except Exception:
+            pass
+    _lh65_refresh(self)
+    return True
+
+
+def _lh65_scale_selected_grid(self, direction:int):
+    try:
+        if self._selected_body_active():
+            return _lh61_prev_scale_grid(self, direction) if '_lh61_prev_scale_grid' in globals() and _lh61_prev_scale_grid else None
+    except Exception: pass
+    models = _lh65_selected_models(self, expand_groups=True)
+    if not models:
+        return _lh61_prev_scale_grid(self, direction) if '_lh61_prev_scale_grid' in globals() and _lh61_prev_scale_grid else None
+    b = _lh65_bbox(models); step = _lh65_step(self)
+    if not b: return None
+    minx,miny,maxx,maxy = b
+    dom = max(maxx-minx, maxy-miny, step)
+    target = max(step, dom + (step if int(direction)>0 else -step))
+    factor = target / dom if dom > 1e-12 else 1.0
+    return _lh65_transform_models(self, models, lambda x,y,ox,oy: (ox + (x-ox)*factor, oy + (y-oy)*factor), scale_factor=factor)
+
+
+def _lh65_flip_h(self):
+    try:
+        if self._selected_body_active():
+            return _lh61_prev_flip_h(self) if '_lh61_prev_flip_h' in globals() and _lh61_prev_flip_h else None
+    except Exception: pass
+    models = _lh65_selected_models(self, expand_groups=True)
+    if models:
+        # Mirror at local Y axis = left edge of object.
+        return _lh65_transform_models(self, models, lambda x,y,ox,oy: (ox - (x-ox), y))
+    return _lh61_prev_flip_h(self) if '_lh61_prev_flip_h' in globals() and _lh61_prev_flip_h else None
+
+
+def _lh65_flip_v(self):
+    try:
+        if self._selected_body_active():
+            return _lh61_prev_flip_v(self) if '_lh61_prev_flip_v' in globals() and _lh61_prev_flip_v else None
+    except Exception: pass
+    models = _lh65_selected_models(self, expand_groups=True)
+    if models:
+        # Mirror at local X axis = lower edge of object.
+        return _lh65_transform_models(self, models, lambda x,y,ox,oy: (x, oy - (y-oy)))
+    return _lh61_prev_flip_v(self) if '_lh61_prev_flip_v' in globals() and _lh61_prev_flip_v else None
+
+
+def _lh65_rotate_selected(self, deg):
+    try:
+        if self._selected_body_active():
+            return _lh61_prev_rotate_selected(self, deg) if '_lh61_prev_rotate_selected' in globals() and _lh61_prev_rotate_selected else None
+    except Exception: pass
+    models = _lh65_selected_models(self, expand_groups=True)
+    if models:
+        import math as _math
+        rad = _math.radians(float(deg)); c = round(_math.cos(rad)); s = round(_math.sin(rad))
+        ok = _lh65_transform_models(self, models, lambda x,y,ox,oy: (ox + (x-ox)*c - (y-oy)*s, oy + (x-ox)*s + (y-oy)*c))
+        for gr in models:
+            try: gr.rotation = (float(getattr(gr,'rotation',0.0) or 0.0) + float(deg)) % 360.0
+            except Exception: pass
+        _lh65_refresh(self)
+        return ok
+    return _lh61_prev_rotate_selected(self, deg) if '_lh61_prev_rotate_selected' in globals() and _lh61_prev_rotate_selected else None
+
+
+def _lh65_cleanup_group_ui(self):
+    # Remove duplicate menu entries and duplicate Graphic Group toolbars/buttons.
+    try:
+        for act in list(self.menuBar().actions()):
+            m = act.menu()
+            if not m or str(act.text()).replace('&','').lower() != 'edit':
+                continue
+            seen = set()
+            for a in list(m.actions()):
+                t = str(a.text()).replace('&','').strip().lower()
+                key = None
+                if t in ('group graphics','ungroup graphics','ungroup'):
+                    key = 'ungroup graphics' if 'ungroup' in t else 'group graphics'
+                if key:
+                    if key in seen:
+                        m.removeAction(a)
+                    else:
+                        seen.add(key)
+    except Exception: pass
+    try:
+        seen_tb = False
+        for tb in list(self.findChildren(QToolBar)) if 'QToolBar' in globals() else []:
+            title = str(tb.windowTitle() or '')
+            texts = [str(a.text()) for a in tb.actions()]
+            is_group = title == 'Graphic Group' or any(('Group Graphics' in t or 'Ungroup' in t) for t in texts)
+            if is_group:
+                if seen_tb:
+                    tb.hide(); tb.setParent(None)
+                else:
+                    seen_tb = True
+    except Exception: pass
+
+try:
+    _lh65_prev_menus = MainWindow._menus
+    def _lh65_menus(self):
+        _lh65_prev_menus(self)
+        try: _lh65_cleanup_group_ui(self)
+        except Exception: pass
+    MainWindow._menus = _lh65_menus
+except Exception: pass
+
+try:
+    globals()['_lh62_update_group_outline'] = _lh65_update_group_proxy
+    globals()['_lh64_update_group_outline'] = _lh65_update_group_proxy
+    for _cls in (MainWindow, TemplateEditorDialog):
+        _cls.group_selected_graphics = _lh65_group_selected_graphics
+        _cls.ungroup_selected_graphics = _lh65_ungroup_selected_graphics
+        _cls.scale_selected_grid = _lh65_scale_selected_grid
+        _cls.rotate_selected = _lh65_rotate_selected
+        _cls.flip_selected_horizontal = _lh65_flip_h
+        _cls.flip_selected_vertical = _lh65_flip_v
+except Exception: pass
+try:
+    _lh65_prev_toolbar = MainWindow._toolbar
+    def _lh65_toolbar(self):
+        _lh65_prev_toolbar(self)
+        try: _lh65_cleanup_group_ui(self)
+        except Exception: pass
+    MainWindow._toolbar = _lh65_toolbar
+except Exception: pass
