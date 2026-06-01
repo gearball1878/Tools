@@ -11013,3 +11013,458 @@ try:
     GraphicItem.mousePressEvent = _lh10_graphic_mouse_press
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# SW39 retry fix: unify BODY style/scale handling for Symbol1/import/templates.
+# - Property-panel BODY width/height and toolbar Scale +/- use one safe path.
+# - Canvas BODY handle resize uses the same path for imported/template graphics.
+# - BODY graphics are detected by role/lock/mentor flags, not by proxy frame.
+# - Pins are never scaled; they are redocked/snapped to edit grid and keep length.
+# - Line style/width apply to all selected graphical objects; RGB applies to all.
+# ---------------------------------------------------------------------------
+
+def _sw39_edit_step(self):
+    try:
+        return max(0.001, float(getattr(self, 'edit_grid_step', 0) or self.edit_grid.value() or self.grid_inch or 1.0))
+    except Exception:
+        return 1.0
+
+
+def _sw39_clean(self, v):
+    try:
+        v = round(float(v), 9)
+        return 0.0 if abs(v) < 1e-9 else v
+    except Exception:
+        return v
+
+
+def _sw39_snap(self, v):
+    step = _sw39_edit_step(self)
+    try:
+        return _sw39_clean(self, round(float(v) / step) * step)
+    except Exception:
+        return float(v)
+
+
+def _sw39_is_imported_or_template_body(self, unit=None):
+    try:
+        u = unit or self.current_unit
+        b = u.body
+        attrs = getattr(b, 'attributes', {}) or {}
+        flags = ('MENTOR_GRAPHICS_AS_BODY', 'TEMPLATE_GRAPHICS_AS_BODY', 'MENTOR_HAS_BODY')
+        if any(str(attrs.get(k, '0')).strip().upper() in ('1', 'TRUE', 'YES') for k in flags):
+            return True
+        return any(getattr(g, 'locked_to_body', False) or str(getattr(g, 'graphic_role', '')).lower() in ('body','template_body','imported_body') for g in getattr(u, 'graphics', []) or [])
+    except Exception:
+        return False
+
+
+def _sw39_body_graphics(self, unit=None):
+    """Return real graphics that visually form the BODY.
+
+    Imported/template symbols must not have a proxy rectangle.  The imported
+    primitives themselves are the BODY.  User-added graphics stay separate and
+    therefore are excluded.
+    """
+    try:
+        u = unit or self.current_unit
+        imported = _sw39_is_imported_or_template_body(self, u)
+        out = []
+        for g in getattr(u, 'graphics', []) or []:
+            role = str(getattr(g, 'graphic_role', '')).lower()
+            raw = str(getattr(g, 'mentor_raw', '') or '')
+            if raw == '__USER_GRAPHIC__' or role == 'user_graphic':
+                continue
+            if imported or getattr(g, 'locked_to_body', False) or role in ('body','template_body','imported_body'):
+                out.append(g)
+        return out
+    except Exception:
+        return []
+
+# Override legacy global helper used by the previous patch, if present.
+try:
+    _lh10_body_graphics = _sw39_body_graphics
+except Exception:
+    pass
+
+
+def _sw39_graphic_bounds(g):
+    x = float(getattr(g, 'x', 0.0) or 0.0)
+    y = float(getattr(g, 'y', 0.0) or 0.0)
+    w = float(getattr(g, 'w', 0.0) or 0.0)
+    h = float(getattr(g, 'h', 0.0) or 0.0)
+    xs = [x, x + w]
+    ys = [y, y - h]
+    try:
+        if getattr(g, 'shape', '') == 'ellipse':
+            pass
+    except Exception:
+        pass
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def _sw39_body_graphics_bounds(self, unit=None):
+    gs = _sw39_body_graphics(self, unit)
+    if not gs:
+        b = (unit or self.current_unit).body
+        return (float(b.x), float(b.y), float(b.width), float(b.height))
+    mins = [_sw39_graphic_bounds(g) for g in gs]
+    xmin = min(v[0] for v in mins); ymin = min(v[1] for v in mins)
+    xmax = max(v[2] for v in mins); ymax = max(v[3] for v in mins)
+    # Body model uses top-left y and positive height downward in this tool.
+    return (_sw39_clean(self, xmin), _sw39_clean(self, ymax), _sw39_clean(self, xmax - xmin), _sw39_clean(self, ymax - ymin))
+
+try:
+    _lh10_body_graphics_bounds = _sw39_body_graphics_bounds
+except Exception:
+    pass
+
+
+def _sw39_sync_body_to_real_graphics(self, unit=None):
+    u = unit or self.current_unit
+    try:
+        x, y, w, h = _sw39_body_graphics_bounds(self, u)
+        u.body.x, u.body.y, u.body.width, u.body.height = x, y, max(_sw39_edit_step(self), w), max(_sw39_edit_step(self), h)
+    except Exception:
+        pass
+
+
+def _sw39_scale_graphics_to_bounds(self, unit, old_bounds, new_bounds):
+    gs = _sw39_body_graphics(self, unit)
+    if not gs:
+        return
+    ox, oy, ow, oh = old_bounds
+    nx, ny, nw, nh = new_bounds
+    ow, oh = max(float(ow), 1e-9), max(float(oh), 1e-9)
+    sx, sy = float(nw) / ow, float(nh) / oh
+    for g in gs:
+        gx = float(getattr(g, 'x', 0.0) or 0.0)
+        gy = float(getattr(g, 'y', 0.0) or 0.0)
+        gw = float(getattr(g, 'w', 0.0) or 0.0)
+        gh = float(getattr(g, 'h', 0.0) or 0.0)
+        # map top-left anchor and dimensions; keep sign of w/h.
+        g.x = _sw39_clean(self, nx + (gx - ox) * sx)
+        g.y = _sw39_clean(self, ny - (oy - gy) * sy)
+        g.w = _sw39_clean(self, gw * sx)
+        g.h = _sw39_clean(self, gh * sy)
+        try:
+            if getattr(g, 'ctrl_x', None) is not None:
+                g.ctrl_x = _sw39_clean(self, float(g.ctrl_x) * sx)
+            if getattr(g, 'ctrl_y', None) is not None:
+                g.ctrl_y = _sw39_clean(self, float(g.ctrl_y) * sy)
+        except Exception:
+            pass
+    _sw39_sync_body_to_real_graphics(self, unit)
+
+
+def _sw39_move_pin_owned_texts(self, pin, dx, dy):
+    try:
+        self._move_pin_owned_texts(pin, dx, dy)
+        return
+    except Exception:
+        pass
+    for ax, ay in (('label_x','label_y'), ('number_x','number_y')):
+        try:
+            if getattr(pin, ax, None) is not None and getattr(pin, ay, None) is not None:
+                setattr(pin, ax, _sw39_clean(self, float(getattr(pin, ax)) + dx))
+                setattr(pin, ay, _sw39_clean(self, float(getattr(pin, ay)) + dy))
+        except Exception:
+            pass
+    for tm in (getattr(pin, 'attribute_texts', {}) or {}).values():
+        try:
+            tm.x = _sw39_clean(self, float(tm.x) + dx)
+            tm.y = _sw39_clean(self, float(tm.y) + dy)
+        except Exception:
+            pass
+
+
+def _sw39_redock_pins_to_scaled_body(self, unit, start, old_bounds, new_bounds):
+    ox, oy, ow, oh = old_bounds
+    nx, ny, nw, nh = new_bounds
+    sx, sy = float(nw) / max(float(ow), 1e-9), float(nh) / max(float(oh), 1e-9)
+    for p, px, py, plen in start.get('pins', []) or []:
+        old_px, old_py = float(getattr(p, 'x', px)), float(getattr(p, 'y', py))
+        side = getattr(p, 'side', '')
+        # Pins must remain on edit-grid and keep their authored length.  Only the
+        # docking coordinate follows the resized BODY.
+        if side == PinSide.LEFT.value:
+            tx = nx; ty = ny - (oy - float(py)) * sy
+        elif side == PinSide.RIGHT.value:
+            tx = nx + nw; ty = ny - (oy - float(py)) * sy
+        elif side == PinSide.TOP.value:
+            tx = nx + (float(px) - ox) * sx; ty = ny
+        elif side == PinSide.BOTTOM.value:
+            tx = nx + (float(px) - ox) * sx; ty = ny - nh
+        else:
+            tx = nx + (float(px) - ox) * sx; ty = ny - (oy - float(py)) * sy
+        p.x = _sw39_snap(self, tx)
+        p.y = _sw39_snap(self, ty)
+        try:
+            p.length = float(plen)
+        except Exception:
+            pass
+        _sw39_move_pin_owned_texts(self, p, p.x - old_px, p.y - old_py)
+
+
+def _sw39_capture_resize_state(self, unit=None):
+    u = unit or self.current_unit
+    b = u.body
+    return {
+        'x': float(b.x), 'y': float(b.y), 'w': float(b.width), 'h': float(b.height),
+        'pins': [(p, float(p.x), float(p.y), float(getattr(p, 'length', 1.0) or 1.0)) for p in getattr(u, 'pins', []) or []],
+        'texts': [(t, float(t.x), float(t.y)) for t in getattr(u, 'texts', []) or []],
+        'attributes': [(t, float(t.x), float(t.y)) for t in (getattr(b, 'attribute_texts', {}) or {}).values()],
+        'graphics': [(g, float(g.x), float(g.y), float(getattr(g, 'w', 0.0) or 0.0), float(getattr(g, 'h', 0.0) or 0.0)) for g in getattr(u, 'graphics', []) or [] if g not in _sw39_body_graphics(self, u)],
+    }
+
+
+def _sw39_resize_body_geometry(self, new_w=None, new_h=None, refresh=True):
+    if getattr(self, '_sw39_resizing_body', False):
+        return
+    self._sw39_resizing_body = True
+    try:
+        u = self.current_unit
+        b = u.body
+        step = _sw39_edit_step(self)
+        old_bounds = _sw39_body_graphics_bounds(self, u)
+        ox, oy, ow, oh = old_bounds
+        new_w = max(step, _sw39_snap(self, ow if new_w is None else new_w))
+        new_h = max(step, _sw39_snap(self, oh if new_h is None else new_h))
+        start = _sw39_capture_resize_state(self, u)
+        # Keep the current BODY top-left anchor. Origin handling is done by Origin Reset;
+        # resize itself is deterministic and edit-grid based.
+        new_bounds = (ox, oy, new_w, new_h)
+        if _sw39_body_graphics(self, u):
+            _sw39_scale_graphics_to_bounds(self, u, old_bounds, new_bounds)
+        else:
+            b.x, b.y, b.width, b.height = ox, oy, new_w, new_h
+        # BODY scale does not scale pins. It only redocks them to the new edge/grid.
+        _sw39_redock_pins_to_scaled_body(self, u, start, old_bounds, (b.x, b.y, b.width, b.height))
+        # Attached non-pin texts/attributes follow position proportionally; glyph size is unchanged.
+        nx, ny, nw, nh = float(b.x), float(b.y), float(b.width), float(b.height)
+        sx, sy = nw / max(ow, 1e-9), nh / max(oh, 1e-9)
+        def map_pos(x, y):
+            return (_sw39_snap(self, nx + (float(x)-ox)*sx), _sw39_snap(self, ny - (oy-float(y))*sy))
+        for t, tx, ty in start.get('texts', []) or []:
+            t.x, t.y = map_pos(tx, ty)
+        for t, tx, ty in start.get('attributes', []) or []:
+            t.x, t.y = map_pos(tx, ty)
+        for g, gx, gy, gw, gh in start.get('graphics', []) or []:
+            g.x, g.y = map_pos(gx, gy)
+            g.w, g.h = gw, gh
+        try:
+            if hasattr(u, '_body_group_transform'):
+                delattr(u, '_body_group_transform')
+        except Exception:
+            pass
+        self.dirty = True
+    finally:
+        self._sw39_resizing_body = False
+    if refresh:
+        try: self.update_current_unit_canvas_positions()
+        except Exception: pass
+        try: self.update_attribute_items_for_unit()
+        except Exception: pass
+        try: self.rebuild_tree(); self.rebuild_pin_table()
+        except Exception: pass
+        try: self.refresh_properties()
+        except Exception: pass
+        try: self.schedule_scene_refresh(visual_only=True)
+        except Exception:
+            try: self.scene.update()
+            except Exception: pass
+
+
+def _sw39_set_body_width_grid(self, body, value):
+    try:
+        new_w = max(_sw39_edit_step(self), _sw39_snap(self, float(value)))
+        cur_w = float(getattr(self.current_unit.body, 'width', new_w) or new_w)
+        if abs(new_w - cur_w) < 1e-9:
+            return
+        self.push_undo_state()
+        self._selection_restore_ids = self._capture_selection_ids()
+        _sw39_resize_body_geometry(self, new_w=new_w, new_h=None, refresh=True)
+    except Exception as e:
+        try: self.statusBar().showMessage(f'BODY width update failed: {e}', 4000)
+        except Exception: pass
+
+
+def _sw39_set_body_height_grid(self, body, value):
+    try:
+        new_h = max(_sw39_edit_step(self), _sw39_snap(self, float(value)))
+        cur_h = float(getattr(self.current_unit.body, 'height', new_h) or new_h)
+        if abs(new_h - cur_h) < 1e-9:
+            return
+        self.push_undo_state()
+        self._selection_restore_ids = self._capture_selection_ids()
+        _sw39_resize_body_geometry(self, new_w=None, new_h=new_h, refresh=True)
+    except Exception as e:
+        try: self.statusBar().showMessage(f'BODY height update failed: {e}', 4000)
+        except Exception: pass
+
+
+def _sw39_transform_unit_as_body_group(self, op, value=None, refresh=True):
+    if op in ('scale', 'scale_x_to', 'scale_y_to'):
+        b = self.current_unit.body
+        cur_w = float(getattr(b, 'width', 1.0) or 1.0)
+        cur_h = float(getattr(b, 'height', 1.0) or 1.0)
+        if op == 'scale_x_to':
+            return _sw39_resize_body_geometry(self, new_w=float(value), new_h=None, refresh=refresh)
+        if op == 'scale_y_to':
+            return _sw39_resize_body_geometry(self, new_w=None, new_h=float(value), refresh=refresh)
+        f = float(value or 1.0)
+        return _sw39_resize_body_geometry(self, new_w=cur_w * f, new_h=cur_h * f, refresh=refresh)
+    # Delegate rotate/flip to the already working Symbol1-like implementation.
+    try:
+        return _sw39_prev_transform_unit_as_body_group(self, op, value, refresh)
+    except Exception:
+        if '_lh10_prev_transform_unit_as_body_group' in globals() and _lh10_prev_transform_unit_as_body_group is not None:
+            return _lh10_prev_transform_unit_as_body_group(self, op, value, refresh)
+
+try:
+    _sw39_prev_transform_unit_as_body_group = MainWindow._transform_unit_as_body_group
+except Exception:
+    _sw39_prev_transform_unit_as_body_group = None
+
+
+def _sw39_scale_selected_grid(self, direction: int):
+    self.set_tool(DrawTool.SELECT.value)
+    if self._selected_body_active():
+        step = _sw39_edit_step(self)
+        b = self.current_unit.body
+        self.push_undo_state()
+        self._selection_restore_ids = self._capture_selection_ids()
+        _sw39_resize_body_geometry(self, float(b.width) + direction * step, float(b.height) + direction * step, refresh=True)
+    else:
+        # Keep old behavior for non-BODY graphics.
+        try: return _sw39_prev_scale_selected_grid(self, direction)
+        except Exception: return self.scale_selected(1.0 + (0.1 if direction > 0 else -0.1))
+
+try:
+    _sw39_prev_scale_selected_grid = MainWindow.scale_selected_grid
+except Exception:
+    _sw39_prev_scale_selected_grid = None
+
+
+def _sw39_scale_current_unit_children_from_body_resize(self, start_state, body):
+    # Canvas handle resize. BodyItem has already changed body.x/y/width/height;
+    # use that as requested target and apply the exact same resize pipeline to
+    # the real BODY graphics. This enables canvas scaling for imported/template bodies.
+    try:
+        u = self.current_unit
+        old_bounds = (float(start_state.get('x', body.x)), float(start_state.get('y', body.y)),
+                      max(float(start_state.get('w', body.width)), 1e-9), max(float(start_state.get('h', body.height)), 1e-9))
+        new_w = max(_sw39_edit_step(self), _sw39_snap(self, float(body.width)))
+        new_h = max(_sw39_edit_step(self), _sw39_snap(self, float(body.height)))
+        new_bounds = (_sw39_snap(self, float(body.x)), _sw39_snap(self, float(body.y)), new_w, new_h)
+        if _sw39_body_graphics(self, u):
+            _sw39_scale_graphics_to_bounds(self, u, old_bounds, new_bounds)
+        else:
+            body.x, body.y, body.width, body.height = new_bounds
+        _sw39_redock_pins_to_scaled_body(self, u, start_state, old_bounds, (body.x, body.y, body.width, body.height))
+        ox, oy, ow, oh = old_bounds; nx, ny, nw, nh = float(body.x), float(body.y), float(body.width), float(body.height)
+        sx, sy = nw / max(ow, 1e-9), nh / max(oh, 1e-9)
+        def map_pos(x, y):
+            return (_sw39_snap(self, nx + (float(x)-ox)*sx), _sw39_snap(self, ny - (oy-float(y))*sy))
+        for t, tx, ty in start_state.get('texts', []) or []:
+            t.x, t.y = map_pos(tx, ty)
+        for t, tx, ty in start_state.get('attributes', []) or []:
+            t.x, t.y = map_pos(tx, ty)
+        body_graphics = set(_sw39_body_graphics(self, u))
+        for gr, gx, gy, gw, gh in start_state.get('graphics', []) or []:
+            if gr in body_graphics:
+                continue
+            gr.x, gr.y = map_pos(gx, gy)
+            gr.w, gr.h = gw, gh
+        self.dirty = True
+    except Exception as e:
+        try: self.statusBar().showMessage(f'Canvas BODY scale failed: {e}', 4000)
+        except Exception: pass
+
+
+def _sw39_apply_line_defaults(self):
+    selected = list(self.scene.selectedItems()) if hasattr(self, 'scene') else []
+    if not selected:
+        return
+    style = self.line_style.currentText()
+    width = float(self.line_width.value())
+    self.push_undo_state()
+    changed = False
+    for it in selected:
+        k = it.data(0); m = getattr(it, 'model', None)
+        if m is None: continue
+        if k == 'BODY':
+            m.line_style = style; m.line_width = width; changed = True
+            for gr in _sw39_body_graphics(self, self.current_unit):
+                st = getattr(gr, 'style', None)
+                if st is not None:
+                    st.line_style = style; st.line_width = width
+        elif k == 'GRAPHIC':
+            st = getattr(m, 'style', None)
+            if st is not None:
+                st.line_style = style; st.line_width = width; changed = True
+        elif k == 'PIN':
+            m.line_style = style; m.line_width = width; changed = True
+    if changed:
+        self.dirty = True
+        try: self.update_current_unit_canvas_positions()
+        except Exception: pass
+        self.schedule_scene_refresh(visual_only=True)
+
+
+def _sw39_set_body_visual_attr(self, body, attr, value):
+    if attr not in ('line_style', 'line_width', 'color'):
+        return
+    self.push_undo_state()
+    setattr(body, attr, tuple(value) if attr == 'color' else value)
+    for gr in _sw39_body_graphics(self, self.current_unit):
+        st = getattr(gr, 'style', None)
+        if st is None: continue
+        if attr == 'line_style': st.line_style = value
+        elif attr == 'line_width': st.line_width = float(value)
+        elif attr == 'color': st.stroke = tuple(value)
+    self.dirty = True
+    try: self.update_current_unit_canvas_positions()
+    except Exception: pass
+    self.schedule_scene_refresh(visual_only=True)
+
+
+def _sw39_apply_color_to_selected(self, color):
+    selected = list(self.scene.selectedItems()) if hasattr(self, 'scene') else []
+    if not selected:
+        self.default_color = tuple(color); return
+    self.push_undo_state()
+    for it in selected:
+        k = it.data(0); m = getattr(it, 'model', None)
+        if m is None: continue
+        if k == 'BODY':
+            m.color = tuple(color)
+            for gr in _sw39_body_graphics(self, self.current_unit):
+                st = getattr(gr, 'style', None)
+                if st is not None: st.stroke = tuple(color)
+        elif k == 'GRAPHIC':
+            st = getattr(m, 'style', None)
+            if st is not None: st.stroke = tuple(color)
+        elif k in ('PIN', 'TEXT', 'ATTR_REF_DES', 'ATTR_BODY'):
+            try: m.color = tuple(color)
+            except Exception: pass
+            if k in ('ATTR_REF_DES', 'ATTR_BODY'):
+                try: self._sync_body_font_from_attribute_text(it)
+                except Exception: pass
+    self.dirty = True
+    try: self.update_current_unit_canvas_positions()
+    except Exception: pass
+    self.schedule_scene_refresh(visual_only=True)
+
+try:
+    MainWindow._body_owned_graphics = lambda self, body=None: _sw39_body_graphics(self, self.current_unit)
+    MainWindow._set_body_width_grid = _sw39_set_body_width_grid
+    MainWindow._set_body_height_grid = _sw39_set_body_height_grid
+    MainWindow._transform_unit_as_body_group = _sw39_transform_unit_as_body_group
+    MainWindow.scale_selected_grid = _sw39_scale_selected_grid
+    MainWindow.scale_current_unit_children_from_body_resize = _sw39_scale_current_unit_children_from_body_resize
+    MainWindow.apply_line_defaults = _sw39_apply_line_defaults
+    MainWindow.set_body_visual_attr = _sw39_set_body_visual_attr
+    MainWindow.apply_color_to_selected = _sw39_apply_color_to_selected
+except Exception:
+    pass
