@@ -9561,3 +9561,159 @@ try:
     MainWindow._capture_selection_ids = _lh3_capture_selection_ids
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# Liebherr step 2: imported/template BODY graphics use the native Symbol-1
+# BODY transform pipeline.  If a unit has BODY graphics, mark them as the BODY
+# before scene construction, select BODY through the artwork, and route rotate /
+# flip / scale to the real graphics + all attached objects.
+# ---------------------------------------------------------------------------
+def _lh4_unit_has_imported_body_artwork(self, unit=None):
+    u = unit or getattr(self, 'current_unit', None) or getattr(self, 'unit', None)
+    if u is None:
+        return False
+    try:
+        return bool(_lh2_body_graphics(self, u))
+    except Exception:
+        try:
+            return any(getattr(g, 'locked_to_body', False) for g in (getattr(u, 'graphics', []) or []))
+        except Exception:
+            return False
+
+
+def _lh4_prepare_graphics_as_body(self, unit=None):
+    u = unit or getattr(self, 'current_unit', None) or getattr(self, 'unit', None)
+    if u is None or getattr(u, 'body', None) is None:
+        return
+    if not _lh4_unit_has_imported_body_artwork(self, u):
+        return
+    attrs = getattr(u.body, 'attributes', None)
+    if attrs is None:
+        try:
+            u.body.attributes = {}; attrs = u.body.attributes
+        except Exception:
+            return
+    # This is only a semantic marker for the renderer/property panel.  It does
+    # not create a proxy rectangle.  BODY bounds remain derived from graphics.
+    attrs['MENTOR_GRAPHICS_AS_BODY'] = '1'
+    attrs['MENTOR_BODY_GRAPHICS_LOCKED'] = '1'
+    for g in getattr(u, 'graphics', []) or []:
+        try:
+            if _lh2_is_body_graphic(self, g):
+                g.locked_to_body = True
+                if not str(getattr(g, 'graphic_role', '') or ''):
+                    g.graphic_role = 'imported_body'
+        except Exception:
+            pass
+    try:
+        _lh2_sync_body_model_to_body_graphics(self, u)
+    except Exception:
+        pass
+
+
+def _lh4_selected_body_active(self):
+    try:
+        for i in self.scene.selectedItems():
+            k = getattr(i, 'data', lambda *_: None)(0)
+            if k in ('BODY', 'BODY_GRAPHIC'):
+                return True
+            m = getattr(i, 'model', None)
+            if m is not None and _lh2_is_body_graphic(self, m):
+                return True
+    except Exception:
+        pass
+    return False
+
+
+def _lh4_rotate_selected(self, deg):
+    self.set_tool(DrawTool.SELECT.value)
+    try: self.push_undo_state()
+    except Exception: pass
+    u = getattr(self, 'current_unit', None) or getattr(self, 'unit', None)
+    _lh4_prepare_graphics_as_body(self, u)
+    if _lh4_selected_body_active(self):
+        _lh2_transform_unit_as_body_group(self, 'rotate', float(deg))
+    else:
+        for it in self.scene.selectedItems():
+            if hasattr(it, 'rotate_by'):
+                it.rotate_by(float(deg))
+        try: self.schedule_scene_refresh()
+        except Exception: self.rebuild_scene()
+    self.dirty = True
+
+
+def _lh4_flip_selected_horizontal(self):
+    self.set_tool(DrawTool.SELECT.value)
+    try: self.push_undo_state()
+    except Exception: pass
+    u = getattr(self, 'current_unit', None) or getattr(self, 'unit', None)
+    _lh4_prepare_graphics_as_body(self, u)
+    if _lh4_selected_body_active(self):
+        _lh2_transform_unit_as_body_group(self, 'flip_h')
+    else:
+        for it in self.scene.selectedItems():
+            if hasattr(it, 'flip_horizontal'):
+                it.flip_horizontal()
+        try: self.schedule_scene_refresh()
+        except Exception: self.rebuild_scene()
+    self.dirty = True
+
+
+def _lh4_flip_selected_vertical(self):
+    self.set_tool(DrawTool.SELECT.value)
+    try: self.push_undo_state()
+    except Exception: pass
+    u = getattr(self, 'current_unit', None) or getattr(self, 'unit', None)
+    _lh4_prepare_graphics_as_body(self, u)
+    if _lh4_selected_body_active(self):
+        _lh2_transform_unit_as_body_group(self, 'flip_v')
+    else:
+        for it in self.scene.selectedItems():
+            if hasattr(it, 'flip_vertical'):
+                it.flip_vertical()
+        try: self.schedule_scene_refresh()
+        except Exception: self.rebuild_scene()
+    self.dirty = True
+
+
+def _lh4_scale_selected(self, factor):
+    self.set_tool(DrawTool.SELECT.value)
+    try: self.push_undo_state()
+    except Exception: pass
+    u = getattr(self, 'current_unit', None) or getattr(self, 'unit', None)
+    _lh4_prepare_graphics_as_body(self, u)
+    if _lh4_selected_body_active(self):
+        _lh2_transform_unit_as_body_group(self, 'scale', float(factor))
+    else:
+        for it in self.scene.selectedItems():
+            if hasattr(it, 'scale_by'):
+                it.scale_by(float(factor))
+            elif hasattr(it, 'scale_selected'):
+                it.scale_selected(float(factor))
+        try: self.schedule_scene_refresh()
+        except Exception: self.rebuild_scene()
+    self.dirty = True
+
+
+def _lh4_rebuild_scene_wrapper(orig):
+    def wrapper(self, *args, **kwargs):
+        try:
+            _lh4_prepare_graphics_as_body(self, getattr(self, 'current_unit', None) or getattr(self, 'unit', None))
+        except Exception:
+            pass
+        return orig(self, *args, **kwargs)
+    return wrapper
+
+try:
+    for _cls in (MainWindow, TemplateEditorDialog):
+        _cls._unit_has_imported_body_artwork = _lh4_unit_has_imported_body_artwork
+        _cls._prepare_graphics_as_body = _lh4_prepare_graphics_as_body
+        _cls._selected_body_active = _lh4_selected_body_active
+        _cls.rotate_selected = _lh4_rotate_selected
+        _cls.flip_selected_horizontal = _lh4_flip_selected_horizontal
+        _cls.flip_selected_vertical = _lh4_flip_selected_vertical
+        _cls.scale_selected = _lh4_scale_selected
+    MainWindow.rebuild_scene = _lh4_rebuild_scene_wrapper(MainWindow.rebuild_scene)
+    TemplateEditorDialog.rebuild_scene = _lh4_rebuild_scene_wrapper(TemplateEditorDialog.rebuild_scene)
+except Exception:
+    pass
