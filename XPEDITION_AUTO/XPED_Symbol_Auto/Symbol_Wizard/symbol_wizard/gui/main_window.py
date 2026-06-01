@@ -2,6 +2,8 @@ from __future__ import annotations
 import copy
 import csv
 import json
+import re
+import pickle
 from pathlib import Path
 from dataclasses import asdict
 from PySide6.QtCore import Qt, QTimer, QRectF, QEvent, QObject
@@ -876,8 +878,10 @@ class TemplateEditorDialog(QDialog):
     def _split_template_key(self, key: str):
         key = str(key or '').strip()
         if ' / ' in key:
-            a, b = key.split(' / ', 1)
-            return a.strip() or 'General', b.strip() or key
+            parts = [p.strip() for p in key.split(' / ') if p.strip()]
+            if len(parts) >= 3 and parts[0] == 'Split Symbols':
+                return ' / '.join(parts[:-1]), parts[-1]
+            return parts[0] or 'General', ' / '.join(parts[1:]) or key
         return 'General', key or 'Template'
 
     def current_template_key(self):
@@ -1098,6 +1102,8 @@ class TemplateEditorDialog(QDialog):
         if hasattr(self.main, 'merge_save_template_to_file'):
             self.main.merge_save_template_to_file(name, self.unit)
             self.main.symbol_templates.clear()
+            if hasattr(self.main, 'invalidate_template_cache'):
+                self.main.invalidate_template_cache()
         if hasattr(self.main, 'apply_template_style_to_matching_symbols'):
             self.main.apply_template_style_to_matching_symbols(name, self.unit)
         self.rebuild_template_partition_combos(name)
@@ -5328,8 +5334,12 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         s = self.library.add_symbol(name or 'Split Symbol', SymbolKind.SPLIT.value)
         s.name = self.library.unique_import_name(name or s.name)
         s.template_name = template_name
-        base = copy.deepcopy(self.available_templates(split_only=True).get(template_name, SymbolUnitModel()))
-        s.units = [copy.deepcopy(base), copy.deepcopy(base)]
+        split_units = (getattr(self, '_external_split_templates', {}) or {}).get(template_name)
+        if split_units:
+            s.units = [copy.deepcopy(u) for u in split_units]
+        else:
+            base = copy.deepcopy(self.available_templates(split_only=True).get(template_name, SymbolUnitModel()))
+            s.units = [copy.deepcopy(base), copy.deepcopy(base)]
         for i, u in enumerate(s.units, start=1):
             u.name = f'{s.name}_{i}'
         self.current_unit_index = 0
@@ -5767,6 +5777,7 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         dlg = TemplateEditorDialog(self)
         dlg.exec()
         self.symbol_templates.update(dlg.templates)
+        self.invalidate_template_cache()
         self.rebuild_all()
         return
 
@@ -5944,6 +5955,22 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         # users can fix directly.
         return root / 'symbol_types.json'
 
+    def invalidate_template_cache(self):
+        """Drop cached template catalogues after saving/importing templates.
+
+        Template access can scan thousands of generated Mentor templates.  The UI
+        calls available_templates() from several places, therefore we cache the
+        parsed catalogue and only invalidate it when template files change or an
+        editor explicitly saves a template.
+        """
+        for attr in ('_external_template_cache_key', '_external_template_cache',
+                     '_external_split_template_cache', '_available_template_cache'):
+            try:
+                if hasattr(self, attr):
+                    delattr(self, attr)
+            except Exception:
+                pass
+
     def symbol_templates_dir(self):
         """Directory for future split-out template JSON files.
 
@@ -5963,9 +5990,126 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
           - a list of the above
         """
         result: dict[str, SymbolUnitModel] = {}
+        split_groups: dict[str, list[SymbolUnitModel]] = {}
         root = self.symbol_templates_dir()
         if not root.exists():
+            self._external_split_templates = {}
             return result
+
+        try:
+            files = tuple(sorted((str(fp.relative_to(root)), fp.stat().st_mtime_ns, fp.stat().st_size) for fp in root.rglob('*.json')))
+        except Exception:
+            files = tuple()
+        cache_key = (str(root), files)
+        if getattr(self, '_external_template_cache_key', None) == cache_key:
+            self._external_split_templates = copy.deepcopy(getattr(self, '_external_split_template_cache', {}))
+            return copy.deepcopy(getattr(self, '_external_template_cache', {}))
+
+        # Persistent on-disk template index.  The Mentor-derived template catalog
+        # contains thousands of entries; reparsing every JSON file when opening
+        # the Template Editor or New Split Symbol dialog makes the UI feel slow.
+        # The cache key contains relative path + mtime + size, so it is rebuilt
+        # automatically after template generation/import/save.
+        index_file = root / '.template_index_cache.pickle'
+        try:
+            if index_file.exists():
+                with index_file.open('rb') as fh:
+                    cached = pickle.load(fh)
+                if cached.get('cache_key') == cache_key:
+                    self._external_split_templates = copy.deepcopy(cached.get('split_templates', {}))
+                    self._external_template_cache_key = cache_key
+                    self._external_template_cache = copy.deepcopy(cached.get('templates', {}))
+                    self._external_split_template_cache = copy.deepcopy(cached.get('split_templates', {}))
+                    return copy.deepcopy(cached.get('templates', {}))
+        except Exception:
+            # Corrupt or incompatible cache: ignore and rebuild below.
+            pass
+
+        def is_large_ic_partition(name: str) -> bool:
+            """Return True for partitions where logical multi-part ICs are expected.
+
+            Split detection is intentionally limited to IC/controller/logic style
+            partitions to avoid treating relay contacts, diodes, passives or
+            connectors as split symbols.
+            """
+            n = str(name or '').upper().replace('-', '_')
+            exclude = (
+                'RELAIS', 'RELAY', 'DIODE', 'FET', 'TRANS', 'THYR', 'TRIAC',
+                'IGBT', 'OPTO', 'IND_', 'FILTER', 'DROSSEL', 'UEBTR',
+                'WIDERSTAND', 'KONDENSATOR', 'CAP', 'STECKER', 'CONNECTOR',
+                'ZUBEHOER', 'GND', 'BORDER', 'INFO', 'TESTPUNKT',
+            )
+            if any(t in n for t in exclude):
+                return False
+            tokens = (
+                'CONTROLLER', 'PROZESSOR', 'PROCESSOR', 'CPU', 'SOC', 'FPGA',
+                'CPLD', 'DSP', 'ASIC', 'MCU', 'MPU', 'PMIC', 'BGA',
+                'LOGIK', 'LOGIC', 'MULTIFUNKTIONS', 'MUTLIFUNKTIONS', 'MULTIFUNCTION',
+                'VERSTAERKER_IC', 'AMPLIFIER_IC',
+            )
+            return any(t in n for t in tokens)
+
+        def template_partition_from_path(fp: Path) -> str:
+            """Derive the user-facing partition name for generated Mentor templates.
+
+            Generated files are stored as symbol_templates/mentor_known/<PARTITION>.json.
+            The Template Editor should show <PARTITION> as level 1 and the actual
+            symbol/template name as level 2.
+            """
+            try:
+                rel = fp.relative_to(root).with_suffix('')
+                parts = list(rel.parts)
+                if parts and parts[0] == 'mentor_known' and len(parts) >= 2:
+                    return parts[-1]
+                if len(parts) >= 2:
+                    return parts[-2]
+                return rel.name
+            except Exception:
+                return fp.stem
+
+        def split_base_from_name(name: str):
+            """Infer a logical split-symbol base from a Mentor symbol name.
+
+            Mentor libraries often do not use only .1/.2 for split parts.  Large
+            devices are commonly split as e.g. IMX6Q_CONTROL, IMX6Q_DDRx32,
+            IMX6Q_POWER, A3P1000_144_BANK0, 88Q5030_01/02/POWER, etc.  This
+            normalizer groups those entries by the stable device prefix while
+            still ignoring ordinary single symbols.
+            """
+            raw = str(name or '').strip()
+            leaf = raw.split('/')[-1].strip()
+            leaf = re.sub(r'\.(sym|json)$', '', leaf, flags=re.IGNORECASE)
+            leaf = re.sub(r'\.\d{1,3}$', '', leaf)  # Mentor view suffix
+            s = leaf.strip()
+            if len(s) < 4:
+                return None, None
+
+            # Explicit multipart suffixes / functional pages.
+            suffix_words = (
+                'CONTROL', 'CTRL', 'PWR', 'POWER', 'SUPPLY', 'SUP', 'VDD', 'VSS', 'VCC', 'GND',
+                'GPIO', 'IO', 'PORT', r'BANK\d*', 'JTAG', 'TEST', 'CFG', 'CONFIG', 'CONF',
+                'CORE', 'ANA', 'ANALOG', 'DIG', 'DIGITAL', 'ADC', 'DAC', 'A2D', 'D2A',
+                'DDR', r'DDRX\d+', 'MEM', 'RAM', 'FLASH', 'SDRAM',
+                'USB', 'PCIE', 'PCIe', 'SATA', 'SDHC', 'EIM', 'RGMII', 'ETH', 'ENET', 'PHY',
+                'MIPI', 'CSI', 'DSI', 'DISP', 'HDMI', 'LVDS', 'SERDES',
+                'SPI', 'I2C', 'CAN', 'LIN', 'UART', 'RX', 'TX', 'RXD', 'TXD',
+                'PLL', 'CLK', 'CLOCK', 'OSC', 'MISC', 'NC'
+            )
+            suffix_re = r'(?:' + '|'.join(suffix_words) + r')(?:[_-]?(?:\d+|[A-Z]))?'
+            m = re.match(rf'^(?P<base>.+?)[_-](?P<part>{suffix_re})$', s, flags=re.IGNORECASE)
+            if m and len(m.group('base')) >= 3:
+                return m.group('base'), m.group('part')
+
+            # Numeric/letter pages often used in IC partitions: foo_01, foo-2, foo_A.
+            m = re.match(r'^(?P<base>.+?)[_-](?P<part>\d{1,3}|[A-Z])$', s, flags=re.IGNORECASE)
+            if m and len(m.group('base')) >= 3:
+                return m.group('base'), m.group('part')
+
+            # Fallback for names like TM4-1.
+            m = re.match(r'^(?P<base>[A-Za-z][A-Za-z0-9]{2,})-(?P<part>\d{1,3})$', s)
+            if m:
+                return m.group('base'), m.group('part')
+            return None, None
 
         def unit_from_payload(payload: dict) -> SymbolUnitModel | None:
             try:
@@ -6019,10 +6163,72 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
                 if unit is None:
                     continue
                 rel = fp.relative_to(root).with_suffix('').as_posix()
-                name = str(entry.get('template_name') or entry.get('name') or rel)
-                if '/' not in name and rel:
-                    name = rel
+                entry_name = str(entry.get('template_name') or entry.get('name') or Path(rel).name).strip() or Path(rel).name
+                part_name = template_partition_from_path(fp)
+                # Two-stage Template Editor selection: Partition -> Symbol.  Generated
+                # Mentor libraries therefore use the library partition as level 1 and
+                # the imported symbol name as level 2.
+                name = f'{part_name} / {entry_name}' if part_name and part_name != entry_name else entry_name
                 result[name] = unit
+
+                # Split-template detection for large IC partitions only.
+                # Mentor split parts usually share the same base name and only differ
+                # by a trailing .1/.2/.3 (or _1/-1). Keep the original part entries,
+                # but add one grouped template under "Split Symbols" so New Split
+                # Symbol can instantiate all parts instead of duplicating one unit.
+                if is_large_ic_partition(part_name):
+                    base, part_no = split_base_from_name(entry_name)
+                    if base:
+                        group_key = f'Split Symbols / {part_name} / {base}'
+                        # Keep the original Mentor part name on the unit.  This is
+                        # later used for stable part ordering and for Template
+                        # Editor display of split-template parts.
+                        try:
+                            unit.name = entry_name
+                        except Exception:
+                            pass
+                        split_groups.setdefault(group_key, []).append(copy.deepcopy(unit))
+        grouped = {}
+        for group_key, units in split_groups.items():
+            if len(units) < 2:
+                continue
+            def _part_sort(u):
+                nm = str(getattr(u, 'name', '') or '')
+                # stable human order: numeric pages first, then functional pages
+                m = re.search(r'[._-](\d{1,3})(?:\.\d+)?$', nm)
+                if m:
+                    return (0, int(m.group(1)), nm.lower())
+                order = ['control','ctrl','core','bank','gpio','io','ddr','mem','usb','pcie','sata','eth','rgmii','phy','adc','dac','power','pwr','supply','gnd','vss','vdd']
+                low = nm.lower()
+                for i, token in enumerate(order, start=1):
+                    if token in low:
+                        return (1, i, low)
+                return (2, 9999, low)
+            units = sorted(units, key=_part_sort)
+            grouped[group_key] = units
+            first = copy.deepcopy(units[0])
+            try:
+                first.name = group_key.split(' / ')[-1]
+                first.body.attributes['MENTOR_SPLIT_TEMPLATE'] = '1'
+                first.body.attributes['MENTOR_SPLIT_PARTS'] = str(len(units))
+                first.body.visible_attributes['MENTOR_SPLIT_TEMPLATE'] = False
+                first.body.visible_attributes['MENTOR_SPLIT_PARTS'] = False
+            except Exception:
+                pass
+            result[group_key] = first
+        self._external_split_templates = grouped
+        try:
+            self._external_template_cache_key = cache_key
+            self._external_template_cache = copy.deepcopy(result)
+            self._external_split_template_cache = copy.deepcopy(grouped)
+            with index_file.open('wb') as fh:
+                pickle.dump({
+                    'cache_key': cache_key,
+                    'templates': result,
+                    'split_templates': grouped,
+                }, fh, protocol=pickle.HIGHEST_PROTOCOL)
+        except Exception:
+            pass
         return result
 
     def unit_from_template_def(self, type_name: str, subtype_name: str | None, data: dict) -> SymbolUnitModel:
@@ -6232,17 +6438,38 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         return templates
 
     def available_templates(self, split_only: bool = False) -> dict[str, SymbolUnitModel]:
-        # Single source for all GUI entry points: Template Editor, New Symbol,
-        # and template-based import helpers.  Do not read templates from cwd here.
+        """Return cached template catalogue.
+
+        Loading generated Mentor templates can involve thousands of JSON entries.
+        This method is used by New Symbol, New Split Symbol and the Template
+        Editor, so the merged catalogue is cached and returned as a deep copy to
+        protect the cache against GUI edits.
+        """
+        cache_key = (bool(split_only), id(self.symbol_templates), len(self.symbol_templates))
+        cache = getattr(self, '_available_template_cache', {}) or {}
+        if cache_key in cache:
+            return copy.deepcopy(cache[cache_key])
+
         templates = self.load_symbol_type_templates()
         templates.update(self.load_external_template_files())
         templates.update(copy.deepcopy(self.symbol_templates))
         if not templates:
             templates.update(self.builtin_resistor_templates())
         if split_only:
-            filtered = {k: v for k, v in templates.items() if k == 'IC' or k.startswith('IC /') or k.startswith('Digital IC /')}
-            return filtered
-        return templates
+            split_map = getattr(self, '_external_split_templates', {}) or {}
+            filtered = {k: v for k, v in templates.items()
+                        if k in split_map
+                        or k == 'IC' or k.startswith('IC /')
+                        or k.startswith('Digital IC /')
+                        or k.startswith('Split Symbols /')}
+            for k, units in split_map.items():
+                if units and k not in filtered:
+                    filtered[k] = copy.deepcopy(units[0])
+            templates = filtered
+
+        cache[cache_key] = copy.deepcopy(templates)
+        self._available_template_cache = cache
+        return copy.deepcopy(templates)
 
 
     def apply_template_style_to_matching_symbols(self, template_name: str, tmpl: SymbolUnitModel):
@@ -6269,35 +6496,108 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         if changed:
             self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
 
+    def _template_key_parts_for_dialog(self, key: str):
+        """Return (partition, symbol) for two-stage template selection.
+
+        Split templates use keys like "Split Symbols / <Mentor partition> / <base>".
+        In the dialog this becomes partition "Split Symbols / <Mentor partition>"
+        and symbol "<base>" so all grouped split templates are visible without a
+        huge flat list.
+        """
+        key = str(key or '').strip()
+        if ' / ' not in key:
+            return 'General', key or 'Template'
+        parts = [p.strip() for p in key.split(' / ') if p.strip()]
+        if len(parts) >= 3 and parts[0] == 'Split Symbols':
+            return ' / '.join(parts[:-1]), parts[-1]
+        return parts[0] or 'General', ' / '.join(parts[1:]) or key
+
+    def _template_key_from_dialog_parts(self, partition: str, symbol: str):
+        partition = str(partition or '').strip()
+        symbol = str(symbol or '').strip()
+        if not partition or partition == 'General':
+            return symbol
+        return f'{partition} / {symbol}' if symbol else partition
+
     def ask_new_symbol_template(self, kind: str):
         templates = self.available_templates(split_only=(kind == SymbolKind.SPLIT.value))
         dlg = QDialog(self)
-        dlg.setWindowTitle('Neues Symbol anlegen')
+        dlg.setWindowTitle('Neues Split-Symbol anlegen' if kind == SymbolKind.SPLIT.value else 'Neues Symbol anlegen')
         layout = QFormLayout(dlg)
-        combo = QComboBox(); combo.addItems(sorted(templates.keys()))
-        name_edit = QLineEdit()
-        name_edit.setMaxLength(24)
+
+        partition_combo = QComboBox(); partition_combo.setEditable(False)
+        symbol_combo = QComboBox(); symbol_combo.setEditable(False)
+        filter_edit = QLineEdit(); filter_edit.setPlaceholderText('Filter...')
+        name_edit = QLineEdit(); name_edit.setMaxLength(24)
+
+        def parts_for(key):
+            return self._template_key_parts_for_dialog(key)
+        def full_key(part, sym):
+            return self._template_key_from_dialog_parts(part, sym)
+
+        by_partition: dict[str, list[str]] = {}
+        for key in sorted(templates.keys()):
+            part, sym = parts_for(key)
+            by_partition.setdefault(part, []).append(sym)
+
+        partitions = sorted(by_partition.keys()) or ['General']
+        # For split-symbol creation, put grouped Mentor split templates first.
+        if kind == SymbolKind.SPLIT.value:
+            partitions = sorted(partitions, key=lambda p: (0 if p.startswith('Split Symbols') else 1, p.lower()))
+        partition_combo.addItems(partitions)
+
+        def rebuild_symbols():
+            part = partition_combo.currentText().strip()
+            needle = filter_edit.text().strip().lower()
+            symbols = by_partition.get(part, [])
+            if needle:
+                symbols = [x for x in symbols if needle in x.lower() or needle in full_key(part, x).lower()]
+            symbol_combo.blockSignals(True)
+            symbol_combo.clear(); symbol_combo.addItems(sorted(symbols, key=str.lower))
+            symbol_combo.blockSignals(False)
+            update_default_name()
+
         def update_default_name():
             if not name_edit.text().strip():
-                base = combo.currentText().split('/')[-1].strip().replace(' ', '_') or ('Split_Symbol' if kind == SymbolKind.SPLIT.value else 'Symbol')
+                txt = symbol_combo.currentText().strip() or partition_combo.currentText().split('/')[-1].strip()
+                base = txt.replace(' ', '_') or ('Split_Symbol' if kind == SymbolKind.SPLIT.value else 'Symbol')
+                # Avoid trailing .1-style suffixes in the symbol name suggestion.
+                base = re.sub(r'[._-]\d{1,3}$', '', base)
                 name_edit.setPlaceholderText(base[:24])
-        combo.currentTextChanged.connect(lambda *_: update_default_name())
-        update_default_name()
-        layout.addRow('Template', combo)
+
+        partition_combo.currentTextChanged.connect(lambda *_: rebuild_symbols())
+        filter_edit.textChanged.connect(lambda *_: rebuild_symbols())
+        symbol_combo.currentTextChanged.connect(lambda *_: update_default_name())
+        rebuild_symbols()
+
+        layout.addRow('Partition', partition_combo)
+        layout.addRow('Template', symbol_combo)
+        layout.addRow('Filter', filter_edit)
         layout.addRow('Symbolname', name_edit)
-        hint = QLabel('3 to 24 characters. The name is set during creation and can later be changed via Edit or the symbol tab context menu.')
+        if kind == SymbolKind.SPLIT.value:
+            split_count = len(getattr(self, '_external_split_templates', {}) or {})
+            hint_text = f'{split_count} erkannte Mentor-Split-Templates sind als Vorschläge verfügbar. Auswahl ist zweistufig: Partition → Symbol.'
+        else:
+            hint_text = 'Auswahl ist zweistufig: Partition → Symbol.'
+        hint = QLabel(hint_text + '\nSymbolname: 3 bis 24 Zeichen.')
         hint.setWordWrap(True); layout.addRow('', hint)
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         layout.addRow(buttons)
+
         def accept_if_valid():
-            n = name_edit.text().strip()
+            n = name_edit.text().strip() or name_edit.placeholderText().strip()
             if len(n) < 3 or len(n) > 24:
                 QMessageBox.warning(dlg, 'Symbolname', 'Bitte einen Symbolnamen mit 3 bis 24 Zeichen eingeben.')
                 return
+            if not symbol_combo.currentText().strip():
+                QMessageBox.warning(dlg, 'Template', 'Bitte ein Template auswählen.')
+                return
+            name_edit.setText(n)
             dlg.accept()
+
         buttons.accepted.connect(accept_if_valid); buttons.rejected.connect(dlg.reject)
         if dlg.exec() == QDialog.Accepted:
-            return name_edit.text().strip(), combo.currentText()
+            return name_edit.text().strip(), full_key(partition_combo.currentText(), symbol_combo.currentText())
         return None
 
 
