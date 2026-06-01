@@ -10255,3 +10255,101 @@ try:
         _cls._transform_unit_as_body_group = _lh6_transform_unit_as_body_group
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# Liebherr v7: route BODY transform buttons to the current transform backend.
+# Previous wrappers still called the old _lh2_transform_unit_as_body_group
+# directly, so imported BODY graphics stayed unchanged while pins/text moved.
+# Keep Symbol-1 behaviour for native BODYs, but always transform through
+# self._transform_unit_as_body_group, which is overridden by the latest backend.
+# ---------------------------------------------------------------------------
+def _lh7_selected_body_or_body_graphic(self):
+    try:
+        for it in self.scene.selectedItems():
+            k = getattr(it, 'data', lambda *_: None)(0)
+            if k in ('BODY', 'BODY_GRAPHIC'):
+                return True
+            m = getattr(it, 'model', None)
+            if m is not None:
+                try:
+                    if _lh2_is_body_graphic(self, m):
+                        return True
+                except Exception:
+                    if getattr(m, 'locked_to_body', False) or str(getattr(m, 'graphic_role', '') or '').lower() in ('body','template_body','imported_body'):
+                        return True
+    except Exception:
+        pass
+    return False
+
+
+def _lh7_do_body_transform(self, op_name, value=None):
+    try:
+        self.set_tool(DrawTool.SELECT.value)
+    except Exception:
+        pass
+    try:
+        self.push_undo_state()
+    except Exception:
+        pass
+    u = getattr(self, 'current_unit', None) or getattr(self, 'unit', None)
+    try:
+        _lh4_prepare_graphics_as_body(self, u)
+    except Exception:
+        pass
+    if _lh7_selected_body_or_body_graphic(self):
+        fn = getattr(self, '_transform_unit_as_body_group', None)
+        if callable(fn):
+            fn(op_name, value)
+        else:
+            _lh6_transform_unit_as_body_group(self, op_name, value)
+    else:
+        # Keep existing behaviour for explicitly selected standalone objects.
+        try:
+            for it in self.scene.selectedItems():
+                if op_name == 'rotate' and hasattr(it, 'rotate_by'):
+                    it.rotate_by(float(value or 0.0))
+                elif op_name == 'flip_h' and hasattr(it, 'flip_horizontal'):
+                    it.flip_horizontal()
+                elif op_name == 'flip_v' and hasattr(it, 'flip_vertical'):
+                    it.flip_vertical()
+                elif op_name == 'scale' and hasattr(it, 'scale_by'):
+                    it.scale_by(float(value or 1.0))
+        except Exception:
+            pass
+        try:
+            self.rebuild_scene()
+        except Exception:
+            try: self.schedule_scene_refresh()
+            except Exception: pass
+    try:
+        self.dirty = True
+    except Exception:
+        pass
+
+
+def _lh7_rotate_selected(self, deg):
+    _lh7_do_body_transform(self, 'rotate', float(deg))
+
+
+def _lh7_flip_selected_horizontal(self):
+    # Flip H = mirror at canvas Y-axis: x -> -x.
+    _lh7_do_body_transform(self, 'flip_h', None)
+
+
+def _lh7_flip_selected_vertical(self):
+    # Flip V = mirror at canvas X-axis: y -> -y.
+    _lh7_do_body_transform(self, 'flip_v', None)
+
+
+def _lh7_scale_selected(self, factor):
+    _lh7_do_body_transform(self, 'scale', float(factor))
+
+try:
+    for _cls in (MainWindow, TemplateEditorDialog):
+        _cls._selected_body_active = _lh7_selected_body_or_body_graphic
+        _cls.rotate_selected = _lh7_rotate_selected
+        _cls.flip_selected_horizontal = _lh7_flip_selected_horizontal
+        _cls.flip_selected_vertical = _lh7_flip_selected_vertical
+        _cls.scale_selected = _lh7_scale_selected
+except Exception:
+    pass
