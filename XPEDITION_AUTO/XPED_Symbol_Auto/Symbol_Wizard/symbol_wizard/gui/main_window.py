@@ -7,7 +7,7 @@ import pickle
 from pathlib import Path
 from dataclasses import asdict
 from PySide6.QtCore import Qt, QTimer, QRectF, QEvent, QObject
-from PySide6.QtGui import QAction, QColor, QKeySequence, QFontDatabase, QPen, QBrush
+from PySide6.QtGui import QAction, QColor, QKeySequence, QFontDatabase, QPen, QBrush, QCursor, QShortcut
 from PySide6.QtWidgets import *
 
 from symbol_wizard.models.document import *
@@ -700,7 +700,7 @@ class TemplateEditorDialog(QDialog):
         self.clipboard_is_cut = False
         self.undo_stack = []
         self.redo_stack = []
-        self.max_history = 10
+        self.max_history = 200
         self.dirty = False
         self._loading_template = False
         self._reverting_template_combo = False
@@ -861,6 +861,19 @@ class TemplateEditorDialog(QDialog):
         self.tool_buttons[self.draw_tool].setChecked(True)
         for label, fn in [('Select All', self.select_all_canvas), ('Undo', self.undo), ('Redo', self.redo)]:
             b = QPushButton(label); b.clicked.connect(fn); tools.addWidget(b)
+
+        # Template Editor has its own shortcuts.  Do not rely on keyPressEvent
+        # only, because focus can be inside QGraphicsView, QLineEdit, QComboBox
+        # or a spinbox.  WidgetWithChildrenShortcut keeps Ctrl+Z/Ctrl+Y local
+        # to this dialog and avoids conflicts with the main Symbol Wizard.
+        self._template_shortcuts = []
+        for seq, fn in ((QKeySequence.Undo, self.undo), (QKeySequence.Redo, self.redo),
+                        (QKeySequence('Ctrl+Shift+Z'), self.redo)):
+            sc = QShortcut(seq, self)
+            sc.setContext(Qt.WidgetWithChildrenShortcut)
+            sc.activated.connect(fn)
+            self._template_shortcuts.append(sc)
+
         tools.addStretch(); layout.addLayout(tools)
         tools = QHBoxLayout()
         for label, fn in [('⟲ 15°', lambda: self.rotate_selected(-15)), ('⟳ 15°', lambda: self.rotate_selected(15)), ('Flip H', self.flip_selected_horizontal), ('Flip V', self.flip_selected_vertical)]:
@@ -1139,23 +1152,69 @@ class TemplateEditorDialog(QDialog):
         self.view.setDragMode(QGraphicsView.RubberBandDrag if t == DrawTool.SELECT.value else QGraphicsView.NoDrag)
 
     def push_undo_state(self):
-        if getattr(self, '_loading_template', False):
+        if getattr(self, '_loading_template', False) or getattr(self, '_restoring_undo_redo', False):
             return
+        # Store the complete template unit BEFORE every real edit.
+        # Important: the clean snapshot after loading must NOT suppress the first
+        # undo entry.  The previous implementation compared against
+        # _last_undo_state, which is initialized from the freshly loaded template;
+        # therefore the very first edit often produced no undo snapshot and the
+        # Template Editor Undo/Redo buttons appeared dead.
+        try:
+            state = self._template_state()
+            if self.undo_stack:
+                last_unit = self.undo_stack[-1]
+                last_state = self._unit_state_for_undo(last_unit)
+                if last_state == state:
+                    self.dirty = True
+                    return
+            self._last_undo_state = copy.deepcopy(state)
+        except Exception:
+            pass
         self.dirty = True
         self.undo_stack.append(copy.deepcopy(self.unit))
-        if len(self.undo_stack) > self.max_history: self.undo_stack.pop(0)
+        if len(self.undo_stack) > self.max_history:
+            self.undo_stack.pop(0)
         self.redo_stack.clear()
+
+    def _restore_template_unit_from_history(self, unit):
+        self._restoring_undo_redo = True
+        try:
+            self.unit = copy.deepcopy(unit)
+            self.symbol.units = [self.unit]
+            try:
+                self._lock_template_body_graphics(self.unit)
+            except Exception:
+                pass
+            self._selection_restore_ids = set()
+            self.rebuild_scene()
+            self.dirty = self._template_has_unsaved_changes()
+            try:
+                self._last_undo_state = self._template_state()
+            except Exception:
+                pass
+        finally:
+            self._restoring_undo_redo = False
 
     def undo(self):
         self.set_tool(DrawTool.SELECT.value)
-        if not self.undo_stack: return
-        self.set_tool(DrawTool.SELECT.value)
-        self.redo_stack.append(copy.deepcopy(self.unit)); self.unit = self.undo_stack.pop(); self.symbol.units=[self.unit]; self.rebuild_scene()
+        if not self.undo_stack:
+            return
+        current = copy.deepcopy(self.unit)
+        previous = self.undo_stack.pop()
+        self.redo_stack.append(current)
+        self._restore_template_unit_from_history(previous)
+
     def redo(self):
         self.set_tool(DrawTool.SELECT.value)
-        if not self.redo_stack: return
-        self.set_tool(DrawTool.SELECT.value)
-        self.undo_stack.append(copy.deepcopy(self.unit)); self.unit = self.redo_stack.pop(); self.symbol.units=[self.unit]; self.rebuild_scene()
+        if not self.redo_stack:
+            return
+        current = copy.deepcopy(self.unit)
+        nxt = self.redo_stack.pop()
+        self.undo_stack.append(current)
+        if len(self.undo_stack) > self.max_history:
+            self.undo_stack.pop(0)
+        self._restore_template_unit_from_history(nxt)
 
     def rotate_selected(self, deg):
         self.push_undo_state()
@@ -1208,6 +1267,10 @@ class TemplateEditorDialog(QDialog):
         self.dirty = False
         self.undo_stack.clear()
         self.redo_stack.clear()
+        try:
+            self._last_undo_state = self._template_state()
+        except Exception:
+            self._last_undo_state = None
 
     def _template_has_unsaved_changes(self) -> bool:
         """Detect real template content changes by comparing with the saved snapshot."""
@@ -1218,6 +1281,10 @@ class TemplateEditorDialog(QDialog):
             return snap is not None and self._template_state() != snap
         except Exception:
             return bool(getattr(self, 'dirty', False))
+
+    def is_template_dirty(self) -> bool:
+        """Compatibility wrapper used by undo/redo and older template-editor code."""
+        return self._template_has_unsaved_changes()
 
     def _ask_save_if_dirty(self) -> bool:
         """Return True when the pending action may continue."""
@@ -4562,10 +4629,77 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
             ed.returnPressed.connect(lambda key=k, editor=ed: self.set_attr_val(m, key, editor.text()))
             l.addWidget(cb)
             l.addWidget(ed)
+            # BODY attributes can be removed by right click directly on the attribute row.
+            # The row is used instead of the label widget because QFormLayout internally
+            # owns/creates the label and is not reliable as a context-menu target.
+            row.setContextMenuPolicy(Qt.CustomContextMenu)
+            row.customContextMenuRequested.connect(lambda pos, body=m, key=k, widget=row: self.body_attribute_context_menu(body, key, widget, pos))
+            cb.setContextMenuPolicy(Qt.CustomContextMenu)
+            cb.customContextMenuRequested.connect(lambda pos, body=m, key=k, widget=cb: self.body_attribute_context_menu(body, key, widget, pos))
+            ed.setContextMenuPolicy(Qt.CustomContextMenu)
+            ed.customContextMenuRequested.connect(lambda pos, body=m, key=k, widget=ed: self.body_attribute_context_menu(body, key, widget, pos))
             self.form.addRow(k, row)
         add_attr_btn = QPushButton('Add Attribute')
         add_attr_btn.clicked.connect(lambda _checked=False, body=m: self.add_body_attribute_dialog(body))
         self.form.addRow('', add_attr_btn)
+
+
+    def body_attribute_context_menu(self, body, key, widget, pos):
+        menu = QMenu(self)
+        delete_action = QAction('Delete Attribute', self)
+        delete_action.triggered.connect(lambda _checked=False, b=body, k=key: self.delete_body_attribute(b, k))
+        menu.addAction(delete_action)
+        try:
+            menu.exec(widget.mapToGlobal(pos))
+        except Exception:
+            menu.exec(QCursor.pos())
+
+    def delete_body_attribute(self, body, key):
+        if body is None or not key:
+            return
+        attrs = getattr(body, 'attributes', {}) or {}
+        if key not in attrs:
+            return
+        protected = {'REFDES', 'REF_DES'}
+        if str(key).strip().upper() in protected:
+            QMessageBox.information(self, 'Delete Attribute', f'Das Pflichtattribut "{key}" kann nicht gelöscht werden.')
+            return
+        res = QMessageBox.question(
+            self,
+            'Delete Attribute',
+            f'Attribut "{key}" löschen?',
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if res != QMessageBox.Yes:
+            return
+        self.push_undo_state()
+        for target in self._body_attr_sync_targets(body):
+            try:
+                if getattr(target, 'attributes', None) is not None:
+                    target.attributes.pop(key, None)
+                if getattr(target, 'visible_attributes', None) is not None:
+                    target.visible_attributes.pop(key, None)
+                if getattr(target, 'attribute_texts', None) is not None:
+                    target.attribute_texts.pop(key, None)
+            except Exception:
+                pass
+        try:
+            self.update_attribute_items_for_unit()
+        except Exception:
+            pass
+        try:
+            self.rebuild_tree()
+        except Exception:
+            pass
+        try:
+            self.refresh_properties()
+        except Exception:
+            pass
+        try:
+            self.schedule_scene_refresh(visual_only=True)
+        except Exception:
+            pass
 
     def add_body_attribute_dialog(self, body):
         dlg = QDialog(self)
@@ -5775,6 +5909,7 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         s.template_name = template_name
         s.units = [self.load_template_unit(template_name)]
         s.units[0].name = 'Unit A'
+        self.normalize_symbol_origins_for_import(s)
         self.current_unit_index = 0
         self.rebuild_all()
 
@@ -5793,6 +5928,7 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         else:
             base = self.load_template_unit(template_name)
             s.units = [copy.deepcopy(base), copy.deepcopy(base)]
+        self.normalize_symbol_origins_for_import(s)
         for i, u in enumerate(s.units, start=1):
             u.name = f'{s.name}_{i}'
         self.current_unit_index = 0
@@ -7444,6 +7580,69 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         }
 
     def merge_save_template_to_file(self, template_name: str, unit: SymbolUnitModel):
+        """Persist a template edit to the source that the Template Editor loaded.
+
+        External Mentor-derived templates live under symbol_wizard/symbol_templates
+        and are loaded through the manifest.  Earlier builds always wrote edited
+        templates into symbol_types.json; on reload the external manifest entry won
+        again, so the user saw the old geometry.  This method now updates the
+        manifest-backed JSON entry in place when possible and falls back to
+        symbol_types.json only for built-in/non-external templates.
+        """
+        def _write_external_manifest_entry() -> bool:
+            try:
+                manifest = self.load_template_manifest()
+                meta = (manifest.get('templates') or {}).get(template_name)
+                if not meta:
+                    return False
+                root = self.symbol_templates_dir()
+                fp = root / str(meta.get('file') or '')
+                if not fp.exists():
+                    return False
+                data = json.loads(fp.read_text(encoding='utf-8'))
+                entries = data if isinstance(data, list) else [data]
+                idx = int(meta.get('index', 0) or 0)
+                if idx < 0 or idx >= len(entries):
+                    return False
+
+                unit_copy = copy.deepcopy(unit)
+                try:
+                    self.normalize_unit_origin(unit_copy, getattr(self.symbol, 'origin', OriginMode.CENTER.value))
+                except Exception:
+                    pass
+                try:
+                    unit_copy.body.attributes['TEMPLATE_GRAPHICS_AS_BODY'] = '1'
+                except Exception:
+                    pass
+                for _g in getattr(unit_copy, 'graphics', []) or []:
+                    try:
+                        _g.locked_to_body = True
+                    except Exception:
+                        pass
+
+                old = entries[idx] if isinstance(entries[idx], dict) else {}
+                entry = dict(old)
+                entry['name'] = str(meta.get('name') or template_name.split(' / ')[-1])
+                entry['template_name'] = template_name
+                entry['unit'] = copy.deepcopy(asdict(unit_copy))
+                entries[idx] = entry
+                fp.write_text(json.dumps(entries if isinstance(data, list) else entries[0], ensure_ascii=False, indent=2), encoding='utf-8')
+
+                # Drop stale caches so the next load sees the new JSON immediately.
+                for attr in ('_template_file_json_cache', '_template_unit_lru', '_template_manifest_cache', '_template_manifest_cache_key'):
+                    try:
+                        if hasattr(self, attr):
+                            delattr(self, attr)
+                    except Exception:
+                        pass
+                self.symbol_templates.clear()
+                return True
+            except Exception:
+                return False
+
+        if _write_external_manifest_entry():
+            return
+
         path = self.symbol_types_path()
         if not path:
             return
@@ -7452,13 +7651,17 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         except Exception:
             data = {'global_attributes': [], 'types': {}}
         data.setdefault('types', {})
-        payload = self.unit_to_template_payload(unit)
+        unit_copy = copy.deepcopy(unit)
+        try:
+            self.normalize_unit_origin(unit_copy, getattr(self.symbol, 'origin', OriginMode.CENTER.value))
+        except Exception:
+            pass
+        payload = self.unit_to_template_payload(unit_copy)
         if ' / ' in template_name:
             type_name, subtype_name = [x.strip() for x in template_name.split(' / ', 1)]
             t = data['types'].setdefault(type_name, {'prefix': '?', 'subtypes': {}})
             t.setdefault('subtypes', {})
             sub = t['subtypes'].setdefault(subtype_name, {})
-            # Merge-save: only the currently edited template fields are overwritten; all other metadata stays intact.
             sub.update({k: copy.deepcopy(v) for k, v in payload.items() if k != 'default_pins'})
             sub['default_pins'] = payload['default_pins']
             if 'body' not in t and 'body' in payload:
@@ -7469,6 +7672,7 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding='utf-8')
         self.symbol_templates.clear()
+
 
     # ------------------------------------------------------------------ File IO
     def save_current_symbol(self):

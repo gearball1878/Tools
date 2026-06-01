@@ -2,7 +2,7 @@ from __future__ import annotations
 import math
 from PySide6.QtCore import QPointF, QRectF, Qt, QEvent
 from PySide6.QtGui import QColor, QFont, QPainter, QPen, QBrush, QTransform, QTextCursor, QCursor, QPainterPath, QTextOption, QFontMetricsF, QPainterPathStroker
-from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem, QGraphicsTextItem
+from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem, QGraphicsTextItem, QApplication
 from symbol_wizard.models.document import PinSide, LineStyle
 from symbol_wizard.rules.grid import snap
 
@@ -85,6 +85,20 @@ class TransformMixin:
             return super().itemChange(change, value)
         if change == QGraphicsItem.ItemPositionChange and self.scene():
             win = self.scene().window
+            # In the Template Editor, moving an item directly on the canvas must
+            # create an undo snapshot before Qt applies the new position.  Many
+            # item classes do not have their own mousePress undo hook, so this
+            # central hook covers Body, Pin, Text and Graphic moves consistently.
+            try:
+                if (getattr(win, 'is_template_editor', False)
+                        and not getattr(win, '_loading_template', False)
+                        and not getattr(win, '_restoring_undo_redo', False)
+                        and (QApplication.mouseButtons() & Qt.LeftButton)
+                        and not getattr(self, '_undo_state_pushed_for_drag', False)):
+                    win.push_undo_state()
+                    self._undo_state_pushed_for_drag = True
+            except Exception:
+                pass
             snap_enabled = not bool(getattr(win, 'template_snap_check', None) and not win.template_snap_check.isChecked())
             if snap_enabled:
                 # Template Editor may use a fine edit grid while the stored symbol/pin grid
@@ -210,7 +224,19 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
             graphics_as_body = str(attrs.get('MENTOR_GRAPHICS_AS_BODY', '0')) == '1'
         except Exception:
             pass
-        if graphics_as_body and not getattr(self.window, 'is_template_editor', False):
+        if graphics_as_body:
+            # For Mentor/template based symbols the visible body consists of the
+            # imported/template graphic primitives.  The rectangular BodyModel is
+            # only a logical anchor/grouping object and must not be painted as an
+            # extra black frame around the artwork.
+            #
+            # Template Editor: never draw the logical body rectangle.  Individual
+            # template graphics remain editable there.
+            if getattr(self.window, 'is_template_editor', False):
+                return
+
+            # Symbol Wizard: show only a lightweight body highlight/selection
+            # frame for the complete body group, never the normal body geometry.
             painter.save()
             if self.isSelected():
                 pen = QPen(QColor(0, 150, 170, 230), 2, Qt.DashLine)
@@ -353,6 +379,7 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
+        self._undo_state_pushed_for_drag = False
         self._resizing = None
         self._resize_anchor_scene = None
         self._resize_start = None
@@ -537,6 +564,13 @@ class PinItem(TransformMixin, QGraphicsItem):
             painter.drawEllipse(_rotation_handle(self.boundingRect(), self.window.grid_px * self.rotate_handle_factor))
 
     def mousePressEvent(self, event):
+        self._undo_state_pushed_for_drag = False
+        if self.isSelected() and event.button() == Qt.LeftButton:
+            try:
+                self.window.push_undo_state()
+                self._undo_state_pushed_for_drag = True
+            except Exception:
+                pass
         if self.isSelected() and _rotation_handle(self.boundingRect(), self.window.grid_px * self.rotate_handle_factor).contains(event.pos()):
             self._rotating = True
             self._rotate_center_scene = self.mapToScene(self.boundingRect().center())
@@ -558,6 +592,7 @@ class PinItem(TransformMixin, QGraphicsItem):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
+        self._undo_state_pushed_for_drag = False
         self._rotating = False
         super().mouseReleaseEvent(event)
 
@@ -871,6 +906,25 @@ class GraphicItem(TransformMixin, QGraphicsItem):
         super().hoverLeaveEvent(event)
 
     def mousePressEvent(self, event):
+        # Template Editor graphics need their own undo hook.  Resize/rotate
+        # handles do not always trigger ItemPositionChange, and a normal move
+        # can start before the item becomes selected, so relying only on the
+        # TransformMixin itemChange hook leaves GraphicModel edits out of the
+        # undo stack.  Save exactly one pre-edit snapshot on mouse press.
+        self._undo_state_pushed_for_drag = False
+        if event.button() == Qt.LeftButton:
+            try:
+                if (getattr(self.window, 'is_template_editor', False)
+                        and not getattr(self.window, '_loading_template', False)
+                        and not getattr(self.window, '_restoring_undo_redo', False)):
+                    self.window.push_undo_state()
+                    self._undo_state_pushed_for_drag = True
+                    try:
+                        self._undo_state_at_graphic_press = self.window._unit_state_for_undo(self.window.undo_stack[-1])
+                    except Exception:
+                        self._undo_state_at_graphic_press = None
+            except Exception:
+                pass
         if self.isSelected():
             if _rotation_handle(self._rect(), self.window.grid_px * self.rotate_handle_factor).contains(event.pos()):
                 self._rotating = True
@@ -965,6 +1019,21 @@ class GraphicItem(TransformMixin, QGraphicsItem):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event):
+        # If the user only clicked/selected a graphic, do not leave a dirty
+        # undo entry behind.  For real graphic edits (move/resize/rotate/curve)
+        # the current template state differs from the saved pre-edit state and
+        # the undo snapshot is kept.
+        try:
+            if getattr(self, '_undo_state_pushed_for_drag', False) and getattr(self.window, 'is_template_editor', False):
+                before = getattr(self, '_undo_state_at_graphic_press', None)
+                after = self.window._template_state() if hasattr(self.window, '_template_state') else None
+                if before is not None and after == before and getattr(self.window, 'undo_stack', None):
+                    self.window.undo_stack.pop()
+                    self.window.dirty = self.window.is_template_dirty() if hasattr(self.window, 'is_template_dirty') else False
+        except Exception:
+            pass
+        self._undo_state_pushed_for_drag = False
+        self._undo_state_at_graphic_press = None
         self._resizing = None
         self._resize_anchor_scene = None
         self._resize_start = None
