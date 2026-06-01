@@ -13200,3 +13200,170 @@ try:
         _cls.rotate_selected = _lh52_rotate_selected
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# Liebherr v53: Scale +/- for inserted/free GRAPHIC objects.
+# Previous fallback looked for a non-existent scale_by() method, therefore
+# pasted/drawn graphics did not react to the toolbar.  Scale regular GRAPHIC
+# models directly around their own center, snap endpoints to the edit grid and
+# keep BODY/pin protection plus selection restoration intact.
+# ---------------------------------------------------------------------------
+try:
+    _lh53_prev_scale_selected_grid = MainWindow.scale_selected_grid
+    _lh53_prev_scale_selected = MainWindow.scale_selected
+except Exception:
+    _lh53_prev_scale_selected_grid = None
+    _lh53_prev_scale_selected = None
+
+
+def _lh53_edit_step(self):
+    try:
+        return max(float(self._edit_grid_step()), 1e-9)
+    except Exception:
+        try:
+            return max(float(getattr(self, 'edit_grid_px', 0.0) or 0.0) / max(float(getattr(self, 'grid_px', 1.0) or 1.0), 1e-9), 1e-9)
+        except Exception:
+            return 0.1
+
+
+def _lh53_snap(self, v):
+    try:
+        return float(self._snap_to_edit_grid(float(v), _lh53_edit_step(self)))
+    except Exception:
+        try:
+            step = _lh53_edit_step(self)
+            return round(float(v) / step) * step
+        except Exception:
+            return float(v)
+
+
+def _lh53_graphic_points(gr):
+    try:
+        return _lh10_graphic_points(gr)
+    except Exception:
+        x = float(getattr(gr, 'x', 0.0) or 0.0)
+        y = float(getattr(gr, 'y', 0.0) or 0.0)
+        w = float(getattr(gr, 'w', 0.0) or 0.0)
+        h = float(getattr(gr, 'h', 0.0) or 0.0)
+        return (x, y, x + w, y - h)
+
+
+def _lh53_scale_graphic_model(self, gr, factor):
+    x1, y1, x2, y2 = _lh53_graphic_points(gr)
+    cx, cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
+    f = max(0.05, float(factor))
+    nx1 = _lh53_snap(self, cx + (x1 - cx) * f)
+    ny1 = _lh53_snap(self, cy + (y1 - cy) * f)
+    nx2 = _lh53_snap(self, cx + (x2 - cx) * f)
+    ny2 = _lh53_snap(self, cy + (y2 - cy) * f)
+    # Avoid collapsing non-zero geometry after snapping.
+    step = _lh53_edit_step(self)
+    if abs(x2 - x1) > 1e-12 and abs(nx2 - nx1) < step:
+        nx1, nx2 = _lh53_snap(self, cx - step / 2.0), _lh53_snap(self, cx + step / 2.0)
+    if abs(y2 - y1) > 1e-12 and abs(ny2 - ny1) < step:
+        ny1, ny2 = _lh53_snap(self, cy - step / 2.0), _lh53_snap(self, cy + step / 2.0)
+    gr.x = nx1
+    gr.y = ny1
+    gr.w = nx2 - nx1
+    gr.h = ny1 - ny2
+    try:
+        if getattr(gr, 'ctrl_x', None) is not None:
+            gr.ctrl_x = float(gr.ctrl_x) * f
+        if getattr(gr, 'ctrl_y', None) is not None:
+            gr.ctrl_y = float(gr.ctrl_y) * f
+        if getattr(gr, 'curve_radius', None) not in (None, 0, 0.0):
+            gr.curve_radius = float(gr.curve_radius) * f
+    except Exception:
+        pass
+
+
+def _lh53_selected_items(self):
+    try:
+        return [i for i in self.scene.selectedItems() if getattr(i, 'data', lambda *_: None)(0) not in ('SELECTION_HANDLE', 'HIGHLIGHT')]
+    except Exception:
+        return []
+
+
+def _lh53_has_regular_graphics(self, items):
+    for it in items:
+        try:
+            if it.data(0) == 'GRAPHIC' and getattr(it, 'model', None) is not None and not bool(getattr(it.model, 'locked_to_body', False)):
+                return True
+        except Exception:
+            pass
+    return False
+
+
+def _lh53_apply_scale_to_non_body_selection(self, factor):
+    changed = False
+    for it in _lh53_selected_items(self):
+        try:
+            kind = it.data(0)
+            if kind == 'GRAPHIC' and getattr(it, 'model', None) is not None and not bool(getattr(it.model, 'locked_to_body', False)):
+                _lh53_scale_graphic_model(self, it.model, factor)
+                changed = True
+            elif kind in ('TEXT', 'ATTR_REF_DES', 'ATTR_BODY') and hasattr(it, 'scale_selected'):
+                it.scale_selected(float(factor)); changed = True
+            elif kind == 'PIN':
+                # Pins must not be scaled by Scale +/-.
+                continue
+        except Exception as e:
+            try: self.statusBar().showMessage(f'Scale failed: {e}', 5000)
+            except Exception: pass
+    if changed:
+        try: self.update_current_unit_canvas_positions()
+        except Exception:
+            try: self.schedule_scene_refresh()
+            except Exception: pass
+        try: self.update_attribute_items_for_unit()
+        except Exception: pass
+        try: self.rebuild_tree(); self.rebuild_pin_table()
+        except Exception: pass
+        try: self.refresh_properties()
+        except Exception: pass
+        try: self.view.viewport().update()
+        except Exception: pass
+    return changed
+
+
+def _lh53_scale_selected(self, factor):
+    try:
+        if self._selected_body_active():
+            return _lh53_prev_scale_selected(self, factor) if _lh53_prev_scale_selected else None
+    except Exception:
+        pass
+    sig = _lh46_selected_signature(self) if '_lh46_selected_signature' in globals() else []
+    fs = _lh47_selection_filter_state(self) if '_lh47_selection_filter_state' in globals() else None
+    try:
+        self.set_tool(DrawTool.SELECT.value)
+        self.push_undo_state()
+        changed = _lh53_apply_scale_to_non_body_selection(self, float(factor))
+        if not changed and _lh53_prev_scale_selected is not None:
+            return _lh53_prev_scale_selected(self, factor)
+        self.dirty = bool(changed) or getattr(self, 'dirty', False)
+    finally:
+        try:
+            _lh47_restore_selection_after_action(self, sig=sig, filter_state=fs, force_body=False, refresh=False)
+        except Exception:
+            pass
+
+
+def _lh53_scale_selected_grid(self, direction:int):
+    try:
+        if self._selected_body_active():
+            return _lh53_prev_scale_selected_grid(self, direction) if _lh53_prev_scale_selected_grid else None
+    except Exception:
+        pass
+    items = _lh53_selected_items(self)
+    # Regular inserted/drawn graphics get a real geometry scale. Pins stay excluded.
+    if _lh53_has_regular_graphics(self, items) or any(getattr(i, 'data', lambda *_: None)(0) in ('TEXT','ATTR_REF_DES','ATTR_BODY') for i in items):
+        return _lh53_scale_selected(self, 1.0 + (0.1 if int(direction) > 0 else -0.1))
+    if _lh53_prev_scale_selected_grid is not None:
+        return _lh53_prev_scale_selected_grid(self, direction)
+
+try:
+    for _cls in (MainWindow, TemplateEditorDialog):
+        _cls.scale_selected = _lh53_scale_selected
+        _cls.scale_selected_grid = _lh53_scale_selected_grid
+except Exception:
+    pass
