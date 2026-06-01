@@ -221,12 +221,7 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
         graphics_as_body = False
         try:
             attrs = getattr(self.model, 'attributes', {}) or {}
-            graphics_as_body = (
-                str(attrs.get('MENTOR_GRAPHICS_AS_BODY', '0')) == '1'
-                or str(attrs.get('MENTOR_BODY_GRAPHICS_LOCKED', '0')) == '1'
-                or str(attrs.get('MENTOR_HAS_BODY', '0')) == '1'
-                or str(attrs.get('TEMPLATE_GRAPHICS_AS_BODY', '0')) == '1'
-            )
+            graphics_as_body = str(attrs.get('MENTOR_GRAPHICS_AS_BODY', '0')) == '1'
         except Exception:
             pass
         if graphics_as_body:
@@ -274,7 +269,6 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
                 self._rotate_center_scene = self.mapToScene(self.boundingRect().center())
                 self._rotate_start_angle = _angle_from(self._rotate_center_scene, event.scenePos())
                 self._rotate_start_model = float(getattr(self.model, 'rotation', 0.0) or 0.0)
-                self._rotate_last_model = self._rotate_start_model
                 event.accept(); return
             h = _hit_handle(self._handles(), event.pos())
             if h:
@@ -296,24 +290,8 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
     def mouseMoveEvent(self, event):
         if getattr(self, '_rotating', False):
             delta = _angle_from(self._rotate_center_scene, event.scenePos()) - self._rotate_start_angle
-            new_rot = (round((self._rotate_start_model + delta) / 15.0) * 15.0) % 360
-            last_rot = float(getattr(self, '_rotate_last_model', self._rotate_start_model) or 0.0)
-            inc = new_rot - last_rot
-            if inc > 180:
-                inc -= 360
-            elif inc < -180:
-                inc += 360
-            if abs(inc) > 1e-9:
-                try:
-                    # Rotate the real BODY-owned object group (body graphics, pins,
-                    # labels, attributes and user graphics) instead of a visible
-                    # proxy/bounding frame.  This keeps all object-relative
-                    # positions unchanged, exactly like rotating one grouped item.
-                    self.window._transform_unit_as_body_group('rotate', inc)
-                except Exception:
-                    self.model.rotation = new_rot
-                    self.apply_transform_from_model()
-                self._rotate_last_model = new_rot
+            self.model.rotation = (round((self._rotate_start_model + delta) / 15.0) * 15.0) % 360
+            self.apply_transform_from_model()
             try:
                 self.window.notify_canvas_model_changed()
             except Exception:
@@ -885,7 +863,45 @@ class GraphicItem(TransformMixin, QGraphicsItem):
             painter.drawRect(QRectF(0, 0, m.w * g, m.h * g))
         elif m.shape in ('ellipse', 'circle'):
             painter.drawEllipse(QRectF(0, 0, m.w * g, m.h * g))
-        if self.isSelected() and (not getattr(self.model, 'locked_to_body', False) or getattr(self.window, 'is_template_editor', False)):
+        # In the Symbol Wizard, imported/template graphics that are locked to the
+        # BODY are not individually selectable.  If the BODY is selected, highlight
+        # the *real primitive itself* (line/rect/ellipse/arc) instead of drawing a
+        # proxy bounding frame.  This makes imported symbols behave like <NONE>
+        # symbols without introducing the confusing blue transform rectangle.
+        locked_body_graphic = bool(getattr(self.model, 'locked_to_body', False)) and not getattr(self.window, 'is_template_editor', False)
+        body_selected = False
+        if locked_body_graphic:
+            try:
+                body_selected = any(it.data(0) == 'BODY' and it.isSelected() for it in self.scene().selectedItems())
+            except Exception:
+                body_selected = False
+        if body_selected:
+            painter.save()
+            hp = pen_for((0, 150, 170), max(float(getattr(m.style, 'line_width', 0.03) or 0.03) * 1.8, 0.04), m.style.line_style, g)
+            hp.setStyle(Qt.DashLine)
+            painter.setPen(hp)
+            painter.setBrush(QBrush(Qt.NoBrush))
+            if m.shape in ('line', 'arc'):
+                ctrl_x = getattr(m, 'ctrl_x', None)
+                ctrl_y = getattr(m, 'ctrl_y', None)
+                if ctrl_x is not None and ctrl_y is not None:
+                    path = QPainterPath(QPointF(0, 0))
+                    path.quadTo(QPointF(float(ctrl_x) * g, -float(ctrl_y) * g), QPointF(m.w * g, -m.h * g))
+                    painter.drawPath(path)
+                else:
+                    r = float(getattr(m, 'curve_radius', 0.0) or 0.0)
+                    if abs(r) > 1e-9:
+                        path = QPainterPath(QPointF(0, 0))
+                        path.quadTo(QPointF(m.w * g / 2, m.h * g / 2 - r * g), QPointF(m.w * g, m.h * g))
+                        painter.drawPath(path)
+                    else:
+                        painter.drawLine(QPointF(0, 0), QPointF(m.w * g, m.h * g))
+            elif m.shape == 'rect':
+                painter.drawRect(QRectF(0, 0, m.w * g, m.h * g))
+            elif m.shape in ('ellipse', 'circle'):
+                painter.drawEllipse(QRectF(0, 0, m.w * g, m.h * g))
+            painter.restore()
+        elif self.isSelected() and (not getattr(self.model, 'locked_to_body', False) or getattr(self.window, 'is_template_editor', False)):
             painter.save()
             painter.setPen(QPen(QColor(80, 80, 80), 1, Qt.DashLine))
             painter.drawRect(self._rect())

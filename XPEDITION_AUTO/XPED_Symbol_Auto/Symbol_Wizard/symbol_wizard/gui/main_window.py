@@ -4608,10 +4608,10 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         self.form.addRow(head)
         self.form.addRow('Width [grid]', self._dbl(m.width, lambda v: self.set_body_dim(item, 'width', max(1.0, round(float(v)))), 1, 300, 1))
         self.form.addRow('Height [grid]', self._dbl(m.height, lambda v: self.set_body_dim(item, 'height', max(1.0, round(float(v)))), 1, 300, 1))
-        self.form.addRow('Line style', self._combo([x.value for x in LineStyle], m.line_style, lambda v: self.set_and_refresh(m, 'line_style', v)))
-        self.form.addRow('Line width', self._dbl(m.line_width, lambda v: self.set_and_refresh(m, 'line_width', v), .01, 1, .01))
-        self.transform_props(m)
-        self.form.addRow('Color', self._color_button_row('Color RGB', m.color, lambda _checked=False: self.color_model(m)))
+        self.form.addRow('Line style', self._combo([x.value for x in LineStyle], m.line_style, lambda v: self.set_body_visual_attr(m, 'line_style', v)))
+        self.form.addRow('Line width', self._dbl(m.line_width, lambda v: self.set_body_visual_attr(m, 'line_width', float(v)), .01, 1, .01))
+        self.form.addRow('Rotation [deg]', self._dbl(getattr(m, 'rotation', 0), lambda v: self.set_body_rotation(v), -360, 360, 15))
+        self.form.addRow('Color', self._color_button_row('Color RGB', m.color, lambda _checked=False: self.color_body(m)))
         self.form.addRow(QLabel('<b>BODY-Attribute</b>'))
         if self._is_split_body_attr_sync_active():
             sync_info = QLabel('Split sync active: BODY attribute values, visibility and fonts are applied to all split parts.')
@@ -4867,6 +4867,72 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
     def transform_props(self, m):
         self.form.addRow('Rotation [deg]', self._dbl(getattr(m, 'rotation', 0), lambda v: self.set_and_refresh(m, 'rotation', v), -360, 360, 15))
 
+    def _body_uses_imported_graphics(self, body=None) -> bool:
+        body = body or getattr(self.current_unit, 'body', None)
+        try:
+            attrs = getattr(body, 'attributes', {}) or {}
+            if str(attrs.get('MENTOR_GRAPHICS_AS_BODY', '0')) == '1' or str(attrs.get('TEMPLATE_GRAPHICS_AS_BODY', '0')) == '1':
+                return True
+        except Exception:
+            pass
+        try:
+            return any(bool(getattr(g, 'locked_to_body', False)) for g in getattr(self.current_unit, 'graphics', []) or [])
+        except Exception:
+            return False
+
+    def _body_locked_graphics(self):
+        return [g for g in (getattr(self.current_unit, 'graphics', []) or []) if bool(getattr(g, 'locked_to_body', False))]
+
+    def set_body_visual_attr(self, body, attr, value):
+        """Edit BODY style for both native bodies and imported/template bodies.
+
+        Imported bodies are drawn by locked GraphicModel primitives.  The property
+        panel still shows BODY style, so edits must be propagated to those real
+        primitives instead of only changing the invisible logical BodyModel.
+        """
+        self.push_undo_state()
+        setattr(body, attr, value)
+        if attr in ('line_style', 'line_width') and self._body_uses_imported_graphics(body):
+            for g in self._body_locked_graphics():
+                try:
+                    setattr(g.style, attr, value)
+                except Exception:
+                    pass
+        self.update_current_unit_canvas_positions()
+        self.schedule_scene_refresh(visual_only=True)
+
+    def color_body(self, body):
+        self.push_undo_state()
+        c = QColorDialog.getColor(QColor(*getattr(body, 'color', (0,0,0))), self)
+        if c.isValid():
+            value = (c.red(), c.green(), c.blue())
+            body.color = value
+            if self._body_uses_imported_graphics(body):
+                for g in self._body_locked_graphics():
+                    try:
+                        g.style.stroke = value
+                    except Exception:
+                        pass
+            self.schedule_scene_refresh(visual_only=True)
+
+    def set_body_rotation(self, absolute_deg):
+        """Rotate the whole unit as one object around the body origin.
+
+        The spinbox contains the absolute BODY rotation.  Internally we apply only
+        the delta to the real objects (body graphics, pins, texts, body attributes),
+        preserving their relative positions exactly.
+        """
+        body = self.current_unit.body
+        old = float(getattr(body, 'rotation', 0.0) or 0.0)
+        new = (round(float(absolute_deg) / 15.0) * 15.0) % 360.0
+        delta = ((new - old + 540.0) % 360.0) - 180.0
+        if abs(delta) < 1e-9:
+            return
+        self.push_undo_state()
+        self._transform_unit_as_body_group('rotate', delta)
+        body.rotation = new
+        self.schedule_scene_refresh(visual_only=True)
+
     # ------------------------------------------------------------------ Model updates
     def set_font_attr(self, f, a, v, refresh_attrs=False):
         self.push_undo_state()
@@ -4921,16 +4987,33 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
 
     def set_body_dim(self, item, a, v):
         self.push_undo_state()
-        st = {
-            'x': float(item.model.x), 'y': float(item.model.y),
-            'w': float(item.model.width), 'h': float(item.model.height),
-            'pins': [(p, float(p.x), float(p.y), float(p.length)) for p in self.current_unit.pins],
-            'texts': [(t, float(t.x), float(t.y)) for t in self.current_unit.texts],
-            'attributes': [(t, float(t.x), float(t.y)) for t in getattr(self.current_unit.body, 'attribute_texts', {}).values()],
-            'graphics': [(gr, float(gr.x), float(gr.y), float(gr.w), float(gr.h)) for gr in self.current_unit.graphics],
-        }
-        setattr(item.model, a, float(v))
-        self.scale_current_unit_children_from_body_resize(st, item.model)
+        body = item.model
+        old_w = max(float(getattr(body, 'width', 1.0) or 1.0), 1e-9)
+        old_h = max(float(getattr(body, 'height', 1.0) or 1.0), 1e-9)
+        new_v = float(v)
+        if self._body_uses_imported_graphics(body):
+            # Imported/template BODY geometry is the locked graphic group.  Scaling
+            # the BODY property must scale the real group and all attached objects
+            # as one object, not resize an invisible rectangle.
+            factor = (new_v / old_w) if a == 'width' else (new_v / old_h)
+            self._transform_unit_as_body_group('scale', factor)
+            if a == 'width':
+                body.width = new_v
+                body.height = max(0.1, float(body.height) * factor)
+            else:
+                body.height = new_v
+                body.width = max(0.1, float(body.width) * factor)
+        else:
+            st = {
+                'x': float(body.x), 'y': float(body.y),
+                'w': float(body.width), 'h': float(body.height),
+                'pins': [(p, float(p.x), float(p.y), float(p.length)) for p in self.current_unit.pins],
+                'texts': [(t, float(t.x), float(t.y)) for t in self.current_unit.texts],
+                'attributes': [(t, float(t.x), float(t.y)) for t in getattr(self.current_unit.body, 'attribute_texts', {}).values()],
+                'graphics': [(gr, float(gr.x), float(gr.y), float(gr.w), float(gr.h)) for gr in self.current_unit.graphics],
+            }
+            setattr(body, a, new_v)
+            self.scale_current_unit_children_from_body_resize(st, body)
         self.enforce_symbol_size_limit()
         self.update_current_unit_canvas_positions()
         self.schedule_scene_refresh(visual_only=True)
@@ -5278,12 +5361,7 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         # Mentor-native imports already contain exact pin endpoints.  Re-docking
         # during every scene rebuild would move left/right/top/bottom pins to a
         # generated bounding box and destroy the imported placement.
-        if (str(attrs.get('MENTOR_DISABLE_AUTO_DOCK', '0')) == '1'
-                or str(attrs.get('MENTOR_GRAPHICS_AS_BODY', '0')) == '1'
-                or str(attrs.get('MENTOR_BODY_GRAPHICS_LOCKED', '0')) == '1'
-                or str(attrs.get('MENTOR_HAS_BODY', '0')) == '1'
-                or str(attrs.get('TEMPLATE_GRAPHICS_AS_BODY', '0')) == '1'
-                or abs(float(getattr(b, 'rotation', 0.0) or 0.0)) > 1e-9):
+        if str(attrs.get('MENTOR_DISABLE_AUTO_DOCK', '0')) == '1' or str(attrs.get('MENTOR_GRAPHICS_AS_BODY', '0')) == '1':
             return
         for p in u.pins:
             if p.side == PinSide.LEFT.value:
@@ -5374,6 +5452,23 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
 
     def _body_center_grid(self, body=None):
         b = body or self.current_unit.body
+        # For imported/template BODYs the visible body is the locked graphic group.
+        # Use its real geometric bounds as transformation center so pins and
+        # attributes rotate/scale exactly as if the imported symbol was one object.
+        try:
+            locked = [g for g in (getattr(self.current_unit, 'graphics', []) or []) if bool(getattr(g, 'locked_to_body', False))]
+            if locked:
+                xs=[]; ys=[]
+                for g in locked:
+                    x1=float(getattr(g,'x',0.0) or 0.0); y1=float(getattr(g,'y',0.0) or 0.0)
+                    x2=x1+float(getattr(g,'w',0.0) or 0.0); y2=y1+float(getattr(g,'h',0.0) or 0.0)
+                    xs.extend([x1,x2]); ys.extend([y1,y2])
+                    cx=getattr(g,'ctrl_x',None); cy=getattr(g,'ctrl_y',None)
+                    if cx is not None and cy is not None:
+                        xs.append(x1+float(cx)); ys.append(y1+float(cy))
+                return ((min(xs)+max(xs))/2.0, (min(ys)+max(ys))/2.0)
+        except Exception:
+            pass
         return (float(b.x) + float(b.width) / 2.0, float(b.y) - float(b.height) / 2.0)
 
     def _rot_point(self, x, y, cx, cy, deg):
@@ -5401,18 +5496,6 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
             font.size_grid = max(0.1, float(getattr(font, 'size_grid', 0.75) or 0.75) * float(factor))
         except Exception:
             pass
-
-    def _graphic_center(self, gr):
-        return (float(getattr(gr, 'x', 0.0) or 0.0) + float(getattr(gr, 'w', 0.0) or 0.0) / 2.0,
-                float(getattr(gr, 'y', 0.0) or 0.0) + float(getattr(gr, 'h', 0.0) or 0.0) / 2.0)
-
-    def _set_graphic_center(self, gr, cx, cy):
-        gr.x = float(cx) - float(getattr(gr, 'w', 0.0) or 0.0) / 2.0
-        gr.y = float(cy) - float(getattr(gr, 'h', 0.0) or 0.0) / 2.0
-
-    def _rot_angle_after_flip(self, angle, horizontal=True):
-        r = float(angle or 0.0)
-        return (-r) % 360.0 if horizontal else (180.0 - r) % 360.0
 
     def _transform_pin_anchors(self, p, point_fn, rotate_deg=None, scale_factor=None, flip_horizontal=None):
         for ax, ay in (('label_x', 'label_y'), ('number_x', 'number_y')):
@@ -5446,14 +5529,13 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
                 pass
 
     def _transform_unit_as_body_group(self, op, value=None):
-        """Transform the real symbol object group around the BODY center.
+        """Transform the real symbol objects, not a temporary body frame.
 
-        No proxy/bounding rectangle is transformed or persisted.  Imported
-        Mentor/template graphics that form the visible BODY, normal user
-        graphics, pins, pin labels, pin attributes, body attributes and free
-        text are all transformed as one rigid group.  Therefore their relative
-        coordinates stay unchanged; only the group's rotation/scale/mirror state
-        changes.
+        Imported Mentor/template symbols use graphics as the visible BODY.  Internally
+        created symbols use the rectangular body.  Both must behave identically here:
+        pins, pin labels/attributes, body attributes, user graphics and body graphics
+        are transformed together around the BODY center, so their relative layout does
+        not drift and no proxy rectangle becomes part of the model.
         """
         u = self.current_unit
         b = u.body
@@ -5461,53 +5543,38 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
 
         if op == 'rotate':
             deg = float(value or 0.0)
-            if abs(deg) < 1e-12:
-                return
             def pf(x, y): return self._rot_point(x, y, cx, cy, deg)
             self._add_rotation(b, deg)
             for p in u.pins:
-                p.x, p.y = pf(float(p.x), float(p.y))
+                p.x, p.y = pf(p.x, p.y)
                 self._add_rotation(p, deg)
                 self._transform_pin_anchors(p, pf, rotate_deg=deg)
             for t in u.texts:
-                t.x, t.y = pf(float(t.x), float(t.y))
-                self._add_rotation(t, deg)
+                t.x, t.y = pf(t.x, t.y); self._add_rotation(t, deg)
             self._transform_body_attribute_texts(b, pf, rotate_deg=deg)
             for gr in u.graphics:
-                gcx, gcy = self._graphic_center(gr)
-                ngcx, ngcy = pf(gcx, gcy)
-                self._set_graphic_center(gr, ngcx, ngcy)
-                self._add_rotation(gr, deg)
+                gr.x, gr.y = pf(gr.x, gr.y); self._add_rotation(gr, deg)
 
         elif op == 'scale':
             factor = float(value or 1.0)
-            if abs(factor - 1.0) < 1e-12:
-                return
             def pf(x, y): return self._scale_point(x, y, cx, cy, factor)
-            # Keep the BODY center fixed.  For imported symbols the logical
-            # rectangle is only the group anchor; visible geometry is scaled via
-            # its real GraphicModel primitives below.
+            # Keep the body center fixed while resizing.
             new_w = max(0.1, float(b.width) * factor)
             new_h = max(0.1, float(b.height) * factor)
-            b.x = cx - new_w / 2.0
-            b.y = cy + new_h / 2.0
-            b.width = new_w
-            b.height = new_h
+            b.x = cx - new_w / 2.0; b.y = cy + new_h / 2.0
+            b.width = new_w; b.height = new_h
             for p in u.pins:
-                p.x, p.y = pf(float(p.x), float(p.y))
+                p.x, p.y = pf(p.x, p.y)
                 p.length = max(0.1, float(getattr(p, 'length', 1.0) or 1.0) * factor)
-                self._scale_font_model(p.number_font, factor)
-                self._scale_font_model(p.label_font, factor)
+                self._scale_font_model(p.number_font, factor); self._scale_font_model(p.label_font, factor)
                 self._transform_pin_anchors(p, pf, scale_factor=factor)
             for t in u.texts:
-                t.x, t.y = pf(float(t.x), float(t.y))
+                t.x, t.y = pf(t.x, t.y)
                 t.font_size_grid = max(0.1, float(getattr(t, 'font_size_grid', 0.75) or 0.75) * factor)
-            self._scale_font_model(b.attribute_font, factor)
-            self._scale_font_model(b.refdes_font, factor)
+            self._scale_font_model(b.attribute_font, factor); self._scale_font_model(b.refdes_font, factor)
             self._transform_body_attribute_texts(b, pf, scale_factor=factor)
             for gr in u.graphics:
-                gcx, gcy = self._graphic_center(gr)
-                ngcx, ngcy = pf(gcx, gcy)
+                gr.x, gr.y = pf(gr.x, gr.y)
                 gr.w = float(getattr(gr, 'w', 0.0) or 0.0) * factor
                 gr.h = float(getattr(gr, 'h', 0.0) or 0.0) * factor
                 try:
@@ -5518,29 +5585,35 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
                     gr.ctrl_x = float(gr.ctrl_x) * factor
                 if getattr(gr, 'ctrl_y', None) is not None:
                     gr.ctrl_y = float(gr.ctrl_y) * factor
-                self._set_graphic_center(gr, ngcx, ngcy)
 
         elif op in ('flip_h', 'flip_v'):
             horizontal = op == 'flip_h'
             def pf(x, y): return self._flip_point(x, y, cx, cy, horizontal)
-            b.rotation = self._rot_angle_after_flip(getattr(b, 'rotation', 0.0), horizontal)
+            r = float(getattr(b, 'rotation', 0.0) or 0.0)
+            b.rotation = (-r) % 360.0 if horizontal else (180.0 - r) % 360.0
             for p in u.pins:
-                p.x, p.y = pf(float(p.x), float(p.y))
-                p.rotation = self._rot_angle_after_flip(getattr(p, 'rotation', 0.0), horizontal)
+                p.x, p.y = pf(p.x, p.y)
+                pr = float(getattr(p, 'rotation', 0.0) or 0.0)
+                p.rotation = (-pr) % 360.0 if horizontal else (180.0 - pr) % 360.0
                 if horizontal and p.side in (PinSide.LEFT.value, PinSide.RIGHT.value):
                     p.side = PinSide.RIGHT.value if p.side == PinSide.LEFT.value else PinSide.LEFT.value
                 if (not horizontal) and p.side in (PinSide.TOP.value, PinSide.BOTTOM.value):
                     p.side = PinSide.BOTTOM.value if p.side == PinSide.TOP.value else PinSide.TOP.value
                 self._transform_pin_anchors(p, pf, flip_horizontal=horizontal)
             for t in u.texts:
-                t.x, t.y = pf(float(t.x), float(t.y))
-                t.rotation = self._rot_angle_after_flip(getattr(t, 'rotation', 0.0), horizontal)
+                t.x, t.y = pf(t.x, t.y)
+                tr = float(getattr(t, 'rotation', 0.0) or 0.0)
+                t.rotation = (-tr) % 360.0 if horizontal else (180.0 - tr) % 360.0
             self._transform_body_attribute_texts(b, pf, flip_horizontal=horizontal)
             for gr in u.graphics:
-                gcx, gcy = self._graphic_center(gr)
-                ngcx, ngcy = pf(gcx, gcy)
-                self._set_graphic_center(gr, ngcx, ngcy)
-                gr.rotation = self._rot_angle_after_flip(getattr(gr, 'rotation', 0.0), horizontal)
+                # Reflect both endpoints/corners so line endpoints and rect bounds remain real geometry.
+                x1, y1 = pf(float(gr.x), float(gr.y))
+                x2, y2 = pf(float(gr.x) + float(getattr(gr, 'w', 0.0) or 0.0),
+                            float(gr.y) + float(getattr(gr, 'h', 0.0) or 0.0))
+                gr.x, gr.y = x1, y1
+                gr.w, gr.h = x2 - x1, y2 - y1
+                rr = float(getattr(gr, 'rotation', 0.0) or 0.0)
+                gr.rotation = (-rr) % 360.0 if horizontal else (180.0 - rr) % 360.0
                 if getattr(gr, 'ctrl_x', None) is not None:
                     gr.ctrl_x = -float(gr.ctrl_x) if horizontal else float(gr.ctrl_x)
                 if getattr(gr, 'ctrl_y', None) is not None:
