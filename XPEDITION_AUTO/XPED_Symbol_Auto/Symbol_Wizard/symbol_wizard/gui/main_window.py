@@ -19575,3 +19575,179 @@ try:
     TemplateEditorDialog.scale_current_unit_children_from_body_resize = _sw102_scale_current_unit_children_from_body_resize
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# Liebherr v101: template import grid/raster normalization
+# ---------------------------------------------------------------------------
+# Some Mentor-generated template JSONs were created with visible fallback pin
+# labels but without native Mentor L-record anchors (label_x/label_y == None).
+# On graphic-body/passive symbols such as coils/diodes these generated labels are
+# drawn through the symbol artwork and make the template look off-grid/unclean.
+# Native labels with explicit anchors are preserved.  Generated fallback labels on
+# small passive graphic templates are hidden by default; pin numbers, data model
+# and editability stay intact.  All geometry is also cleaned to a stable tenth-grid
+# precision so later vector scaling starts from a consistent raster model.
+
+def _sw101_float_clean(v, step=None):
+    try:
+        x = float(v)
+        if step and step > 0:
+            x = round(x / step) * step
+        x = round(x, 6)
+        return 0.0 if abs(x) < 1e-9 else x
+    except Exception:
+        return v
+
+
+def _sw101_has_native_label_anchor(pin) -> bool:
+    try:
+        return getattr(pin, 'label_x', None) is not None and getattr(pin, 'label_y', None) is not None
+    except Exception:
+        return False
+
+
+def _sw101_unit_is_mentor_graphic_template(unit) -> bool:
+    try:
+        attrs = getattr(getattr(unit, 'body', None), 'attributes', {}) or {}
+        return any(str(attrs.get(k, '0')) == '1' for k in (
+            'MENTOR_GRAPHICS_AS_BODY', 'MENTOR_HAS_BODY', 'MENTOR_BODY_GRAPHICS_LOCKED', 'TEMPLATE_GRAPHICS_AS_BODY'
+        ))
+    except Exception:
+        return False
+
+
+def _sw101_snap_model_geometry(unit, step=0.1):
+    """Clean imported template coordinates to a stable sub-grid.
+
+    The old template generator stores Mentor coordinates already converted to
+    Symbol-Wizard grid units.  Do not rescale them again.  Only remove binary
+    floating point noise and keep tenth-grid detail needed by Mentor arcs/circles.
+    """
+    try:
+        b = unit.body
+        for attr in ('x', 'y', 'width', 'height', 'rotation', 'scale_x', 'scale_y'):
+            if hasattr(b, attr):
+                setattr(b, attr, _sw101_float_clean(getattr(b, attr), step if attr in ('x','y','width','height') else None))
+        for tm in (getattr(b, 'attribute_texts', {}) or {}).values():
+            for attr in ('x', 'y'):
+                if hasattr(tm, attr):
+                    setattr(tm, attr, _sw101_float_clean(getattr(tm, attr), step))
+    except Exception:
+        pass
+    for p in getattr(unit, 'pins', []) or []:
+        for attr in ('x', 'y', 'length', 'mentor_x1', 'mentor_y1', 'mentor_x2', 'mentor_y2', 'label_x', 'label_y', 'number_x', 'number_y'):
+            try:
+                if hasattr(p, attr) and getattr(p, attr) is not None:
+                    setattr(p, attr, _sw101_float_clean(getattr(p, attr), step))
+            except Exception:
+                pass
+        for tm in (getattr(p, 'attribute_texts', {}) or {}).values():
+            try:
+                tm.x = _sw101_float_clean(tm.x, step); tm.y = _sw101_float_clean(tm.y, step)
+            except Exception:
+                pass
+    for t in getattr(unit, 'texts', []) or []:
+        for attr in ('x', 'y'):
+            try:
+                setattr(t, attr, _sw101_float_clean(getattr(t, attr), step))
+            except Exception:
+                pass
+    for g in getattr(unit, 'graphics', []) or []:
+        for attr in ('x', 'y', 'w', 'h', 'ctrl_x', 'ctrl_y', 'curve_radius'):
+            try:
+                if hasattr(g, attr) and getattr(g, attr) is not None:
+                    setattr(g, attr, _sw101_float_clean(getattr(g, attr), step))
+            except Exception:
+                pass
+    return unit
+
+
+def _sw101_hide_generated_passive_pin_labels(unit):
+    """Hide non-native generated labels that collide with passive body artwork.
+
+    If a Mentor template has no stored L-record label anchor, the current PinItem
+    fallback paints the generated name/function at the pin endpoint.  That is fine
+    for rectangular IC bodies, but wrong for passive graphic symbols whose artwork
+    itself occupies the pin centerline.  These labels were not native geometry, so
+    hiding them restores the clean template raster while retaining pin numbers and
+    editable model data.
+    """
+    try:
+        if not _sw101_unit_is_mentor_graphic_template(unit):
+            return unit
+        pins = list(getattr(unit, 'pins', []) or [])
+        graphics = list(getattr(unit, 'graphics', []) or [])
+        if not pins or len(pins) > 6:
+            return unit
+        if any(_sw101_has_native_label_anchor(p) for p in pins):
+            return unit
+        shapes = {str(getattr(g, 'shape', '') or '').lower() for g in graphics}
+        pin_types = {str(getattr(p, 'pin_type', '') or '').upper() for p in pins}
+        passive_like = bool(shapes.intersection({'arc', 'ellipse', 'circle'})) or pin_types.issubset({'ANALOG', 'PASSIVE', 'BIDI', 'BI', ''})
+        if not passive_like:
+            return unit
+        for p in pins:
+            try:
+                p.visible_name = False
+                p.visible_function = False
+                p.visible_number = True
+                # Mark for diagnostics only; exporter/model fields remain unchanged.
+                if getattr(p, 'attributes', None) is None:
+                    p.attributes = {}
+                p.attributes.setdefault('WIZARD_LABELS_HIDDEN_BY_TEMPLATE_GRID_NORMALIZER', '1')
+                if getattr(p, 'visible_attributes', None) is None:
+                    p.visible_attributes = {}
+                p.visible_attributes['WIZARD_LABELS_HIDDEN_BY_TEMPLATE_GRID_NORMALIZER'] = False
+            except Exception:
+                pass
+    except Exception:
+        pass
+    return unit
+
+
+def _sw101_normalize_loaded_template_unit(unit):
+    try:
+        if unit is None:
+            return unit
+        _sw101_snap_model_geometry(unit, 0.1)
+        _sw101_hide_generated_passive_pin_labels(unit)
+    except Exception:
+        pass
+    return unit
+
+
+try:
+    _sw101_prev_load_template_unit = MainWindow.load_template_unit
+except Exception:
+    _sw101_prev_load_template_unit = None
+
+
+def _sw101_load_template_unit(self, key: str):
+    unit = _sw101_prev_load_template_unit(self, key) if _sw101_prev_load_template_unit is not None else SymbolUnitModel(name=str(key or 'Template'))
+    return _sw101_normalize_loaded_template_unit(unit)
+
+
+try:
+    MainWindow.load_template_unit = _sw101_load_template_unit
+except Exception:
+    pass
+
+
+try:
+    _sw101_prev_load_split_template_units = MainWindow.load_split_template_units
+except Exception:
+    _sw101_prev_load_split_template_units = None
+
+
+def _sw101_load_split_template_units(self, key: str):
+    units = _sw101_prev_load_split_template_units(self, key) if _sw101_prev_load_split_template_units is not None else []
+    try:
+        return [_sw101_normalize_loaded_template_unit(u) for u in (units or [])]
+    except Exception:
+        return units
+
+
+try:
+    MainWindow.load_split_template_units = _sw101_load_split_template_units
+except Exception:
+    pass

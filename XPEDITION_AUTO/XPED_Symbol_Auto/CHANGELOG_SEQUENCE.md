@@ -888,3 +888,9 @@ Imported snapshot from `Symbol_Wizard_103.zip`.
 
 Archive version: `v103`; imported as: `v178`; offset: `75`.
 
+## v179
+
+Imported snapshot from `Symbol_Wizard_104.zip`.
+
+Archive version: `v104`; imported as: `v179`; offset: `75`.
+
