@@ -17929,3 +17929,433 @@ try:
     MainWindow.flip_selected_vertical = _sw95_flip_selected_vertical
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# Liebherr v97: unified graphic scaling for BODY graphics and selected graphics.
+# ---------------------------------------------------------------------------
+# The old BODY/template scaling path only handled simple x/y/w/h rectangles.
+# This patch scales every supported GraphicModel shape through the same point
+# mapping: anchor, end point, optional quadratic control point and curve radius.
+# The visual structure of imported/template artwork is therefore preserved.
+
+try:
+    _sw97_prev_scale_selected = MainWindow.scale_selected
+except Exception:
+    _sw97_prev_scale_selected = None
+
+
+def _sw97_clean(self, v):
+    try:
+        return self._clean_float(v)
+    except Exception:
+        try: return round(float(v), 9)
+        except Exception: return v
+
+
+def _sw97_graphic_bounds(g):
+    x = float(getattr(g, 'x', 0.0) or 0.0)
+    y = float(getattr(g, 'y', 0.0) or 0.0)
+    w = float(getattr(g, 'w', 0.0) or 0.0)
+    h = float(getattr(g, 'h', 0.0) or 0.0)
+    xs = [x, x + w]
+    ys = [y, y - h]
+    try:
+        if getattr(g, 'ctrl_x', None) is not None and getattr(g, 'ctrl_y', None) is not None:
+            xs.append(x + float(g.ctrl_x))
+            ys.append(y - float(g.ctrl_y))
+    except Exception:
+        pass
+    try:
+        r = float(getattr(g, 'curve_radius', 0.0) or 0.0)
+        if abs(r) > 1e-12 and str(getattr(g, 'shape', '') or '') in ('line', 'arc'):
+            # In GraphicItem.paint(), curve_radius is a local y offset from the
+            # line midpoint. Convert that local point into model coordinates.
+            xs.append(x + w / 2.0)
+            ys.append(y - h / 2.0 + r)
+    except Exception:
+        pass
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def _sw97_graphics_bounds(self, graphics):
+    gs = list(graphics or [])
+    if not gs:
+        return (0.0, 0.0, 1.0, 1.0)
+    bds = [_sw97_graphic_bounds(g) for g in gs]
+    xmin = min(b[0] for b in bds); ymin = min(b[1] for b in bds)
+    xmax = max(b[2] for b in bds); ymax = max(b[3] for b in bds)
+    return (_sw97_clean(self, xmin), _sw97_clean(self, ymax),
+            _sw97_clean(self, max(0.001, xmax - xmin)), _sw97_clean(self, max(0.001, ymax - ymin)))
+
+
+def _sw97_body_graphics(self, unit=None):
+    try:
+        return _sw39_body_graphics(self, unit)
+    except Exception:
+        u = unit or self.current_unit
+        out = []
+        for gr in getattr(u, 'graphics', []) or []:
+            try:
+                role = str(getattr(gr, 'graphic_role', '') or '').lower()
+                raw = str(getattr(gr, 'mentor_raw', '') or '')
+                if getattr(gr, 'locked_to_body', False) or role in ('body', 'template_body', 'imported_body') or (raw != '__USER_GRAPHIC__' and role != 'user_graphic'):
+                    out.append(gr)
+            except Exception:
+                pass
+        return out
+
+
+def _sw97_body_graphics_bounds(self, unit=None):
+    u = unit or self.current_unit
+    gs = _sw97_body_graphics(self, u)
+    if not gs:
+        b = u.body
+        return (float(b.x), float(b.y), max(0.001, float(b.width)), max(0.001, float(b.height)))
+    return _sw97_graphics_bounds(self, gs)
+
+
+def _sw97_map_point(self, x, y, old_bounds, new_bounds):
+    ox, oy, ow, oh = old_bounds
+    nx, ny, nw, nh = new_bounds
+    ow = max(float(ow), 1e-12); oh = max(float(oh), 1e-12)
+    sx = float(nw) / ow; sy = float(nh) / oh
+    return (_sw97_clean(self, float(nx) + (float(x) - float(ox)) * sx),
+            _sw97_clean(self, float(ny) - (float(oy) - float(y)) * sy))
+
+
+def _sw97_scale_graphics_to_bounds(self, graphics, old_bounds, new_bounds):
+    ox, oy, ow, oh = old_bounds
+    nx, ny, nw, nh = new_bounds
+    sx = float(nw) / max(float(ow), 1e-12)
+    sy = float(nh) / max(float(oh), 1e-12)
+    for g in list(graphics or []):
+        try:
+            gx = float(getattr(g, 'x', 0.0) or 0.0)
+            gy = float(getattr(g, 'y', 0.0) or 0.0)
+            gw = float(getattr(g, 'w', 0.0) or 0.0)
+            gh = float(getattr(g, 'h', 0.0) or 0.0)
+            ax, ay = _sw97_map_point(self, gx, gy, old_bounds, new_bounds)
+            ex, ey = _sw97_map_point(self, gx + gw, gy - gh, old_bounds, new_bounds)
+            g.x = ax
+            g.y = ay
+            g.w = _sw97_clean(self, ex - ax)
+            g.h = _sw97_clean(self, ay - ey)
+
+            # Quadratic control point, if present, is a local vector from the
+            # original anchor in model coordinates. Map the absolute control
+            # point and convert it back into the new local vector.
+            if getattr(g, 'ctrl_x', None) is not None and getattr(g, 'ctrl_y', None) is not None:
+                cx_abs = gx + float(g.ctrl_x)
+                cy_abs = gy - float(g.ctrl_y)
+                ncx, ncy = _sw97_map_point(self, cx_abs, cy_abs, old_bounds, new_bounds)
+                g.ctrl_x = _sw97_clean(self, ncx - ax)
+                g.ctrl_y = _sw97_clean(self, ay - ncy)
+
+            # curve_radius is the local vertical offset from the line midpoint.
+            if getattr(g, 'curve_radius', None) is not None:
+                g.curve_radius = _sw97_clean(self, float(getattr(g, 'curve_radius', 0.0) or 0.0) * sy)
+        except Exception:
+            pass
+
+
+def _sw97_scale_body_graphics_to_bounds(self, unit, old_bounds, new_bounds):
+    gs = _sw97_body_graphics(self, unit)
+    if not gs:
+        return
+    _sw97_scale_graphics_to_bounds(self, gs, old_bounds, new_bounds)
+    try:
+        x, y, w, h = _sw97_body_graphics_bounds(self, unit)
+        unit.body.x, unit.body.y = x, y
+        unit.body.width, unit.body.height = max(0.001, w), max(0.001, h)
+    except Exception:
+        pass
+
+
+def _sw97_scale_selected(self, factor):
+    # Multi-selected graphics scale as one graphic group around their common
+    # bounds, so the authored relative structure is preserved.  Single graphics
+    # use GraphicItem.scale_by(), which is patched above for curves/control points.
+    try:
+        items = list(self.scene.selectedItems())
+    except Exception:
+        items = []
+    graphics = [it for it in items if getattr(it, 'data', lambda *_: None)(0) == 'GRAPHIC' and getattr(it, 'model', None) is not None]
+    if graphics and len(graphics) == len(items):
+        try:
+            factor = float(factor)
+        except Exception:
+            factor = 1.0
+        if len(graphics) == 1:
+            try: graphics[0].scale_by(factor)
+            except Exception: pass
+            return None
+        try: self.push_undo_state()
+        except Exception: pass
+        models = [it.model for it in graphics]
+        old = _sw97_graphics_bounds(self, models)
+        ox, oy, ow, oh = old
+        cx = ox + ow / 2.0
+        cy = oy - oh / 2.0
+        nw = max(0.001, ow * factor)
+        nh = max(0.001, oh * factor)
+        new = (cx - nw / 2.0, cy + nh / 2.0, nw, nh)
+        _sw97_scale_graphics_to_bounds(self, models, old, new)
+        try:
+            self._selection_restore_ids = {id(m) for m in models}
+            self.dirty = True
+            self.update_current_unit_canvas_positions()
+            self.schedule_scene_refresh(visual_only=True)
+        except Exception:
+            pass
+        return None
+    if _sw97_prev_scale_selected is not None:
+        return _sw97_prev_scale_selected(self, factor)
+    for it in items:
+        try:
+            if hasattr(it, 'scale_by'):
+                it.scale_by(float(factor))
+        except Exception:
+            pass
+    return None
+
+try:
+    # Replace the late BODY/template scaling globals used by the existing resize
+    # pipeline.  The function names are intentionally reassigned because older
+    # wrappers look them up dynamically at call time.
+    _sw39_graphic_bounds = _sw97_graphic_bounds
+    _sw39_body_graphics_bounds = _sw97_body_graphics_bounds
+    _sw39_scale_graphics_to_bounds = _sw97_scale_body_graphics_to_bounds
+    _lh10_body_graphics_bounds = _sw97_body_graphics_bounds
+    _lh10_scale_body_graphics_to = _sw97_scale_body_graphics_to_bounds
+    MainWindow.scale_selected = _sw97_scale_selected
+except Exception:
+    pass
+
+# ---------------------------------------------------------------------------
+# SW98: Canvas BODY handle resize uses the same clean geometry pipeline as
+# toolbar Scale +/- and BODY width/height editors.
+# ---------------------------------------------------------------------------
+# Problem fixed:
+# - Canvas handle resize distorted complex symbols made from several graphics.
+# - Graphics were sometimes evaluated from already-mutated helper geometry.
+# - Pins were scaled in Y instead of returning to their authored vertical slot.
+#
+# Rule:
+# - BODY resize is an absolute mapping from the immutable press-state BODY box
+#   to the new BODY box.
+# - Every GraphicModel is transformed by mapping its endpoints/control points.
+# - Pin electrical anchors are redocked to the new BODY edge but keep their
+#   original orthogonal coordinate unless the pin is top/bottom, where x is kept
+#   and y is redocked.
+# - Attribute/text positions are mapped once from the immutable state.
+
+try:
+    _sw98_prev_scale_current_unit_children_from_body_resize = MainWindow.scale_current_unit_children_from_body_resize
+except Exception:
+    _sw98_prev_scale_current_unit_children_from_body_resize = None
+
+
+def _sw98_float(v, default=0.0):
+    try:
+        return float(v)
+    except Exception:
+        return float(default)
+
+
+def _sw98_clean(self, v):
+    try:
+        return self._clean_float(v)
+    except Exception:
+        try:
+            v = round(float(v), 9)
+            return 0.0 if abs(v) < 1e-9 else v
+        except Exception:
+            return v
+
+
+def _sw98_snap(self, v):
+    try:
+        return self._snap_to_edit_grid(float(v), 0.0)
+    except Exception:
+        try:
+            step = max(1e-9, float(self._edit_grid_step()))
+            return round(float(v) / step) * step
+        except Exception:
+            return float(v)
+
+
+def _sw98_map_point(self, x, y, old_box, new_box):
+    ox, oy, ow, oh = old_box
+    nx, ny, nw, nh = new_box
+    ow = max(abs(float(ow)), 1e-12)
+    oh = max(abs(float(oh)), 1e-12)
+    sx = float(nw) / ow
+    sy = float(nh) / oh
+    # Model coordinate convention: BODY y is top, positive height extends down,
+    # therefore bottom is y-height.  Keep this convention explicit.
+    mx = float(nx) + (float(x) - float(ox)) * sx
+    my = float(ny) - (float(oy) - float(y)) * sy
+    return _sw98_clean(self, mx), _sw98_clean(self, my)
+
+
+def _sw98_scale_graphic_from_start(self, gr, gx, gy, gw, gh, old_box, new_box):
+    ax, ay = _sw98_map_point(self, gx, gy, old_box, new_box)
+    ex, ey = _sw98_map_point(self, gx + gw, gy - gh, old_box, new_box)
+    old_ctrl_x = getattr(gr, 'ctrl_x', None)
+    old_ctrl_y = getattr(gr, 'ctrl_y', None)
+    old_curve = getattr(gr, 'curve_radius', None)
+
+    gr.x = ax
+    gr.y = ay
+    gr.w = _sw98_clean(self, ex - ax)
+    gr.h = _sw98_clean(self, ay - ey)
+
+    # Preserve line/arc/curve topology.  ctrl_x/ctrl_y are local vectors from
+    # the graphic anchor; map the absolute control point and convert back.
+    try:
+        if old_ctrl_x is not None and old_ctrl_y is not None:
+            cx_abs = float(gx) + float(old_ctrl_x)
+            cy_abs = float(gy) - float(old_ctrl_y)
+            ncx, ncy = _sw98_map_point(self, cx_abs, cy_abs, old_box, new_box)
+            gr.ctrl_x = _sw98_clean(self, ncx - ax)
+            gr.ctrl_y = _sw98_clean(self, ay - ncy)
+    except Exception:
+        pass
+
+    try:
+        if old_curve is not None:
+            sx = float(new_box[2]) / max(abs(float(old_box[2])), 1e-12)
+            sy = float(new_box[3]) / max(abs(float(old_box[3])), 1e-12)
+            # Radius is a local offset.  For non-uniform resize use the dominant
+            # local factor so arcs do not invert or collapse unpredictably.
+            f = sy if abs(sy) >= abs(sx) else sx
+            gr.curve_radius = _sw98_clean(self, float(old_curve or 0.0) * f)
+    except Exception:
+        pass
+
+
+def _sw98_pin_auto_docked(pin):
+    try:
+        return bool(getattr(pin, 'auto_dock', True))
+    except Exception:
+        return True
+
+
+def _sw98_redock_pin_keep_slot(self, pin, px, py, plen, body):
+    # Manual/loose pins stay where the user put them.
+    if not _sw98_pin_auto_docked(pin):
+        pin.x = _sw98_clean(self, px)
+        pin.y = _sw98_clean(self, py)
+        pin.length = max(0.1, _sw98_clean(self, plen))
+        return
+    side = str(getattr(pin, 'side', '') or '').lower()
+    if side == PinSide.LEFT.value:
+        pin.x = _sw98_clean(self, float(body.x))
+        pin.y = _sw98_clean(self, py)
+    elif side == PinSide.RIGHT.value:
+        pin.x = _sw98_clean(self, float(body.x) + float(body.width))
+        pin.y = _sw98_clean(self, py)
+    elif side == PinSide.TOP.value:
+        pin.x = _sw98_clean(self, px)
+        pin.y = _sw98_clean(self, float(body.y))
+    elif side == PinSide.BOTTOM.value:
+        pin.x = _sw98_clean(self, px)
+        pin.y = _sw98_clean(self, float(body.y) - float(body.height))
+    else:
+        pin.x = _sw98_clean(self, px)
+        pin.y = _sw98_clean(self, py)
+    # Pin length is not scaled by BODY resize. It remains the authored pin
+    # length on the edit grid, just like Symbol 1 behaviour.
+    pin.length = max(0.1, _sw98_clean(self, plen))
+
+
+def _sw98_scale_current_unit_children_from_body_resize(self, start_state: dict, body: SymbolBodyModel):
+    try:
+        u = self.current_unit
+    except Exception:
+        if _sw98_prev_scale_current_unit_children_from_body_resize is not None:
+            return _sw98_prev_scale_current_unit_children_from_body_resize(self, start_state, body)
+        return None
+
+    old_x = _sw98_float(start_state.get('x', getattr(body, 'x', 0.0)), 0.0)
+    old_y = _sw98_float(start_state.get('y', getattr(body, 'y', 0.0)), 0.0)
+    old_w = max(1e-12, abs(_sw98_float(start_state.get('w', getattr(body, 'width', 1.0)), 1.0)))
+    old_h = max(1e-12, abs(_sw98_float(start_state.get('h', getattr(body, 'height', 1.0)), 1.0)))
+
+    # Snap BODY itself to the active edit grid and keep it as the only resize
+    # source.  Canvas handles may create small float noise; remove it here.
+    try:
+        body.x = _sw98_clean(self, _sw98_snap(self, body.x))
+        body.y = _sw98_clean(self, _sw98_snap(self, body.y))
+        body.width = max(_sw98_float(getattr(self, 'edit_grid_step', 0.01), 0.01), _sw98_clean(self, _sw98_snap(self, body.width)))
+        body.height = max(_sw98_float(getattr(self, 'edit_grid_step', 0.01), 0.01), _sw98_clean(self, _sw98_snap(self, body.height)))
+    except Exception:
+        pass
+
+    new_box = (float(body.x), float(body.y), max(1e-12, float(body.width)), max(1e-12, float(body.height)))
+    old_box = (old_x, old_y, old_w, old_h)
+
+    # Pins: redock to new BODY edge, but keep their original vertical/horizontal
+    # authored slot. This prevents canvas resize from walking pins up/down.
+    for entry in list(start_state.get('pins', []) or []):
+        try:
+            p, px, py, plen = entry[:4]
+            _sw98_redock_pin_keep_slot(self, p, float(px), float(py), float(plen), body)
+        except Exception:
+            pass
+
+    # Normal texts and BODY attributes follow the BODY mapping once from the
+    # immutable press-state.  This matches property Width/Height edits.
+    for entry in list(start_state.get('texts', []) or []):
+        try:
+            t, tx, ty = entry[:3]
+            t.x, t.y = _sw98_map_point(self, tx, ty, old_box, new_box)
+        except Exception:
+            pass
+    for entry in list(start_state.get('attributes', []) or []):
+        try:
+            t, tx, ty = entry[:3]
+            t.x, t.y = _sw98_map_point(self, tx, ty, old_box, new_box)
+        except Exception:
+            pass
+
+    # Graphics: preserve actual shape topology by mapping anchor/end/control
+    # points.  This covers line, rect, ellipse/circle and curved lines/arcs.
+    for entry in list(start_state.get('graphics', []) or []):
+        try:
+            gr, gx, gy, gw, gh = entry[:5]
+            _sw98_scale_graphic_from_start(self, gr, float(gx), float(gy), float(gw), float(gh), old_box, new_box)
+        except Exception:
+            pass
+
+    # After resizing, align BODY-owned imported/template artwork exactly to the
+    # logical BODY origin.  This prevents the old helper/highlight box from
+    # becoming a second geometry source.
+    try:
+        bgs = _sw97_body_graphics(self, u) if '_sw97_body_graphics' in globals() else []
+        if bgs:
+            # If these are body graphics, their combined bounds are now the BODY.
+            # Move the logical BODY to their snapped outer bounds only when the
+            # bounds differ by less than one edit grid; otherwise keep the user's
+            # handle-defined BODY as source of truth.
+            bx, by, bw, bh = _sw97_body_graphics_bounds(self, u)
+            step = max(1e-9, float(self._edit_grid_step()))
+            if abs(float(bx) - float(body.x)) <= step and abs(float(by) - float(body.y)) <= step:
+                body.x = _sw98_clean(self, _sw98_snap(self, bx))
+                body.y = _sw98_clean(self, _sw98_snap(self, by))
+                body.width = max(step, _sw98_clean(self, _sw98_snap(self, bw)))
+                body.height = max(step, _sw98_clean(self, _sw98_snap(self, bh)))
+    except Exception:
+        pass
+
+    try:
+        self._selection_restore_ids = {id(body)}
+        self.dirty = True
+    except Exception:
+        pass
+    return None
+
+try:
+    MainWindow.scale_current_unit_children_from_body_resize = _sw98_scale_current_unit_children_from_body_resize
+except Exception:
+    pass

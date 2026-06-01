@@ -2585,3 +2585,98 @@ try:
     BodyItem.mouseReleaseEvent = _lh85_body_mouse_release
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# Liebherr v97: robust proportional graphic scaling for all graphic shapes.
+# ---------------------------------------------------------------------------
+# Scale +/- on graphics must preserve the authored structure of the object:
+# - line endpoint vectors stay vectors
+# - quadratic control points / curved line radius scale with the object
+# - rect/ellipse/circle keep their local geometry centered
+# - no object jumps to the body origin
+try:
+    _sw97_prev_graphic_scale_by = GraphicItem.scale_by
+except Exception:
+    _sw97_prev_graphic_scale_by = None
+
+
+def _sw97_snap_graphic_dimension(self, value, step):
+    try:
+        step = max(0.001, float(step or 0.001))
+        value = float(value or 0.0)
+    except Exception:
+        step = 0.5
+        value = 0.0
+    sign = -1.0 if value < 0 else 1.0
+    mag = abs(value)
+    snapped = round(mag / step) * step
+    if snapped < step:
+        snapped = step
+    try:
+        return self.window._clean_float(sign * snapped)
+    except Exception:
+        return sign * snapped
+
+
+def _sw97_graphic_scale_by(self, factor):
+    try:
+        factor = float(factor)
+    except Exception:
+        factor = 1.0
+    if abs(factor) < 1e-9:
+        return
+    try:
+        step = self.window._edit_grid_step() if hasattr(self.window, '_edit_grid_step') else 0.5
+    except Exception:
+        step = 0.5
+
+    m = self.model
+    old_x = float(getattr(m, 'x', 0.0) or 0.0)
+    old_y = float(getattr(m, 'y', 0.0) or 0.0)
+    old_w = float(getattr(m, 'w', 0.0) or 0.0)
+    old_h = float(getattr(m, 'h', 0.0) or 0.0)
+
+    # Model convention: x/y is the top-left/line-start anchor, h extends down in
+    # screen space, therefore the model-space center is y - h/2.
+    cx = old_x + old_w / 2.0
+    cy = old_y - old_h / 2.0
+
+    new_w = _sw97_snap_graphic_dimension(self, old_w * factor, step)
+    new_h = _sw97_snap_graphic_dimension(self, old_h * factor, step)
+
+    self.prepareGeometryChange()
+    m.x = cx - new_w / 2.0
+    m.y = cy + new_h / 2.0
+    m.w = new_w
+    m.h = new_h
+
+    # Preserve curved-line/arc structure.  ctrl_x/ctrl_y are local vectors from
+    # the anchor; curve_radius is a local vertical offset from the line midpoint.
+    try:
+        if getattr(m, 'ctrl_x', None) is not None:
+            m.ctrl_x = float(m.ctrl_x) * factor
+        if getattr(m, 'ctrl_y', None) is not None:
+            m.ctrl_y = float(m.ctrl_y) * factor
+        if getattr(m, 'curve_radius', None) is not None:
+            m.curve_radius = float(getattr(m, 'curve_radius', 0.0) or 0.0) * factor
+    except Exception:
+        pass
+
+    try:
+        g = self.window.grid_px
+        self.setPos(m.x * g, -m.y * g)
+        self.apply_transform_from_model()
+    except Exception:
+        pass
+    try:
+        self.window.notify_canvas_model_changed()
+    except Exception:
+        try: self.window.live_refresh()
+        except Exception: pass
+    self.update()
+
+try:
+    GraphicItem.scale_by = _sw97_graphic_scale_by
+    GraphicItem.scale_selected = lambda self, factor: _sw97_graphic_scale_by(self, factor)
+except Exception:
+    pass
