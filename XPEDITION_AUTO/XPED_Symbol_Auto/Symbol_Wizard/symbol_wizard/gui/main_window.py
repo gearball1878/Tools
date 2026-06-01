@@ -2864,8 +2864,8 @@ class MainWindow(QMainWindow):
         a = QAction('Delete Current Symbol / Split Symbol', self)
         a.triggered.connect(self.delete_current_symbol)
         edit_menu.addAction(a)
-        a = QAction('Delete All Symbols', self)
-        a.triggered.connect(self.delete_all_symbols)
+        a = QAction('Clear Canvas', self)
+        a.triggered.connect(self.clear_canvas)
         edit_menu.addAction(a)
 
         tools_menu = mb.addMenu('&Tools')
@@ -3032,6 +3032,7 @@ class MainWindow(QMainWindow):
             ('Flip V', self.flip_selected_vertical),
             ('Scale +', lambda: self.scale_selected_grid(1)),
             ('Scale -', lambda: self.scale_selected_grid(-1)),
+            ('Clear Canvas', self.clear_canvas),
         ]:
             b = QPushButton(label)
             b.clicked.connect(fn)
@@ -11469,406 +11470,304 @@ try:
 except Exception:
     pass
 
+
 # ---------------------------------------------------------------------------
-# SW43 restore: BODY scale/transform pipeline from Symbol_Wizard_30
+# Liebherr v44: BODY scaling from *_30 behavior, with pins kept unscaled.
+# - Only BODY resize / Scale +/- is overridden here.
+# - Rotate and flip continue to use the existing *_43 implementation.
+# - Imported/template BODY primitives are scaled as one BODY shape; pins are
+#   only re-docked to the new BODY edges and keep length/font/shape.
+# - Adds the user-facing Clear Canvas alias for deleting all symbols.
 # ---------------------------------------------------------------------------
-# The SW39/SW43 incremental scale wrappers made imported/template body graphics
-# diverge from the native Symbol1 pipeline.  Reinstall the proven v30 body-group
-# transform backend as the last override so property width/height, toolbar scale
-# and canvas handle scale all use the same real-geometry transform path.
+def _lh44_clean(self, v):
+    try:
+        return self._clean_float(v)
+    except Exception:
+        try: return round(float(v), 6)
+        except Exception: return v
 
 
-def _lh_rot_pt(x, y, cx, cy, deg):
-    if abs(float(deg or 0.0)) < 1e-12:
-        return float(x), float(y)
-    a = math.radians(float(deg or 0.0))
-    ca, sa = math.cos(a), math.sin(a)
-    dx, dy = float(x) - float(cx), float(y) - float(cy)
-    return cx + ca*dx - sa*dy, cy + sa*dx + ca*dy
+def _lh44_edit_step(self):
+    for name in ('edit_grid_step', 'grid_inch'):
+        try:
+            v = getattr(self, name, None)
+            if v is not None:
+                return max(0.001, float(v))
+        except Exception:
+            pass
+    try:
+        return max(0.001, float(self.edit_grid.value()))
+    except Exception:
+        return 1.0
 
 
-def _lh_graphic_points(self, gr):
+def _lh44_snap(self, v):
+    step = _lh44_edit_step(self)
+    try: return _lh44_clean(self, round(float(v) / step) * step)
+    except Exception: return float(v)
+
+
+def _lh44_is_body_graphic(self, gr):
+    try:
+        # In the template editor the drawn graphics define the template BODY.
+        if getattr(self, 'is_template_editor', False):
+            return True
+        role = str(getattr(gr, 'graphic_role', '') or '').lower()
+        marker = str(getattr(gr, 'mentor_raw', '') or '')
+        if role == 'user_graphic' or marker == '__USER_GRAPHIC__':
+            return False
+        return bool(getattr(gr, 'locked_to_body', False) or role in ('body', 'template_body', 'imported_body') or marker)
+    except Exception:
+        return False
+
+
+def _lh44_body_graphics(self, unit=None):
+    u = unit or getattr(self, 'current_unit', None)
+    return [g for g in (getattr(u, 'graphics', []) or []) if _lh44_is_body_graphic(self, g)]
+
+
+def _lh44_graphic_points(gr):
     x = float(getattr(gr, 'x', 0.0) or 0.0)
     y = float(getattr(gr, 'y', 0.0) or 0.0)
     w = float(getattr(gr, 'w', 0.0) or 0.0)
     h = float(getattr(gr, 'h', 0.0) or 0.0)
     shape = str(getattr(gr, 'shape', '') or '')
-    if shape in ('line', 'arc'):
-        pts = [(x, y), (x+w, y-h)]
-        cx, cy = x + w/2.0, y - h/2.0
-        # Include quadratic control point / curve apex so arc BODY bounds are not too small.
-        ctrl_x = getattr(gr, 'ctrl_x', None); ctrl_y = getattr(gr, 'ctrl_y', None)
-        if ctrl_x is not None and ctrl_y is not None:
-            pts.append((x + float(ctrl_x), y - float(ctrl_y)))
+    if shape in ('line', 'arc', 'curve'):
+        pts = [(x, y), (x + w, y - h)]
+        cx = getattr(gr, 'ctrl_x', None); cy = getattr(gr, 'ctrl_y', None)
+        if cx is not None and cy is not None:
+            pts.append((x + float(cx), y - float(cy)))
         else:
             cr = float(getattr(gr, 'curve_radius', 0.0) or 0.0)
             if abs(cr) > 1e-12:
-                pts.append((x + w/2.0, y - h/2.0 + cr))
+                pts.append((x + w / 2.0, y - h / 2.0 + cr))
     else:
-        x2 = x + w; y2 = y - h
-        pts = [(x, y), (x2, y), (x2, y2), (x, y2)]
-        cx, cy = x + w/2.0, y - h/2.0
-    rot = float(getattr(gr, 'rotation', 0.0) or 0.0)
-    sx = float(getattr(gr, 'scale_x', 1.0) or 1.0)
-    sy = float(getattr(gr, 'scale_y', 1.0) or 1.0)
-    out = []
-    for px, py in pts:
-        # Approximate item scale around center in model coordinates.
-        qx = cx + (px - cx) * sx
-        qy = cy + (py - cy) * sy
-        out.append(_lh_rot_pt(qx, qy, cx, cy, rot))
-    return out
+        pts = [(x, y), (x + w, y), (x + w, y - h), (x, y - h)]
+    return pts
 
 
-def _lh_body_graphics(self, unit=None):
+def _lh44_body_bounds(self, unit=None):
     u = unit or self.current_unit
-    return [g for g in (getattr(u, 'graphics', []) or []) if _lh_is_body_graphic(self, g)]
-
-
-def _lh_body_graphics_bounds(self, unit=None):
-    u = unit or self.current_unit
-    gs = _lh_body_graphics(self, u)
+    gs = _lh44_body_graphics(self, u)
     if not gs:
-        return None
+        b = u.body
+        return (float(b.x), float(b.y), float(b.width), float(b.height))
     pts = []
-    for gr in gs:
-        pts.extend(_lh_graphic_points(self, gr))
+    for g in gs:
+        pts.extend(_lh44_graphic_points(g))
     if not pts:
-        return None
+        b = u.body
+        return (float(b.x), float(b.y), float(b.width), float(b.height))
     xs = [p[0] for p in pts]; ys = [p[1] for p in pts]
-    minx, maxx = min(xs), max(xs); miny, maxy = min(ys), max(ys)
-    if maxx - minx < 1e-9 or maxy - miny < 1e-9:
-        return None
-    return (minx, maxy, maxx - minx, maxy - miny)  # x,y,width,height with y=top
+    return (_lh44_clean(self, min(xs)), _lh44_clean(self, max(ys)),
+            _lh44_clean(self, max(0.01, max(xs) - min(xs))),
+            _lh44_clean(self, max(0.01, max(ys) - min(ys))))
 
 
-def _lh_sync_body_model_to_body_graphics(self, unit=None):
+def _lh44_sync_body_to_graphics(self, unit=None):
     u = unit or self.current_unit
-    b = getattr(u, 'body', None)
-    if b is None:
+    if not _lh44_body_graphics(self, u):
         return
-    bounds = _lh_body_graphics_bounds(self, u)
-    if bounds is None:
-        return
-    x, y, w, h = bounds
-    b.x = self._clean_float(x) if hasattr(self, '_clean_float') else x
-    b.y = self._clean_float(y) if hasattr(self, '_clean_float') else y
-    b.width = self._clean_float(max(0.01, w)) if hasattr(self, '_clean_float') else max(0.01, w)
-    b.height = self._clean_float(max(0.01, h)) if hasattr(self, '_clean_float') else max(0.01, h)
-    # The logical BODY rotation is represented by actual graphics; keep proxy angle neutral.
-    # Internally-created <NONE> bodies have no body graphics and keep their own rotation.
-    try:
-        if _lh_body_graphics(self, u):
-            b.rotation = 0.0
-    except Exception:
-        pass
-
-
-def _lh_shift_unit_geometry(self, unit, dx, dy):
-    unit.body.x += dx; unit.body.y += dy
-    for p in getattr(unit, 'pins', []) or []:
-        p.x += dx; p.y += dy
-        for ax_name, ay_name in (('label_x', 'label_y'), ('number_x', 'number_y')):
-            if getattr(p, ax_name, None) is not None:
-                setattr(p, ax_name, getattr(p, ax_name) + dx)
-            if getattr(p, ay_name, None) is not None:
-                setattr(p, ay_name, getattr(p, ay_name) + dy)
-        for tm in (getattr(p, 'attribute_texts', {}) or {}).values():
-            try: tm.x += dx; tm.y += dy
-            except Exception: pass
-    for t in getattr(unit, 'texts', []) or []:
-        t.x += dx; t.y += dy
-    for t in (getattr(unit.body, 'attribute_texts', {}) or {}).values():
-        t.x += dx; t.y += dy
-    for g in getattr(unit, 'graphics', []) or []:
-        g.x += dx; g.y += dy
-    try:
-        self._invalidate_body_group_transform_cache(unit)
-    except Exception:
-        pass
-
-
-def _lh_anchor_for_unit(self, unit, mode=None):
-    mode = mode or getattr(self.symbol, 'origin', OriginMode.CENTER.value)
-    _lh_sync_body_model_to_body_graphics(self, unit)
-    return self.body_anchor_point(unit.body, mode)
-
-
-def _lh_normalize_unit_origin(self, unit, mode):
-    # BODY bounds from graphics only; pins/text/attributes are attached but excluded.
-    _lh_sync_body_model_to_body_graphics(self, unit)
-    ax, ay = self.body_anchor_point(unit.body, mode)
-    if abs(ax) > 1e-9 or abs(ay) > 1e-9:
-        _lh_shift_unit_geometry(self, unit, -ax, -ay)
-    _lh_sync_body_model_to_body_graphics(self, unit)
-
-
-def _lh_dock_pins_to_body(self, u):
-    # Axis docking is only valid for unrotated internal <NONE>-style bodies.
-    # Imported/template bodies already carry native pin anchors and must not be
-    # re-docked to an axis-aligned proxy rectangle on every rebuild.
-    try:
-        if _lh_body_graphics(self, u):
-            return
-        if abs(float(getattr(u.body, 'rotation', 0.0) or 0.0)) > 1e-9:
-            return
-    except Exception:
-        pass
-    b = u.body
-    for p in getattr(u, 'pins', []) or []:
-        if p.side == PinSide.LEFT.value:
-            p.x = b.x
-        elif p.side == PinSide.RIGHT.value:
-            p.x = b.x + b.width
-        elif p.side == PinSide.TOP.value:
-            p.y = b.y
-        elif p.side == PinSide.BOTTOM.value:
-            p.y = b.y - b.height
-
-
-def _lh_capture_body_group_base(self, unit=None):
-    u = unit or self.current_unit
-    _lh_sync_body_model_to_body_graphics(self, u)
-    b = u.body
-    mode = getattr(self.symbol, 'origin', OriginMode.CENTER.value)
-    ax, ay = self.body_anchor_point(b, mode)
-    base = {
-        'pivot': (float(ax), float(ay)), 'anchor': (float(ax), float(ay)), 'origin_mode': mode,
-        'has_body_graphics': bool(_lh_body_graphics(self, u)),
-        'body': {'x': float(b.x), 'y': float(b.y), 'w': float(b.width), 'h': float(b.height),
-                 'rot': float(getattr(b, 'rotation', 0.0) or 0.0),
-                 'sx': float(getattr(b, 'scale_x', 1.0) or 1.0), 'sy': float(getattr(b, 'scale_y', 1.0) or 1.0)},
-        'pins': [], 'texts': [], 'body_attrs': [], 'graphics': []
-    }
-    for p in getattr(u, 'pins', []) or []:
-        pd = {'obj': p, 'x': float(p.x), 'y': float(p.y), 'length': float(getattr(p, 'length', 1.0) or 1.0),
-              'rot': float(getattr(p, 'rotation', 0.0) or 0.0), 'label': None, 'number': None, 'attrs': [],
-              'nfs': float(getattr(getattr(p, 'number_font', None), 'size_grid', 0.45) or 0.45),
-              'lfs': float(getattr(getattr(p, 'label_font', None), 'size_grid', 0.55) or 0.55)}
-        if getattr(p, 'label_x', None) is not None and getattr(p, 'label_y', None) is not None:
-            pd['label'] = (float(p.label_x), float(p.label_y))
-        if getattr(p, 'number_x', None) is not None and getattr(p, 'number_y', None) is not None:
-            pd['number'] = (float(p.number_x), float(p.number_y))
-        for key, tm in (getattr(p, 'attribute_texts', {}) or {}).items():
-            try: pd['attrs'].append((key, tm, float(tm.x), float(tm.y), float(getattr(tm, 'rotation', 0.0) or 0.0), float(getattr(tm, 'font_size_grid', 0.55) or 0.55)))
-            except Exception: pass
-        base['pins'].append(pd)
-    for t in getattr(u, 'texts', []) or []:
-        try: base['texts'].append({'obj': t, 'x': float(t.x), 'y': float(t.y), 'rot': float(getattr(t, 'rotation', 0.0) or 0.0), 'font': float(getattr(t, 'font_size_grid', .75) or .75)})
-        except Exception: pass
-    for key, t in (getattr(b, 'attribute_texts', {}) or {}).items():
-        try: base['body_attrs'].append({'key': key, 'obj': t, 'x': float(t.x), 'y': float(t.y), 'rot': float(getattr(t, 'rotation', 0.0) or 0.0), 'font': float(getattr(t, 'font_size_grid', .75) or .75)})
-        except Exception: pass
-    for gr in getattr(u, 'graphics', []) or []:
-        try:
-            base['graphics'].append({'obj': gr, 'x': float(gr.x), 'y': float(gr.y), 'w': float(getattr(gr,'w',0.0) or 0.0), 'h': float(getattr(gr,'h',0.0) or 0.0),
-                'rot': float(getattr(gr, 'rotation', 0.0) or 0.0), 'sx': float(getattr(gr, 'scale_x', 1.0) or 1.0), 'sy': float(getattr(gr, 'scale_y', 1.0) or 1.0),
-                'ctrl_x': getattr(gr, 'ctrl_x', None), 'ctrl_y': getattr(gr, 'ctrl_y', None), 'curve_radius': float(getattr(gr, 'curve_radius', 0.0) or 0.0)})
-        except Exception: pass
-    u._body_group_transform = {'base': base, 'M': (1.0, 0.0, 0.0, 1.0)}
-    return u._body_group_transform
-
-
-def _lh_apply_matrix_from_base(self, st, refresh=True):
-    base = st['base']; M = st.get('M', (1.0,0.0,0.0,1.0)); ax, ay = base['anchor']
-    def clean(v):
-        try: return self._clean_float(v)
-        except Exception: return float(v)
-    def app(x, y):
-        a,b,c,d = M; dx, dy = float(x)-ax, float(y)-ay
-        return clean(ax + a*dx + b*dy), clean(ay + c*dx + d*dy)
-    def linear_vec(x, y):
-        a,b,c,d = M
-        return clean(a*float(x) + b*float(y)), clean(c*float(x) + d*float(y))
-    def angle():
-        try: return self._mat_col_angle(M)
-        except Exception:
-            a,b,c,d = M; return math.degrees(math.atan2(c,a))
-    def sx_abs():
-        a,b,c,d = M; return max(1e-9, math.hypot(a,c))
-    def sy_abs():
-        a,b,c,d = M; return max(1e-9, math.hypot(b,d))
-    u = self.current_unit; b = u.body
-    sxv, syv = sx_abs(), sy_abs(); font_factor = max(0.1, (abs(sxv)+abs(syv))/2.0)
-    # Transform real graphics first.  For imported/template BODYs these graphics
-    # ARE the visible BODY; afterwards the logical BODY bounds are resynced from them.
-    for gd in base.get('graphics', []):
-        gr = gd['obj']
-        gr.x, gr.y = app(gd['x'], gd['y'])
-        gr.w, gr.h = linear_vec(gd['w'], gd['h'])
-        gr.rotation = clean((gd.get('rot',0.0) + angle()) % 360.0)
-        gr.scale_x = gd.get('sx', 1.0); gr.scale_y = gd.get('sy', 1.0)
-        if gd.get('ctrl_x') is not None and gd.get('ctrl_y') is not None:
-            gr.ctrl_x, gr.ctrl_y = linear_vec(gd['ctrl_x'], gd['ctrl_y'])
-        try: gr.curve_radius = clean(gd.get('curve_radius', 0.0) * font_factor)
-        except Exception: pass
-    # Internal <NONE> body with no body graphics is transformed as its own rectangle.
-    if not base.get('has_body_graphics'):
-        bs = base['body']
-        cx, cy = bs['x'] + bs['w']/2.0, bs['y'] - bs['h']/2.0
-        ncx, ncy = app(cx, cy)
-        b.width = clean(max(0.01, bs['w'] * sxv)); b.height = clean(max(0.01, bs['h'] * syv))
-        b.rotation = clean((bs.get('rot', 0.0) + angle()) % 360.0)
-        try: self._set_body_center_grid(b, ncx, ncy)
-        except Exception:
-            b.x = ncx - b.width/2.0; b.y = ncy + b.height/2.0
-    else:
-        _lh_sync_body_model_to_body_graphics(self, u)
-    # Attached objects follow the same anchor-local mapping.  Text glyphs remain
-    # readable: positions move rigidly, rotations are not mirrored/rotated.
-    for pd in base.get('pins', []):
-        p = pd['obj']; p.x, p.y = app(pd['x'], pd['y'])
-        p.rotation = clean((pd.get('rot',0.0) + angle()) % 360.0)
-        p.length = clean(max(0.1, pd.get('length',1.0) * font_factor))
-        if pd.get('label') is not None: p.label_x, p.label_y = app(*pd['label'])
-        if pd.get('number') is not None: p.number_x, p.number_y = app(*pd['number'])
-        try: p.number_font.size_grid = max(0.1, clean(pd.get('nfs', .45) * font_factor))
-        except Exception: pass
-        try: p.label_font.size_grid = max(0.1, clean(pd.get('lfs', .55) * font_factor))
-        except Exception: pass
-        for key, tm, tx, ty, trot, tf in pd.get('attrs', []):
-            try:
-                tm.x, tm.y = app(tx, ty); tm.rotation = trot; tm.font_size_grid = max(0.1, clean(tf * font_factor))
-            except Exception: pass
-    for td in base.get('texts', []):
-        t = td['obj']; t.x, t.y = app(td['x'], td['y']); t.rotation = td.get('rot', 0.0); t.font_size_grid = max(0.1, clean(td.get('font', .75) * font_factor))
-    for td in base.get('body_attrs', []):
-        t = td['obj']; t.x, t.y = app(td['x'], td['y']); t.rotation = td.get('rot', 0.0); t.font_size_grid = max(0.1, clean(td.get('font', .75) * font_factor))
-    try: self._invalidate_body_group_transform_cache(None) if False else None
+    x, y, w, h = _lh44_body_bounds(self, u)
+    u.body.x, u.body.y, u.body.width, u.body.height = x, y, w, h
+    try: u.body.rotation = 0.0
     except Exception: pass
+
+
+def _lh44_scale_body_graphics_to(self, unit, old_bounds, new_bounds):
+    gs = _lh44_body_graphics(self, unit)
+    if not gs: return
+    ox, oy, ow, oh = old_bounds; nx, ny, nw, nh = new_bounds
+    sx = float(nw) / max(float(ow), 1e-9); sy = float(nh) / max(float(oh), 1e-9)
+    def mp(x, y):
+        return (_lh44_clean(self, nx + (float(x) - ox) * sx),
+                _lh44_clean(self, ny - (oy - float(y)) * sy))
+    for g in gs:
+        x = float(getattr(g, 'x', 0.0) or 0.0); y = float(getattr(g, 'y', 0.0) or 0.0)
+        w = float(getattr(g, 'w', 0.0) or 0.0); h = float(getattr(g, 'h', 0.0) or 0.0)
+        x1, y1 = mp(x, y); x2, y2 = mp(x + w, y - h)
+        g.x, g.y = x1, y1
+        g.w, g.h = _lh44_clean(self, x2 - x1), _lh44_clean(self, y1 - y2)
+        try:
+            if getattr(g, 'ctrl_x', None) is not None: g.ctrl_x = _lh44_clean(self, float(g.ctrl_x) * sx)
+            if getattr(g, 'ctrl_y', None) is not None: g.ctrl_y = _lh44_clean(self, float(g.ctrl_y) * sy)
+            if getattr(g, 'curve_radius', None) is not None: g.curve_radius = _lh44_clean(self, float(g.curve_radius) * ((abs(sx)+abs(sy))/2.0))
+        except Exception: pass
+    _lh44_sync_body_to_graphics(self, unit)
+
+
+def _lh44_move_pin_texts(self, pin, dx, dy):
+    try:
+        self._move_pin_owned_texts(pin, dx, dy); return
+    except Exception:
+        pass
+    for ax, ay in (('label_x','label_y'), ('number_x','number_y')):
+        try:
+            if getattr(pin, ax, None) is not None and getattr(pin, ay, None) is not None:
+                setattr(pin, ax, _lh44_clean(self, float(getattr(pin, ax)) + dx))
+                setattr(pin, ay, _lh44_clean(self, float(getattr(pin, ay)) + dy))
+        except Exception: pass
+    for tm in (getattr(pin, 'attribute_texts', {}) or {}).values():
+        try:
+            tm.x = _lh44_clean(self, float(tm.x) + dx); tm.y = _lh44_clean(self, float(tm.y) + dy)
+        except Exception: pass
+
+
+def _lh44_capture_resize_state(self, unit=None):
+    u = unit or self.current_unit; b = u.body
+    return {
+        'pins': [(p, float(p.x), float(p.y), float(getattr(p, 'length', 1.0) or 1.0)) for p in getattr(u, 'pins', []) or []],
+        'texts': [(t, float(t.x), float(t.y)) for t in getattr(u, 'texts', []) or []],
+        'attributes': [(t, float(t.x), float(t.y)) for t in (getattr(b, 'attribute_texts', {}) or {}).values()],
+        'graphics': [(g, float(g.x), float(g.y), float(getattr(g, 'w', 0.0) or 0.0), float(getattr(g, 'h', 0.0) or 0.0)) for g in getattr(u, 'graphics', []) or [] if g not in _lh44_body_graphics(self, u)],
+    }
+
+
+def _lh44_redock_pins(self, unit, start, old_bounds, new_bounds):
+    ox, oy, ow, oh = old_bounds; nx, ny, nw, nh = new_bounds
+    sx = float(nw) / max(float(ow), 1e-9); sy = float(nh) / max(float(oh), 1e-9)
+    for p, px, py, plen in start.get('pins', []) or []:
+        old_px, old_py = float(getattr(p, 'x', px)), float(getattr(p, 'y', py))
+        side = getattr(p, 'side', '')
+        if side == PinSide.LEFT.value:
+            tx, ty = nx, ny - (oy - py) * sy
+        elif side == PinSide.RIGHT.value:
+            tx, ty = nx + nw, ny - (oy - py) * sy
+        elif side == PinSide.TOP.value:
+            tx, ty = nx + (px - ox) * sx, ny
+        elif side == PinSide.BOTTOM.value:
+            tx, ty = nx + (px - ox) * sx, ny - nh
+        else:
+            tx, ty = nx + (px - ox) * sx, ny - (oy - py) * sy
+        p.x, p.y = _lh44_snap(self, tx), _lh44_snap(self, ty)
+        try: p.length = float(plen)
+        except Exception: pass
+        _lh44_move_pin_texts(self, p, p.x - old_px, p.y - old_py)
+
+
+def _lh44_resize_body_geometry(self, new_w=None, new_h=None, refresh=True, anchor_bounds=None):
+    if getattr(self, '_lh44_resizing_body', False): return
+    self._lh44_resizing_body = True
+    try:
+        u = self.current_unit; b = u.body
+        old_bounds = anchor_bounds or _lh44_body_bounds(self, u)
+        ox, oy, ow, oh = old_bounds
+        step = _lh44_edit_step(self)
+        new_w = max(step, _lh44_snap(self, ow if new_w is None else new_w))
+        new_h = max(step, _lh44_snap(self, oh if new_h is None else new_h))
+        start = _lh44_capture_resize_state(self, u)
+        new_bounds = (ox, oy, new_w, new_h)
+        if _lh44_body_graphics(self, u):
+            _lh44_scale_body_graphics_to(self, u, old_bounds, new_bounds)
+        else:
+            b.x, b.y, b.width, b.height = ox, oy, new_w, new_h
+        _lh44_redock_pins(self, u, start, old_bounds, (b.x, b.y, b.width, b.height))
+        nx, ny, nw, nh = float(b.x), float(b.y), float(b.width), float(b.height)
+        sx = nw / max(float(ow), 1e-9); sy = nh / max(float(oh), 1e-9)
+        def map_pos(x, y): return (_lh44_snap(self, nx + (float(x)-ox)*sx), _lh44_snap(self, ny - (oy-float(y))*sy))
+        for t, tx, ty in start.get('texts', []) or []: t.x, t.y = map_pos(tx, ty)
+        for t, tx, ty in start.get('attributes', []) or []: t.x, t.y = map_pos(tx, ty)
+        for g, gx, gy, gw, gh in start.get('graphics', []) or []:
+            g.x, g.y = map_pos(gx, gy); g.w, g.h = gw, gh
+        try:
+            if hasattr(u, '_body_group_transform'): delattr(u, '_body_group_transform')
+        except Exception: pass
+        self.dirty = True
+    finally:
+        self._lh44_resizing_body = False
     if refresh:
         try: self.update_current_unit_canvas_positions()
-        except Exception: self.rebuild_scene()
+        except Exception: pass
+        try: self.update_attribute_items_for_unit()
+        except Exception: pass
         try: self.rebuild_tree(); self.rebuild_pin_table()
         except Exception: pass
-
-
-def _lh_body_group_state(self, unit=None):
-    u = unit or self.current_unit
-    st = getattr(u, '_body_group_transform', None)
-    if not isinstance(st, dict) or 'base' not in st or 'M' not in st:
-        st = _lh_capture_body_group_base(self, u)
-    else:
-        try:
-            if st['base'].get('origin_mode') != getattr(self.symbol, 'origin', OriginMode.CENTER.value):
-                st = _lh_capture_body_group_base(self, u)
-        except Exception:
-            st = _lh_capture_body_group_base(self, u)
-    return st
-
-
-def _lh_transform_unit_as_body_group(self, op, value=None, refresh=True):
-    st = _lh_body_group_state(self, self.current_unit)
-    M = st.get('M', (1.0,0.0,0.0,1.0))
-    if op == 'rotate':
-        deg = round(float(value or 0.0) / 90.0) * 90.0
-        if abs(deg) < 1e-9: return
-        a = math.radians(deg); Op = (math.cos(a), -math.sin(a), math.sin(a), math.cos(a))
-    elif op in ('scale','scale_x_to','scale_y_to'):
-        cur_w = max(1e-9, float(getattr(self.current_unit.body, 'width', 1.0) or 1.0))
-        cur_h = max(1e-9, float(getattr(self.current_unit.body, 'height', 1.0) or 1.0))
-        try: snapv = self._snap_to_edit_grid
-        except Exception: snapv = lambda v, mn=0.01: max(mn, float(v))
-        if op == 'scale_x_to': sx, sy = snapv(float(value), 0.01) / cur_w, 1.0
-        elif op == 'scale_y_to': sx, sy = 1.0, snapv(float(value), 0.01) / cur_h
-        else:
-            f = float(value or 1.0); sx, sy = snapv(cur_w*f, 0.01)/cur_w, snapv(cur_h*f, 0.01)/cur_h
-        Op = (sx, 0.0, 0.0, sy)
-    elif op == 'flip_h':
-        Op = (-1.0, 0.0, 0.0, 1.0)
-    elif op == 'flip_v':
-        Op = (1.0, 0.0, 0.0, -1.0)
-    else:
-        return
-    try: st['M'] = self._mat_mul(Op, M)
-    except Exception:
-        a,b,c,d = Op; e,f,g,h = M; st['M'] = (a*e+b*g, a*f+b*h, c*e+d*g, c*f+d*h)
-    _lh_apply_matrix_from_base(self, st, refresh=refresh)
-
-
-def _lh_reset_origin_to_selected_anchor(self, mode=None):
-    mode = mode or (self.origin_combo.currentText() if hasattr(self, 'origin_combo') else OriginMode.CENTER.value)
-    if mode not in [x.value for x in OriginMode]: mode = OriginMode.CENTER.value
-    try: self.push_undo_state()
-    except Exception: pass
-    self.symbol.origin = mode
-    units = list(getattr(self.symbol, 'units', []) or [self.current_unit]) if not getattr(self, 'is_template_editor', False) else [self.current_unit]
-    if not getattr(self, 'is_template_editor', False) and getattr(self.symbol, 'kind', None) != SymbolKind.SPLIT.value:
-        units = [self.current_unit]
-    for u in units:
-        _lh_normalize_unit_origin(self, u, mode)
-    if hasattr(self, 'origin_combo'):
-        try:
-            self.origin_combo.blockSignals(True); self.origin_combo.setCurrentText(mode); self.origin_combo.blockSignals(False)
+        try: self.refresh_properties()
         except Exception: pass
-    try: self.set_format_guide_to_active_origin()
-    except Exception: pass
-    try: self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
-    except Exception: self.rebuild_scene()
-
-
-def _lh_load_selected_template(self):
-    name = self.current_template_key()
-    if not name: return
-    self._loading_template = True
-    self.unit = self.main.load_template_unit(name); self.symbol.units=[self.unit]
-    try: self.unit.body.attributes['TEMPLATE_GRAPHICS_AS_BODY'] = '1'
-    except Exception: pass
-    try: self._lock_template_body_graphics(self.unit)
-    except Exception: pass
-    # On opening the Template Editor, the BODY graphics are normalized to the
-    # active origin immediately.  Pins/text/attributes keep their offsets and are
-    # not allowed to redefine BODY extents.
-    try: _lh_normalize_unit_origin(self, self.unit, getattr(self.symbol, 'origin', OriginMode.CENTER.value))
-    except Exception: pass
-    if hasattr(self, 'origin_combo'):
-        self.origin_combo.blockSignals(True); self.origin_combo.setCurrentText(getattr(self.symbol, 'origin', OriginMode.CENTER.value)); self.origin_combo.blockSignals(False)
-    try: self.rename_edit.setText(self._split_template_key(name)[1])
-    except Exception: pass
-    try: self._sync_template_grid_combo_to_unit()
-    except Exception: pass
-    self._current_template_name = name
-    self.rebuild_scene()
-    try: self._capture_clean_template_snapshot()
-    except Exception: pass
-    self._loading_template = False
-
-
-def _lh_normalize_symbol_origins_for_import(self, symbol):
-    mode = getattr(symbol, 'origin', OriginMode.CENTER.value) or OriginMode.CENTER.value
-    if mode not in [x.value for x in OriginMode]:
-        mode = OriginMode.CENTER.value; symbol.origin = mode
-    for unit in getattr(symbol, 'units', []) or []:
-        _lh_normalize_unit_origin(self, unit, mode)
-
-
-def _lh_rebuild_scene_wrapper(orig):
-    def wrapper(self, *args, **kwargs):
-        try:
-            # Keep logical BODY equal to graphics extents before drawing in both editors.
-            _lh_sync_body_model_to_body_graphics(self, self.current_unit)
+        try: self.schedule_scene_refresh(visual_only=True)
         except Exception:
-            pass
-        return orig(self, *args, **kwargs)
-    return wrapper
+            try: self.scene.update()
+            except Exception: pass
 
-# Install monkey patches on both editors.  The classes are already defined at
-# this point, so existing UI code resolves the corrected methods dynamically.
+
+def _lh44_set_body_width_grid(self, body, value):
+    try:
+        new_w = max(_lh44_edit_step(self), _lh44_snap(self, float(value)))
+        cur_w = float(getattr(self.current_unit.body, 'width', new_w) or new_w)
+        if abs(new_w - cur_w) < 1e-9: return
+        self.push_undo_state(); self._selection_restore_ids = self._capture_selection_ids()
+        _lh44_resize_body_geometry(self, new_w=new_w, new_h=None, refresh=True)
+    except Exception as e:
+        try: self.statusBar().showMessage(f'BODY width update failed: {e}', 4000)
+        except Exception: pass
+
+
+def _lh44_set_body_height_grid(self, body, value):
+    try:
+        new_h = max(_lh44_edit_step(self), _lh44_snap(self, float(value)))
+        cur_h = float(getattr(self.current_unit.body, 'height', new_h) or new_h)
+        if abs(new_h - cur_h) < 1e-9: return
+        self.push_undo_state(); self._selection_restore_ids = self._capture_selection_ids()
+        _lh44_resize_body_geometry(self, new_w=None, new_h=new_h, refresh=True)
+    except Exception as e:
+        try: self.statusBar().showMessage(f'BODY height update failed: {e}', 4000)
+        except Exception: pass
+
+
+def _lh44_transform_unit_as_body_group(self, op, value=None, refresh=True):
+    if op in ('scale', 'scale_x_to', 'scale_y_to'):
+        b = self.current_unit.body
+        cur_w = float(getattr(b, 'width', 1.0) or 1.0); cur_h = float(getattr(b, 'height', 1.0) or 1.0)
+        if op == 'scale_x_to': return _lh44_resize_body_geometry(self, new_w=float(value), new_h=None, refresh=refresh)
+        if op == 'scale_y_to': return _lh44_resize_body_geometry(self, new_w=None, new_h=float(value), refresh=refresh)
+        f = float(value or 1.0)
+        return _lh44_resize_body_geometry(self, new_w=cur_w * f, new_h=cur_h * f, refresh=refresh)
+    if _lh44_prev_transform_unit_as_body_group is not None:
+        return _lh44_prev_transform_unit_as_body_group(self, op, value, refresh)
+
+
+def _lh44_scale_selected_grid(self, direction: int):
+    self.set_tool(DrawTool.SELECT.value)
+    if self._selected_body_active():
+        b = self.current_unit.body; step = _lh44_edit_step(self)
+        self.push_undo_state(); self._selection_restore_ids = self._capture_selection_ids()
+        _lh44_resize_body_geometry(self, float(b.width) + direction * step, float(b.height) + direction * step, refresh=True)
+    else:
+        if _lh44_prev_scale_selected_grid is not None:
+            return _lh44_prev_scale_selected_grid(self, direction)
+        return self.scale_selected(1.0 + (0.1 if direction > 0 else -0.1))
+
+
+def _lh44_scale_current_unit_children_from_body_resize(self, start_state, body):
+    try:
+        old_bounds = (float(start_state.get('x', body.x)), float(start_state.get('y', body.y)),
+                      max(float(start_state.get('w', body.width)), 1e-9), max(float(start_state.get('h', body.height)), 1e-9))
+        _lh44_resize_body_geometry(self, new_w=float(body.width), new_h=float(body.height), refresh=True, anchor_bounds=old_bounds)
+    except Exception as e:
+        try: self.statusBar().showMessage(f'Canvas BODY scale failed: {e}', 4000)
+        except Exception: pass
+
+
+def _lh44_clear_canvas(self):
+    return self.delete_all_symbols()
+
+
+try:
+    _lh44_prev_transform_unit_as_body_group = MainWindow._transform_unit_as_body_group
+except Exception:
+    _lh44_prev_transform_unit_as_body_group = None
+try:
+    _lh44_prev_scale_selected_grid = MainWindow.scale_selected_grid
+except Exception:
+    _lh44_prev_scale_selected_grid = None
 try:
     for _cls in (MainWindow, TemplateEditorDialog):
-        _cls._sync_imported_body_model_to_body_graphics = _lh_sync_body_model_to_body_graphics
-        _cls._body_graphics_bounds = _lh_body_graphics_bounds
-        _cls.shift_unit_geometry = _lh_shift_unit_geometry
-        _cls.normalize_unit_origin = _lh_normalize_unit_origin
-        _cls.normalize_symbol_origins_for_import = _lh_normalize_symbol_origins_for_import
-        _cls.dock_pins_to_body = _lh_dock_pins_to_body
-        _cls._body_group_capture_base = _lh_capture_body_group_base
-        _cls._body_group_state = _lh_body_group_state
-        _cls._apply_body_group_matrix_from_base = _lh_apply_matrix_from_base
-        _cls._transform_unit_as_body_group = _lh_transform_unit_as_body_group
-        _cls.reset_origin_to_selected_anchor = _lh_reset_origin_to_selected_anchor
-    TemplateEditorDialog.load_selected_template = _lh_load_selected_template
-    MainWindow.rebuild_scene = _lh_rebuild_scene_wrapper(MainWindow.rebuild_scene)
-    TemplateEditorDialog.rebuild_scene = _lh_rebuild_scene_wrapper(TemplateEditorDialog.rebuild_scene)
+        _cls._body_owned_graphics = lambda self, body=None: _lh44_body_graphics(self, self.current_unit)
+        _cls._set_body_width_grid = _lh44_set_body_width_grid
+        _cls._set_body_height_grid = _lh44_set_body_height_grid
+        _cls._transform_unit_as_body_group = _lh44_transform_unit_as_body_group
+        _cls.scale_selected_grid = _lh44_scale_selected_grid
+        _cls.scale_current_unit_children_from_body_resize = _lh44_scale_current_unit_children_from_body_resize
+        _cls.clear_canvas = _lh44_clear_canvas
 except Exception:
     pass
