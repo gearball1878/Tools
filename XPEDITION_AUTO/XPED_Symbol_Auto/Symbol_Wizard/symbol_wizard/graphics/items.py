@@ -225,34 +225,11 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
         except Exception:
             pass
         if graphics_as_body:
-            # For Mentor/template based symbols the visible body consists of the
-            # imported/template graphic primitives.  The rectangular BodyModel is
-            # only a logical anchor/grouping object and must not be painted as an
-            # extra black frame around the artwork.
-            #
-            # Template Editor: never draw the logical body rectangle.  Individual
-            # template graphics remain editable there.
-            if getattr(self.window, 'is_template_editor', False):
-                return
-
-            # Symbol Wizard: show only a lightweight body highlight/selection
-            # frame for the complete body group, never the normal body geometry.
-            painter.save()
-            if self.isSelected():
-                pen = QPen(QColor(0, 150, 170, 230), 2, Qt.DashLine)
-            else:
-                pen = QPen(QColor(0, 150, 170, 95), 1, Qt.DashLine)
-            pen.setCosmetic(True)
-            painter.setPen(pen)
-            painter.setBrush(QBrush(Qt.NoBrush))
-            painter.drawRect(self.rect())
-            if self.isSelected():
-                painter.setPen(QPen(QColor(0, 150, 170, 230), 1))
-                painter.setBrush(QBrush(QColor(255, 255, 255)))
-                s = self.window.grid_px * self.handle_size_factor
-                for r in _corner_handles(self.rect(), s).values():
-                    painter.drawRect(r)
-            painter.restore()
+            # Mentor/template based imports use the imported primitives as the
+            # real BODY artwork.  The rectangular SymbolBodyModel is only a
+            # logical owner/selection anchor.  Never paint it as an additional
+            # frame/proxy, because users expect transformations to affect the
+            # actual body artwork, pins and attributes as one group.
             return
         super().paint(painter, option, widget)
         if self.isSelected():
@@ -291,6 +268,9 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
                 self._rotate_center_scene = self.mapToScene(self.boundingRect().center())
                 self._rotate_start_angle = _angle_from(self._rotate_center_scene, event.scenePos())
                 self._rotate_start_model = float(getattr(self.model, 'rotation', 0.0) or 0.0)
+                self._rotate_start_state = None
+                if self._body_group_transform_supported() and not getattr(self.window, 'is_template_editor', False):
+                    self._rotate_start_state = self.window.capture_current_unit_transform_state(self.model)
                 event.accept(); return
             h = _hit_handle(self._handles(), event.pos())
             if h:
@@ -312,8 +292,15 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
     def mouseMoveEvent(self, event):
         if getattr(self, '_rotating', False):
             delta = _angle_from(self._rotate_center_scene, event.scenePos()) - self._rotate_start_angle
-            self.model.rotation = (round((self._rotate_start_model + delta) / 15.0) * 15.0) % 360
-            self.apply_transform_from_model()
+            snapped_delta = (round(float(delta) / 15.0) * 15.0)
+            st = getattr(self, '_rotate_start_state', None)
+            if st is not None and self._body_group_transform_supported() and not getattr(self.window, 'is_template_editor', False):
+                self.window.rotate_current_unit_group_from_state(st, snapped_delta)
+                self.window.update_current_unit_canvas_positions()
+                self.window.update_attribute_items_for_unit()
+            else:
+                self.model.rotation = (round((self._rotate_start_model + delta) / 15.0) * 15.0) % 360
+                self.apply_transform_from_model()
             try:
                 self.window.notify_canvas_model_changed()
             except Exception:
@@ -381,8 +368,10 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
     def mouseReleaseEvent(self, event):
         self._undo_state_pushed_for_drag = False
         self._resizing = None
+        self._rotating = False
         self._resize_anchor_scene = None
         self._resize_start = None
+        self._rotate_start_state = None
         self.window.enforce_symbol_size_limit(silent=True)
         self.window.update_current_unit_canvas_positions()
         self.window.update_attribute_items_for_unit()
@@ -394,6 +383,26 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
         except Exception:
             pass
         super().mouseReleaseEvent(event)
+
+    def _body_group_transform_supported(self):
+        return hasattr(self.window, 'rotate_current_unit_group_from_state') and hasattr(self.window, 'capture_current_unit_transform_state')
+
+    def rotate_by(self, deg):
+        # BODY rotations in the Symbol Wizard must transform the real owned
+        # objects (body artwork, pins, pin texts, body attributes, user graphics)
+        # around the BODY origin.  Do not rotate a visible proxy/bounding frame.
+        if self._body_group_transform_supported() and not getattr(self.window, 'is_template_editor', False):
+            st = self.window.capture_current_unit_transform_state(self.model)
+            self.window.rotate_current_unit_group_from_state(st, float(deg))
+            self.window.update_current_unit_canvas_positions()
+            self.window.update_attribute_items_for_unit()
+            try:
+                self.window.refresh_properties()
+            except Exception:
+                pass
+            self.update()
+            return
+        super().rotate_by(deg)
 
     def scale_selected(self, factor):
         st = {
@@ -1037,6 +1046,7 @@ class GraphicItem(TransformMixin, QGraphicsItem):
         self._resizing = None
         self._resize_anchor_scene = None
         self._resize_start = None
+        self._rotate_start_state = None
         self.window.enforce_symbol_size_limit(silent=True)
         self.window.rebuild_tree()
         self.scene().update()
