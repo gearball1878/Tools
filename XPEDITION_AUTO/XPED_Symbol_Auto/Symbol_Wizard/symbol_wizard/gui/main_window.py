@@ -16328,3 +16328,332 @@ try:
         _cls.flip_selected_vertical=_lh63_flip_v
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# Liebherr v64: vector-graphics semantics for GRAPHIC and GRAPHIC GROUP.
+# ---------------------------------------------------------------------------
+# A graphic group is a logical vector object.  Its outline is always the maximum
+# visible extent rectangle.  The transform origin is the lower-left corner of
+# that extent (intersection of the local X axis at the bottom and Y axis at the
+# left).  Grouping only assigns a fresh group id and pivot; it never normalizes
+# or translates children.  Copy/paste already remaps group ids in v62, so pasted
+# groups remain independent objects.
+
+def _lh64_group_pivot_from_bbox(self, b):
+    if not b:
+        return (0.0, 0.0)
+    minx, miny, maxx, maxy = b
+    # model coordinates: larger y is visually higher, so lower edge is miny.
+    return _lh62_snap(self, minx), _lh62_snap(self, miny)
+
+
+def _lh64_set_pivot(models, ox, oy):
+    for m in models:
+        try:
+            m.group_origin_x = float(ox)
+            m.group_origin_y = float(oy)
+        except Exception:
+            pass
+
+
+def _lh64_models_pivot(self, models):
+    # Use persisted pivot for a real group. This keeps the origin stable
+    # relative to the object while it is moved/scaled/rotated/flipped.
+    try:
+        gids = [_lh62_gid(m) for m in models if _lh62_gid(m)]
+        if gids and all(g == gids[0] for g in gids):
+            for m in models:
+                gx = getattr(m, 'group_origin_x', None)
+                gy = getattr(m, 'group_origin_y', None)
+                if gx is not None and gy is not None:
+                    return float(gx), float(gy)
+    except Exception:
+        pass
+    return _lh64_group_pivot_from_bbox(self, _lh62_bbox(models))
+
+
+def _lh64_selected_models(self, expand_groups=True):
+    try:
+        return _lh62_selected_models(self, expand_groups=expand_groups)
+    except Exception:
+        return []
+
+
+def _lh64_refresh(self):
+    try:
+        self.dirty = True
+    except Exception:
+        pass
+    try:
+        _lh62_update_scene(self)
+    except Exception:
+        try:
+            self.update_current_unit_canvas_positions()
+        except Exception:
+            pass
+        try:
+            self.refresh_properties(); self.rebuild_tree(); self.scene.update(); self.view.viewport().update()
+        except Exception:
+            pass
+
+
+def _lh64_group_selected_graphics(self):
+    models = _lh64_selected_models(self, expand_groups=False)
+    clean = []
+    for m in models:
+        if m not in clean:
+            clean.append(m)
+    if len(clean) < 2:
+        try: QMessageBox.information(self, 'Group Graphics', 'Bitte mindestens zwei eingefügte Grafikobjekte auswählen.')
+        except Exception: pass
+        return
+    try: self.push_undo_state()
+    except Exception: pass
+    import uuid as _uuid
+    gid = 'G' + _uuid.uuid4().hex[:8]
+    b = _lh62_bbox(clean)
+    ox, oy = _lh64_group_pivot_from_bbox(self, b)
+    # IMPORTANT: no geometry normalization here. Grouping must not move objects.
+    for gr in clean:
+        _lh62_set_gid(gr, gid)
+        try:
+            gr.group_origin_x = ox
+            gr.group_origin_y = oy
+        except Exception:
+            pass
+    try:
+        self.scene.blockSignals(True)
+        for it in _lh62_all_graphic_items(self):
+            try: it.setSelected(_lh62_gid(it.model) == gid)
+            except Exception: pass
+    finally:
+        try: self.scene.blockSignals(False)
+        except Exception: pass
+    _lh64_refresh(self)
+    try: self.statusBar().showMessage(f'Grafikgruppe erstellt: {len(clean)} Objekte als Vektorobjekt.', 4000)
+    except Exception: pass
+
+
+def _lh64_ungroup_selected_graphics(self):
+    models = _lh64_selected_models(self, expand_groups=True)
+    if not models:
+        try: QMessageBox.information(self, 'Ungroup Graphics', 'Keine Grafikgruppe ausgewählt.')
+        except Exception: pass
+        return
+    try: self.push_undo_state()
+    except Exception: pass
+    for gr in models:
+        _lh62_set_gid(gr, '')
+        for attr in ('group_origin_x', 'group_origin_y'):
+            try:
+                if hasattr(gr, attr):
+                    delattr(gr, attr)
+            except Exception:
+                pass
+    try: _lh62_clear_group_outline(self)
+    except Exception: pass
+    _lh64_refresh(self)
+
+
+def _lh64_group_bbox(models):
+    return _lh62_bbox(models)
+
+
+def _lh64_scale_models(self, models, direction):
+    b = _lh64_group_bbox(models)
+    if not b:
+        return False
+    minx, miny, maxx, maxy = b
+    cur_w = max(0.0, maxx - minx)
+    cur_h = max(0.0, maxy - miny)
+    step = _lh62_grid_step(self)
+    if cur_w <= 1e-12 and cur_h <= 1e-12:
+        return False
+    dom = max(cur_w, cur_h, step)
+    # One edit-grid step per click, proportional. Minimum object extent is one edit-grid.
+    target = dom + (step if int(direction) > 0 else -step)
+    target = max(step, _lh62_snap(self, target))
+    factor = target / dom if dom > 1e-12 else 1.0
+    if abs(factor - 1.0) < 1e-12:
+        return True
+    ox, oy = _lh64_models_pivot(self, models)
+    try: self.push_undo_state()
+    except Exception: pass
+    for gr in models:
+        try:
+            cx, cy = _lh62_model_center(gr)
+            ncx = ox + (cx - ox) * factor
+            ncy = oy + (cy - oy) * factor
+            w = float(getattr(gr, 'w', 0.0) or 0.0)
+            h = float(getattr(gr, 'h', 0.0) or 0.0)
+            shape = str(getattr(gr, 'shape', '') or '').lower()
+            nw = _lh62_snap(self, w * factor)
+            nh = _lh62_snap(self, h * factor)
+            if shape not in ('line', 'arc'):
+                if abs(nw) < step: nw = (1.0 if (nw if abs(nw) > 1e-12 else w) >= 0 else -1.0) * step
+                if abs(nh) < step: nh = (1.0 if (nh if abs(nh) > 1e-12 else h) >= 0 else -1.0) * step
+            else:
+                # Preserve legitimate horizontal/vertical lines, but scale their non-zero axis.
+                if abs(w) > 1e-12 and abs(nw) < step: nw = (1.0 if w >= 0 else -1.0) * step
+                if abs(h) > 1e-12 and abs(nh) < step: nh = (1.0 if h >= 0 else -1.0) * step
+                if getattr(gr, 'ctrl_x', None) is not None:
+                    gr.ctrl_x = _lh62_snap(self, float(gr.ctrl_x) * factor)
+                if getattr(gr, 'ctrl_y', None) is not None:
+                    gr.ctrl_y = _lh62_snap(self, float(gr.ctrl_y) * factor)
+                if getattr(gr, 'curve_radius', None) not in (None, 0, 0.0):
+                    gr.curve_radius = _lh62_snap(self, float(gr.curve_radius) * factor)
+            gr.w = nw; gr.h = nh
+            _lh62_set_model_center(gr, _lh62_snap(self, ncx), _lh62_snap(self, ncy))
+        except Exception:
+            pass
+    # The pivot is part of the vector object and transforms with neither a pure scale
+    # nor a pure mirror around itself. Store it unchanged on every child.
+    _lh64_set_pivot(models, ox, oy)
+    _lh64_refresh(self)
+    return True
+
+
+def _lh64_rotate_models(self, models, deg):
+    if not models:
+        return False
+    ox, oy = _lh64_models_pivot(self, models)
+    rad = math.radians(float(deg)); c = math.cos(rad); s = math.sin(rad)
+    try: self.push_undo_state()
+    except Exception: pass
+    for gr in models:
+        try:
+            cx, cy = _lh62_model_center(gr)
+            dx, dy = cx - ox, cy - oy
+            _lh62_set_model_center(gr, _lh62_snap(self, ox + dx * c - dy * s), _lh62_snap(self, oy + dx * s + dy * c))
+            cur = float(getattr(gr, 'rotation', 0.0) or 0.0)
+            gr.rotation = (round((cur + float(deg)) / 90.0) * 90.0) % 360.0
+        except Exception:
+            pass
+    _lh64_set_pivot(models, ox, oy)
+    _lh64_refresh(self)
+    return True
+
+
+def _lh64_flip_models(self, models, horizontal=True):
+    if not models:
+        return False
+    ox, oy = _lh64_models_pivot(self, models)
+    try: self.push_undo_state()
+    except Exception: pass
+    for gr in models:
+        try:
+            cx, cy = _lh62_model_center(gr)
+            if horizontal:
+                # Flip H = horizontal left/right mirror at local Y axis on the left edge.
+                _lh62_set_model_center(gr, _lh62_snap(self, ox - (cx - ox)), cy)
+                gr.scale_x = -float(getattr(gr, 'scale_x', 1.0) or 1.0)
+            else:
+                # Flip V = vertical up/down mirror at local X axis on the lower edge.
+                _lh62_set_model_center(gr, cx, _lh62_snap(self, oy - (cy - oy)))
+                gr.scale_y = -float(getattr(gr, 'scale_y', 1.0) or 1.0)
+        except Exception:
+            pass
+    _lh64_set_pivot(models, ox, oy)
+    _lh64_refresh(self)
+    return True
+
+
+def _lh64_scale_selected_grid(self, direction:int):
+    try:
+        if self._selected_body_active():
+            return _lh61_prev_scale_grid(self, direction) if '_lh61_prev_scale_grid' in globals() and _lh61_prev_scale_grid else None
+    except Exception:
+        pass
+    models = _lh64_selected_models(self, expand_groups=True)
+    if models and _lh64_scale_models(self, models, direction):
+        return None
+    if '_lh61_prev_scale_grid' in globals() and _lh61_prev_scale_grid:
+        return _lh61_prev_scale_grid(self, direction)
+
+
+def _lh64_rotate_selected(self, deg):
+    try:
+        if self._selected_body_active():
+            return _lh61_prev_rotate_selected(self, deg) if '_lh61_prev_rotate_selected' in globals() and _lh61_prev_rotate_selected else None
+    except Exception:
+        pass
+    models = _lh64_selected_models(self, expand_groups=True)
+    if models and _lh64_rotate_models(self, models, deg):
+        return None
+    if '_lh61_prev_rotate_selected' in globals() and _lh61_prev_rotate_selected:
+        return _lh61_prev_rotate_selected(self, deg)
+
+
+def _lh64_flip_h(self):
+    try:
+        if self._selected_body_active():
+            return _lh61_prev_flip_h(self) if '_lh61_prev_flip_h' in globals() and _lh61_prev_flip_h else None
+    except Exception:
+        pass
+    models = _lh64_selected_models(self, expand_groups=True)
+    if models and _lh64_flip_models(self, models, True):
+        return None
+    if '_lh61_prev_flip_h' in globals() and _lh61_prev_flip_h:
+        return _lh61_prev_flip_h(self)
+
+
+def _lh64_flip_v(self):
+    try:
+        if self._selected_body_active():
+            return _lh61_prev_flip_v(self) if '_lh61_prev_flip_v' in globals() and _lh61_prev_flip_v else None
+    except Exception:
+        pass
+    models = _lh64_selected_models(self, expand_groups=True)
+    if models and _lh64_flip_models(self, models, False):
+        return None
+    if '_lh61_prev_flip_v' in globals() and _lh61_prev_flip_v:
+        return _lh61_prev_flip_v(self)
+
+
+def _lh64_update_group_outline(self):
+    # Maximum extent rectangle only, based on transformed visible points.
+    gid = _lh62_selected_single_gid(self)
+    if not gid:
+        _lh62_clear_group_outline(self); return
+    models = _lh62_selected_models(self, expand_groups=True)
+    if len(models) < 2:
+        _lh62_clear_group_outline(self); return
+    b = _lh62_bbox(models)
+    if not b:
+        _lh62_clear_group_outline(self); return
+    minx, miny, maxx, maxy = b
+    g = float(getattr(self, 'grid_px', 20) or 20)
+    rect = QRectF(minx*g, -maxy*g, (maxx-minx)*g, (maxy-miny)*g).normalized()
+    try:
+        pad = max(3.0, g*0.15); rect = rect.adjusted(-pad, -pad, pad, pad)
+    except Exception:
+        pass
+    item = getattr(self, '_lh62_group_outline_item', None) or getattr(self, '_lh61_group_outline_item', None)
+    try:
+        if item is None:
+            item = QGraphicsRectItem()
+            item.setData(0, 'HIGHLIGHT')
+            item.setFlag(QGraphicsItem.ItemIsSelectable, False)
+            item.setFlag(QGraphicsItem.ItemIsMovable, False)
+            item.setAcceptedMouseButtons(Qt.NoButton)
+            item.setZValue(1e6)
+            item.setPen(QPen(QColor(80,80,80), 1, Qt.DashLine))
+            item.setBrush(QBrush(Qt.NoBrush))
+            self.scene.addItem(item)
+        item.setRect(rect); item.show()
+        self._lh62_group_outline_item = item; self._lh61_group_outline_item = item
+    except Exception:
+        pass
+
+try:
+    # Replace the earlier outline function used by _lh62_update_scene.
+    globals()['_lh62_update_group_outline'] = _lh64_update_group_outline
+    for _cls in (MainWindow, TemplateEditorDialog):
+        _cls.group_selected_graphics = _lh64_group_selected_graphics
+        _cls.ungroup_selected_graphics = _lh64_ungroup_selected_graphics
+        _cls.scale_selected_grid = _lh64_scale_selected_grid
+        _cls.rotate_selected = _lh64_rotate_selected
+        _cls.flip_selected_horizontal = _lh64_flip_h
+        _cls.flip_selected_vertical = _lh64_flip_v
+except Exception:
+    pass
