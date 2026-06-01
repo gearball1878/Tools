@@ -5540,20 +5540,18 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
             self.set_body_visual_attr(body, 'color', (c.red(), c.green(), c.blue()))
 
     def _symbol_group_pivot_grid(self):
-        """Return the active BODY origin/pivot in grid coordinates.
+        """Return the logical symbol origin used for BODY-group transforms.
 
-        Earlier builds always used (0, 0), which only behaved correctly after
-        a center-origin reset.  BODY transforms must also work when the user
-        selects top_left/top_right/bottom_left/bottom_right.  The pivot is
-        therefore the actual configured BODY anchor, including the current BODY
-        rotation, so rotate/scale/flip keep the selected origin fixed.
+        The origin selector (center/top_left/bottom_left/...) is handled when the
+        origin is reset: the selected BODY anchor is translated onto the symbol
+        origin crosshair.  After that point the transform pivot must remain the
+        fixed logical symbol origin (0, 0).  Recomputing the pivot from the
+        already-transformed BODY bounds/corners is exactly what made imported
+        symbols walk away for non-center origins during repeated flip/scale/rotate.
+
+        Therefore all BODY-group operations use the stable symbol origin.
         """
-        try:
-            body = self.current_unit.body
-            mode = getattr(self.symbol, 'origin', OriginMode.CENTER.value)
-            return self.body_anchor_point_oriented(body, mode)
-        except Exception:
-            return (0.0, 0.0)
+        return (0.0, 0.0)
 
     def _body_center_grid(self, body=None):
         b = body or self.current_unit.body
