@@ -63,11 +63,6 @@ class GraphicModel(TransformModel):
     # Optional persistent group id for user graphics. Graphics with the same
     # id are edited/moved/scaled as one logical graphic group.
     group_id: str=''
-    # For shape='group': child graphics stored locally relative to the group bbox.
-    # The group itself is edited exactly like one normal GraphicModel.
-    group_children: List[dict]=field(default_factory=list)
-    group_base_w: float=0.0
-    group_base_h: float=0.0
     style: StyleModel=field(default_factory=StyleModel)
 
 @dataclass
