@@ -60,6 +60,9 @@ class GraphicModel(TransformModel):
     # In the Symbol Wizard only template_body graphics are treated as BODY;
     # user_graphic remains a normal selectable/editable graphic.
     graphic_role: str=''
+    # Optional persistent group id for user graphics. Graphics with the same
+    # id are edited/moved/scaled as one logical graphic group.
+    group_id: str=''
     style: StyleModel=field(default_factory=StyleModel)
 
 @dataclass

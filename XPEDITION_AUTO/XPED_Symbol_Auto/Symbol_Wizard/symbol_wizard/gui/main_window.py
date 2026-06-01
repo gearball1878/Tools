@@ -13367,3 +13367,1432 @@ try:
         _cls.scale_selected_grid = _lh53_scale_selected_grid
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# Liebherr v55: robust proportional grid scaling for GRAPHIC selections plus
+# lightweight graphic grouping.
+# ---------------------------------------------------------------------------
+# Rules:
+# - Scale +/- on GRAPHIC selections changes geometry proportionally around the
+#   selected graphic/group center.
+# - One toolbar step equals one current edit-grid increment on the dominant
+#   dimension; the minimum rendered dominant dimension is one edit-grid step.
+# - Pins are never included.
+# - BODY selections keep using the proven Symbol-1 BODY transform path.  Imported
+#   and template BODY artwork is treated as BODY artwork and therefore follows
+#   the same canvas scaling method.
+# - A graphic group is a shared group id on user graphics. Selecting/scaling one
+#   member scales the whole group as one logical object. Ungroup clears that id.
+
+try:
+    _lh55_prev_scale_selected_grid = MainWindow.scale_selected_grid
+    _lh55_prev_scale_selected = MainWindow.scale_selected
+except Exception:
+    _lh55_prev_scale_selected_grid = None
+    _lh55_prev_scale_selected = None
+
+
+def _lh55_step(self):
+    try:
+        return max(float(self._edit_grid_step()), 1e-9)
+    except Exception:
+        try:
+            txt = str(getattr(self, 'edit_grid_combo', None).currentText()).replace('"','').strip()
+            return max(float(txt), 1e-9)
+        except Exception:
+            return 0.1
+
+
+def _lh55_snap(self, v):
+    try:
+        return float(self._snap_to_edit_grid(float(v), _lh55_step(self)))
+    except Exception:
+        st = _lh55_step(self)
+        try: return round(float(v) / st) * st
+        except Exception: return float(v)
+
+
+def _lh55_selected_real_items(self):
+    out = []
+    for it in list(getattr(self, 'scene', None).selectedItems() if getattr(self, 'scene', None) else []):
+        try:
+            k = it.data(0)
+            if k in ('SELECTION_HANDLE', 'HIGHLIGHT', 'BODY_GRAPHIC'):
+                continue
+            out.append(it)
+        except Exception:
+            pass
+    return out
+
+
+def _lh55_is_user_graphic(self, gr):
+    try:
+        role = str(getattr(gr, 'graphic_role', '') or '').lower()
+        return (not bool(getattr(gr, 'locked_to_body', False))) and role not in ('body','template_body','imported_body')
+    except Exception:
+        return False
+
+
+def _lh55_graphic_group_id(gr):
+    try:
+        gid = getattr(gr, 'group_id', '') or ''
+    except Exception:
+        gid = ''
+    if not gid:
+        try:
+            role = str(getattr(gr, 'graphic_role', '') or '')
+            if role.startswith('user_graphic_group:'):
+                gid = role.split(':', 1)[1]
+        except Exception:
+            pass
+    return str(gid or '')
+
+
+def _lh55_set_graphic_group_id(gr, gid):
+    try: setattr(gr, 'group_id', str(gid or ''))
+    except Exception: pass
+    try:
+        gr.graphic_role = ('user_graphic_group:' + str(gid)) if gid else 'user_graphic'
+    except Exception: pass
+
+
+def _lh55_graphic_models_from_selection(self):
+    selected = []
+    gids = set()
+    for it in _lh55_selected_real_items(self):
+        try:
+            if it.data(0) == 'GRAPHIC' and getattr(it, 'model', None) is not None and _lh55_is_user_graphic(self, it.model):
+                selected.append(it.model)
+                gid = _lh55_graphic_group_id(it.model)
+                if gid:
+                    gids.add(gid)
+        except Exception:
+            pass
+    if not selected:
+        return []
+    models = []
+    for gr in list(getattr(getattr(self, 'current_unit', None), 'graphics', []) or []):
+        try:
+            if not _lh55_is_user_graphic(self, gr):
+                continue
+            if gr in selected or (_lh55_graphic_group_id(gr) and _lh55_graphic_group_id(gr) in gids):
+                if gr not in models:
+                    models.append(gr)
+        except Exception:
+            pass
+    return models
+
+
+def _lh55_graphic_endpoints(gr):
+    x = float(getattr(gr, 'x', 0.0) or 0.0)
+    y = float(getattr(gr, 'y', 0.0) or 0.0)
+    w = float(getattr(gr, 'w', 0.0) or 0.0)
+    h = float(getattr(gr, 'h', 0.0) or 0.0)
+    return x, y, x + w, y - h
+
+
+def _lh55_model_points(gr):
+    x1, y1, x2, y2 = _lh55_graphic_endpoints(gr)
+    shape = str(getattr(gr, 'shape', '') or '').lower()
+    pts = [(x1, y1), (x2, y2)]
+    if shape not in ('line','arc'):
+        pts += [(x1, y2), (x2, y1)]
+    try:
+        if getattr(gr, 'ctrl_x', None) is not None and getattr(gr, 'ctrl_y', None) is not None:
+            pts.append((x1 + float(gr.ctrl_x), y1 - float(gr.ctrl_y)))
+    except Exception:
+        pass
+    return pts
+
+
+def _lh55_graphics_bounds(graphics):
+    pts = []
+    for gr in graphics:
+        pts.extend(_lh55_model_points(gr))
+    if not pts:
+        return None
+    xs = [p[0] for p in pts]; ys = [p[1] for p in pts]
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def _lh55_scale_point(self, px, py, cx, cy, factor):
+    return _lh55_snap(self, cx + (float(px) - cx) * factor), _lh55_snap(self, cy + (float(py) - cy) * factor)
+
+
+def _lh55_scale_graphics_by_grid_step(self, direction):
+    graphics = _lh55_graphic_models_from_selection(self)
+    if not graphics:
+        return False
+    b = _lh55_graphics_bounds(graphics)
+    if not b:
+        return False
+    minx, miny, maxx, maxy = b
+    st = _lh55_step(self)
+    cur_w = abs(maxx - minx)
+    cur_h = abs(maxy - miny)
+    dominant = max(cur_w, cur_h, st)
+    new_dom = max(st, dominant + (st if int(direction) > 0 else -st))
+    factor = new_dom / dominant if dominant > 1e-12 else 1.0
+    if abs(factor - 1.0) < 1e-12:
+        return False
+    cx, cy = (minx + maxx) / 2.0, (miny + maxy) / 2.0
+    try: self.push_undo_state()
+    except Exception: pass
+    for gr in graphics:
+        x1, y1, x2, y2 = _lh55_graphic_endpoints(gr)
+        nx1, ny1 = _lh55_scale_point(self, x1, y1, cx, cy, factor)
+        nx2, ny2 = _lh55_scale_point(self, x2, y2, cx, cy, factor)
+        # Prevent collapse after snapping.  Preserve direction signs as far as possible.
+        if abs(x2 - x1) > 1e-12 and abs(nx2 - nx1) < st:
+            sgn = 1.0 if (x2 - x1) >= 0 else -1.0
+            nx1 = _lh55_snap(self, (nx1 + nx2) / 2.0 - sgn * st / 2.0)
+            nx2 = _lh55_snap(self, (nx1 + nx2) / 2.0 + sgn * st / 2.0)
+        if abs(y2 - y1) > 1e-12 and abs(ny2 - ny1) < st:
+            sgn = 1.0 if (y2 - y1) >= 0 else -1.0
+            ny1 = _lh55_snap(self, (ny1 + ny2) / 2.0 - sgn * st / 2.0)
+            ny2 = _lh55_snap(self, (ny1 + ny2) / 2.0 + sgn * st / 2.0)
+        # Control point is absolute during transformation, then stored relative
+        # to the new start point using the model's y-down h/ctrl_y convention.
+        cabs = None
+        try:
+            if getattr(gr, 'ctrl_x', None) is not None and getattr(gr, 'ctrl_y', None) is not None:
+                cabs = (x1 + float(gr.ctrl_x), y1 - float(gr.ctrl_y))
+        except Exception:
+            cabs = None
+        gr.x = nx1
+        gr.y = ny1
+        gr.w = nx2 - nx1
+        gr.h = ny1 - ny2
+        if cabs is not None:
+            ncx, ncy = _lh55_scale_point(self, cabs[0], cabs[1], cx, cy, factor)
+            try:
+                gr.ctrl_x = ncx - nx1
+                gr.ctrl_y = ny1 - ncy
+            except Exception:
+                pass
+        try:
+            if getattr(gr, 'curve_radius', None) not in (None, 0, 0.0):
+                gr.curve_radius = float(gr.curve_radius) * factor
+        except Exception:
+            pass
+    try:
+        self.dirty = True
+        self.update_current_unit_canvas_positions()
+    except Exception:
+        try: self.schedule_scene_refresh()
+        except Exception: pass
+    try: self.refresh_properties()
+    except Exception: pass
+    try: self.view.viewport().update()
+    except Exception: pass
+    return True
+
+
+def _lh55_scale_selected_grid(self, direction:int):
+    try:
+        if self._selected_body_active():
+            return _lh55_prev_scale_selected_grid(self, direction) if _lh55_prev_scale_selected_grid else None
+    except Exception:
+        pass
+    sig = _lh46_selected_signature(self) if '_lh46_selected_signature' in globals() else []
+    fs = _lh47_selection_filter_state(self) if '_lh47_selection_filter_state' in globals() else None
+    try:
+        if _lh55_scale_graphics_by_grid_step(self, direction):
+            return None
+        if _lh55_prev_scale_selected_grid is not None:
+            return _lh55_prev_scale_selected_grid(self, direction)
+    finally:
+        try: _lh47_restore_selection_after_action(self, sig=sig, filter_state=fs, force_body=False, refresh=False)
+        except Exception: pass
+
+
+def _lh55_scale_selected(self, factor):
+    # Keep direct/legacy callers safe: convert relative factor to one grid step
+    # direction for GRAPHIC selections. BODY path remains untouched.
+    try:
+        if self._selected_body_active():
+            return _lh55_prev_scale_selected(self, factor) if _lh55_prev_scale_selected else None
+    except Exception:
+        pass
+    return _lh55_scale_selected_grid(self, 1 if float(factor) >= 1.0 else -1)
+
+
+def _lh55_group_selected_graphics(self):
+    models = []
+    for it in _lh55_selected_real_items(self):
+        try:
+            if it.data(0) == 'GRAPHIC' and getattr(it, 'model', None) is not None and _lh55_is_user_graphic(self, it.model):
+                if it.model not in models:
+                    models.append(it.model)
+        except Exception:
+            pass
+    if len(models) < 2:
+        try: self.statusBar().showMessage('Bitte mindestens zwei Grafikobjekte zum Gruppieren auswählen.', 3500)
+        except Exception: pass
+        return
+    try: self.push_undo_state()
+    except Exception: pass
+    import uuid as _lh55_uuid
+    gid = 'G' + _lh55_uuid.uuid4().hex[:8]
+    for gr in models:
+        _lh55_set_graphic_group_id(gr, gid)
+    try: self.dirty = True; self.refresh_properties(); self.rebuild_tree()
+    except Exception: pass
+    try: self.statusBar().showMessage(f'Grafikgruppe erstellt ({len(models)} Objekte).', 3500)
+    except Exception: pass
+
+
+def _lh55_ungroup_selected_graphics(self):
+    models = _lh55_graphic_models_from_selection(self)
+    if not models:
+        return
+    try: self.push_undo_state()
+    except Exception: pass
+    for gr in models:
+        _lh55_set_graphic_group_id(gr, '')
+    try: self.dirty = True; self.refresh_properties(); self.rebuild_tree()
+    except Exception: pass
+    try: self.statusBar().showMessage('Grafikgruppe aufgehoben.', 3500)
+    except Exception: pass
+
+try:
+    for _cls in (MainWindow, TemplateEditorDialog):
+        _cls.scale_selected = _lh55_scale_selected
+        _cls.scale_selected_grid = _lh55_scale_selected_grid
+    MainWindow.group_selected_graphics = _lh55_group_selected_graphics
+    MainWindow.ungroup_selected_graphics = _lh55_ungroup_selected_graphics
+except Exception:
+    pass
+
+# Add Group/Ungroup buttons to the Transform toolbar without touching the
+# existing toolbar construction semantics.
+try:
+    _lh55_prev_toolbar = MainWindow._toolbar
+    def _lh55_toolbar(self):
+        _lh55_prev_toolbar(self)
+        try:
+            tb = self.addToolBar('Graphic Group')
+            b = QPushButton('Group Graphics'); b.clicked.connect(self.group_selected_graphics); tb.addWidget(b)
+            b = QPushButton('Ungroup'); b.clicked.connect(self.ungroup_selected_graphics); tb.addWidget(b)
+        except Exception:
+            pass
+    MainWindow._toolbar = _lh55_toolbar
+except Exception:
+    pass
+
+
+# ---------------------------------------------------------------------------
+# Liebherr v56: corrected GRAPHIC scale/group behavior.
+# ---------------------------------------------------------------------------
+# Fixes after v55:
+# - Scale + on a 3x3 graphic rectangle becomes 4x4 at the same center.
+# - Scale - is proportional, grid-snapped, and never collapses below one edit-grid.
+# - Graphic groups are accessible from Edit menu and shortcuts in addition to the
+#   toolbar, and group ids are persisted on GraphicModel.group_id.
+# - Selecting one member of a group makes Scale/Move operate on the complete group.
+
+try:
+    _lh56_prev_scale_selected_grid = MainWindow.scale_selected_grid
+    _lh56_prev_scale_selected = MainWindow.scale_selected
+except Exception:
+    _lh56_prev_scale_selected_grid = None
+    _lh56_prev_scale_selected = None
+
+
+def _lh56_step(self):
+    try:
+        return max(float(self._edit_grid_step()), 1e-9)
+    except Exception:
+        return 0.1
+
+
+def _lh56_increment(self):
+    # The UI properties are expressed in grid units. For toolbar Scale +/- the
+    # expected interaction is one grid unit per click (3x3 -> 4x4), while the
+    # resulting coordinates are still snapped to the active edit grid.
+    try:
+        return max(1.0, _lh56_step(self))
+    except Exception:
+        return 1.0
+
+
+def _lh56_snap(self, v):
+    st = _lh56_step(self)
+    try:
+        return float(self._snap_to_edit_grid(float(v), st))
+    except Exception:
+        try:
+            return round(float(v) / st) * st
+        except Exception:
+            return float(v)
+
+
+def _lh56_selected_real_items(self):
+    items = []
+    try:
+        raw = list(self.scene.selectedItems())
+    except Exception:
+        raw = []
+    for it in raw:
+        try:
+            if it.data(0) in ('SELECTION_HANDLE', 'HIGHLIGHT', 'BODY_GRAPHIC'):
+                continue
+            items.append(it)
+        except Exception:
+            pass
+    return items
+
+
+def _lh56_is_user_graphic(gr):
+    try:
+        role = str(getattr(gr, 'graphic_role', '') or '').lower()
+        return (not bool(getattr(gr, 'locked_to_body', False))) and role not in ('body','template_body','imported_body')
+    except Exception:
+        return False
+
+
+def _lh56_gid(gr):
+    try:
+        gid = str(getattr(gr, 'group_id', '') or '')
+        if gid:
+            return gid
+        role = str(getattr(gr, 'graphic_role', '') or '')
+        if role.startswith('user_graphic_group:'):
+            return role.split(':', 1)[1]
+    except Exception:
+        pass
+    return ''
+
+
+def _lh56_set_gid(gr, gid):
+    gid = str(gid or '')
+    try:
+        gr.group_id = gid
+    except Exception:
+        pass
+    try:
+        gr.graphic_role = ('user_graphic_group:' + gid) if gid else 'user_graphic'
+    except Exception:
+        pass
+
+
+def _lh56_selected_graphic_models(self, expand_groups=True):
+    selected = []
+    gids = set()
+    for it in _lh56_selected_real_items(self):
+        try:
+            if it.data(0) == 'GRAPHIC' and getattr(it, 'model', None) is not None and _lh56_is_user_graphic(it.model):
+                selected.append(it.model)
+                gid = _lh56_gid(it.model)
+                if gid:
+                    gids.add(gid)
+        except Exception:
+            pass
+    if not selected:
+        return []
+    if not expand_groups:
+        return selected
+    out = []
+    try:
+        graphics = list(getattr(self.current_unit, 'graphics', []) or [])
+    except Exception:
+        graphics = []
+    for gr in graphics:
+        try:
+            if not _lh56_is_user_graphic(gr):
+                continue
+            if gr in selected or (_lh56_gid(gr) and _lh56_gid(gr) in gids):
+                if gr not in out:
+                    out.append(gr)
+        except Exception:
+            pass
+    return out
+
+
+def _lh56_points(gr):
+    x = float(getattr(gr, 'x', 0.0) or 0.0)
+    y = float(getattr(gr, 'y', 0.0) or 0.0)
+    w = float(getattr(gr, 'w', 0.0) or 0.0)
+    h = float(getattr(gr, 'h', 0.0) or 0.0)
+    x2 = x + w
+    y2 = y - h
+    pts = [(x, y), (x2, y2)]
+    if str(getattr(gr, 'shape', '') or '').lower() not in ('line', 'arc'):
+        pts.extend([(x, y2), (x2, y)])
+    try:
+        if getattr(gr, 'ctrl_x', None) is not None and getattr(gr, 'ctrl_y', None) is not None:
+            pts.append((x + float(gr.ctrl_x), y - float(gr.ctrl_y)))
+    except Exception:
+        pass
+    return pts
+
+
+def _lh56_bounds(graphics):
+    pts = []
+    for gr in graphics:
+        pts.extend(_lh56_points(gr))
+    if not pts:
+        return None
+    xs = [p[0] for p in pts]
+    ys = [p[1] for p in pts]
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def _lh56_scale_point(self, px, py, cx, cy, factor):
+    return _lh56_snap(self, cx + (float(px) - cx) * factor), _lh56_snap(self, cy + (float(py) - cy) * factor)
+
+
+def _lh56_apply_graphic_scale(self, direction:int):
+    graphics = _lh56_selected_graphic_models(self, expand_groups=True)
+    if not graphics:
+        return False
+    b = _lh56_bounds(graphics)
+    if not b:
+        return False
+    minx, miny, maxx, maxy = b
+    cur_w = abs(maxx - minx)
+    cur_h = abs(maxy - miny)
+    dominant = max(cur_w, cur_h, _lh56_step(self))
+    inc = _lh56_increment(self)
+    new_dom = max(_lh56_step(self), dominant + (inc if int(direction) > 0 else -inc))
+    factor = new_dom / dominant if dominant > 1e-12 else 1.0
+    if abs(factor - 1.0) < 1e-12:
+        return False
+    cx, cy = (minx + maxx) / 2.0, (miny + maxy) / 2.0
+    try:
+        self.push_undo_state()
+    except Exception:
+        pass
+    min_dim = _lh56_step(self)
+    for gr in graphics:
+        x = float(getattr(gr, 'x', 0.0) or 0.0)
+        y = float(getattr(gr, 'y', 0.0) or 0.0)
+        w = float(getattr(gr, 'w', 0.0) or 0.0)
+        h = float(getattr(gr, 'h', 0.0) or 0.0)
+        x2, y2 = x + w, y - h
+        ctrl_abs = None
+        try:
+            if getattr(gr, 'ctrl_x', None) is not None and getattr(gr, 'ctrl_y', None) is not None:
+                ctrl_abs = (x + float(gr.ctrl_x), y - float(gr.ctrl_y))
+        except Exception:
+            ctrl_abs = None
+        nx1, ny1 = _lh56_scale_point(self, x, y, cx, cy, factor)
+        nx2, ny2 = _lh56_scale_point(self, x2, y2, cx, cy, factor)
+        nw = nx2 - nx1
+        nh = ny1 - ny2
+        # Keep every non-zero axis at least one edit-grid step. This is what
+        # prevents Width from becoming 0/0.5 unexpectedly after snapping.
+        if abs(w) > 1e-12 and abs(nw) < min_dim:
+            sgn = 1.0 if w >= 0 else -1.0
+            gcx = (nx1 + nx2) / 2.0
+            nx1 = _lh56_snap(self, gcx - sgn * min_dim / 2.0)
+            nx2 = _lh56_snap(self, gcx + sgn * min_dim / 2.0)
+            nw = nx2 - nx1
+        if abs(h) > 1e-12 and abs(nh) < min_dim:
+            sgn = 1.0 if h >= 0 else -1.0
+            gcy = (ny1 + ny2) / 2.0
+            ny1 = _lh56_snap(self, gcy + sgn * min_dim / 2.0)
+            ny2 = _lh56_snap(self, gcy - sgn * min_dim / 2.0)
+            nh = ny1 - ny2
+        gr.x, gr.y, gr.w, gr.h = nx1, ny1, nw, nh
+        if ctrl_abs is not None:
+            ncx, ncy = _lh56_scale_point(self, ctrl_abs[0], ctrl_abs[1], cx, cy, factor)
+            try:
+                gr.ctrl_x = ncx - nx1
+                gr.ctrl_y = ny1 - ncy
+            except Exception:
+                pass
+        try:
+            if getattr(gr, 'curve_radius', None) not in (None, 0, 0.0):
+                gr.curve_radius = float(gr.curve_radius) * factor
+        except Exception:
+            pass
+    try:
+        self.dirty = True
+        self.update_current_unit_canvas_positions()
+    except Exception:
+        try:
+            self.schedule_scene_refresh()
+        except Exception:
+            pass
+    try:
+        self.refresh_properties()
+    except Exception:
+        pass
+    try:
+        self.rebuild_tree()
+    except Exception:
+        pass
+    try:
+        self.view.viewport().update()
+    except Exception:
+        pass
+    return True
+
+
+def _lh56_scale_selected_grid(self, direction:int):
+    try:
+        if self._selected_body_active():
+            return _lh56_prev_scale_selected_grid(self, direction) if _lh56_prev_scale_selected_grid else None
+    except Exception:
+        pass
+    sig = _lh46_selected_signature(self) if '_lh46_selected_signature' in globals() else []
+    fs = _lh47_selection_filter_state(self) if '_lh47_selection_filter_state' in globals() else None
+    try:
+        if _lh56_apply_graphic_scale(self, int(direction)):
+            return None
+        if _lh56_prev_scale_selected_grid:
+            return _lh56_prev_scale_selected_grid(self, direction)
+    finally:
+        try:
+            _lh47_restore_selection_after_action(self, sig=sig, filter_state=fs, force_body=False, refresh=False)
+        except Exception:
+            pass
+
+
+def _lh56_scale_selected(self, factor):
+    try:
+        if self._selected_body_active():
+            return _lh56_prev_scale_selected(self, factor) if _lh56_prev_scale_selected else None
+    except Exception:
+        pass
+    try:
+        return _lh56_scale_selected_grid(self, 1 if float(factor) >= 1.0 else -1)
+    except Exception:
+        return _lh56_scale_selected_grid(self, 1)
+
+
+def _lh56_group_selected_graphics(self):
+    models = _lh56_selected_graphic_models(self, expand_groups=False)
+    if len(models) < 2:
+        try:
+            self.statusBar().showMessage('Mindestens zwei Grafikobjekte auswählen, dann Edit > Group Graphics.', 4000)
+        except Exception:
+            pass
+        return
+    try:
+        self.push_undo_state()
+    except Exception:
+        pass
+    import uuid as _lh56_uuid
+    gid = 'G' + _lh56_uuid.uuid4().hex[:8]
+    for gr in models:
+        _lh56_set_gid(gr, gid)
+    try:
+        self.dirty = True
+        self.rebuild_tree()
+        self.refresh_properties()
+        self.update_current_unit_canvas_positions()
+    except Exception:
+        pass
+    try:
+        self.statusBar().showMessage(f'Grafikgruppe erstellt: {len(models)} Objekte.', 3500)
+    except Exception:
+        pass
+
+
+def _lh56_ungroup_selected_graphics(self):
+    models = _lh56_selected_graphic_models(self, expand_groups=True)
+    if not models:
+        return
+    try:
+        self.push_undo_state()
+    except Exception:
+        pass
+    for gr in models:
+        _lh56_set_gid(gr, '')
+    try:
+        self.dirty = True
+        self.rebuild_tree()
+        self.refresh_properties()
+        self.update_current_unit_canvas_positions()
+    except Exception:
+        pass
+    try:
+        self.statusBar().showMessage('Grafikgruppe aufgehoben.', 3500)
+    except Exception:
+        pass
+
+
+def _lh56_add_group_actions(self):
+    try:
+        if getattr(self, '_lh56_group_actions_added', False):
+            return
+        self._lh56_group_actions_added = True
+        # Menu bar action is deliberately used, because a hidden/overflowed
+        # toolbar button is easy to miss on small screens.
+        edit_menu = None
+        try:
+            for act in self.menuBar().actions():
+                if str(act.text()).replace('&','').lower() == 'edit':
+                    edit_menu = act.menu(); break
+        except Exception:
+            edit_menu = None
+        if edit_menu is None:
+            edit_menu = self.menuBar().addMenu('&Edit')
+        edit_menu.addSeparator()
+        a = QAction('Group Graphics', self)
+        a.setShortcut(QKeySequence('Ctrl+G'))
+        a.triggered.connect(self.group_selected_graphics)
+        edit_menu.addAction(a)
+        self.addAction(a)
+        a = QAction('Ungroup Graphics', self)
+        a.setShortcut(QKeySequence('Ctrl+Shift+G'))
+        a.triggered.connect(self.ungroup_selected_graphics)
+        edit_menu.addAction(a)
+        self.addAction(a)
+    except Exception:
+        pass
+
+
+try:
+    for _cls in (MainWindow, TemplateEditorDialog):
+        _cls.scale_selected = _lh56_scale_selected
+        _cls.scale_selected_grid = _lh56_scale_selected_grid
+        _cls.group_selected_graphics = _lh56_group_selected_graphics
+        _cls.ungroup_selected_graphics = _lh56_ungroup_selected_graphics
+    _lh56_prev_menus = MainWindow._menus
+    def _lh56_menus(self):
+        _lh56_prev_menus(self)
+        _lh56_add_group_actions(self)
+    MainWindow._menus = _lh56_menus
+except Exception:
+    pass
+
+# ---------------------------------------------------------------------------
+# Liebherr v57: definitive user-graphic scaling and visible grouping controls.
+# ---------------------------------------------------------------------------
+# This patch intentionally sits at the very end of the module so it wins over
+# older v53/v55/v56 compatibility patches above.
+
+def _lh57_grid_step(self):
+    try:
+        return max(float(self._edit_grid_step()), 1e-9)
+    except Exception:
+        try:
+            txt = str(self.edit_grid_combo.currentText()).replace('"', '').strip()
+            return max(float(txt), 1e-9)
+        except Exception:
+            return 1.0
+
+
+def _lh57_scale_increment(self):
+    # Toolbar Scale +/- is deliberately a visible grid-size operation.  A 3x3
+    # rectangle becomes 4x4, not 3.05x3.05 on small edit-grid settings.
+    return max(1.0, _lh57_grid_step(self))
+
+
+def _lh57_snap(self, v):
+    st = _lh57_grid_step(self)
+    try:
+        return float(self._snap_to_edit_grid(float(v), st))
+    except Exception:
+        return round(float(v) / st) * st
+
+
+def _lh57_gid(gr):
+    try:
+        gid = str(getattr(gr, 'group_id', '') or '')
+        if gid:
+            return gid
+        role = str(getattr(gr, 'graphic_role', '') or '')
+        if role.startswith('user_graphic_group:'):
+            return role.split(':', 1)[1]
+    except Exception:
+        pass
+    return ''
+
+
+def _lh57_set_gid(gr, gid):
+    gid = str(gid or '')
+    try:
+        gr.group_id = gid
+    except Exception:
+        pass
+    try:
+        gr.graphic_role = ('user_graphic_group:' + gid) if gid else 'user_graphic'
+    except Exception:
+        pass
+
+
+def _lh57_is_user_graphic(gr):
+    try:
+        role = str(getattr(gr, 'graphic_role', '') or '').lower()
+        return (not bool(getattr(gr, 'locked_to_body', False))) and role not in ('body', 'template_body', 'imported_body', 'body_graphic')
+    except Exception:
+        return False
+
+
+def _lh57_selected_graphics(self, expand_groups=True):
+    selected = []
+    gids = set()
+    try:
+        items = list(self.scene.selectedItems()) if getattr(self, 'scene', None) else []
+    except Exception:
+        items = []
+    for it in items:
+        try:
+            if it.data(0) != 'GRAPHIC':
+                continue
+            gr = getattr(it, 'model', None)
+            if gr is None or not _lh57_is_user_graphic(gr):
+                continue
+            if gr not in selected:
+                selected.append(gr)
+            gid = _lh57_gid(gr)
+            if gid:
+                gids.add(gid)
+        except Exception:
+            pass
+    if not selected:
+        return []
+    if not expand_groups:
+        return selected
+    out = []
+    try:
+        all_graphics = list(getattr(getattr(self, 'current_unit', None), 'graphics', []) or [])
+    except Exception:
+        all_graphics = []
+    for gr in all_graphics:
+        try:
+            if not _lh57_is_user_graphic(gr):
+                continue
+            gid = _lh57_gid(gr)
+            if gr in selected or (gid and gid in gids):
+                if gr not in out:
+                    out.append(gr)
+        except Exception:
+            pass
+    return out
+
+
+def _lh57_graphic_bbox(gr):
+    x = float(getattr(gr, 'x', 0.0) or 0.0)
+    y = float(getattr(gr, 'y', 0.0) or 0.0)
+    w = float(getattr(gr, 'w', 0.0) or 0.0)
+    h = float(getattr(gr, 'h', 0.0) or 0.0)
+    x2 = x + w
+    y2 = y - h
+    return min(x, x2), min(y, y2), max(x, x2), max(y, y2)
+
+
+def _lh57_group_bbox(graphics):
+    boxes = [_lh57_graphic_bbox(g) for g in graphics]
+    if not boxes:
+        return None
+    return min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes)
+
+
+def _lh57_apply_graphics_scale(self, direction):
+    graphics = _lh57_selected_graphics(self, expand_groups=True)
+    if not graphics:
+        return False
+    bbox = _lh57_group_bbox(graphics)
+    if not bbox:
+        return False
+    minx, miny, maxx, maxy = bbox
+    cur_w = maxx - minx
+    cur_h = maxy - miny
+    inc = _lh57_scale_increment(self)
+    min_size = _lh57_grid_step(self)
+    dominant = max(abs(cur_w), abs(cur_h), min_size)
+    new_dominant = dominant + (inc if int(direction) > 0 else -inc)
+    new_dominant = max(min_size, new_dominant)
+    factor = new_dominant / dominant if dominant > 1e-12 else 1.0
+    if abs(factor - 1.0) < 1e-12:
+        return True
+
+    cx = (minx + maxx) / 2.0
+    cy = (miny + maxy) / 2.0
+    try:
+        self.push_undo_state()
+    except Exception:
+        pass
+
+    for gr in graphics:
+        x = float(getattr(gr, 'x', 0.0) or 0.0)
+        y = float(getattr(gr, 'y', 0.0) or 0.0)
+        w = float(getattr(gr, 'w', 0.0) or 0.0)
+        h = float(getattr(gr, 'h', 0.0) or 0.0)
+
+        # Object center in model coordinates.  For graphics, h grows downward on
+        # screen, therefore center-y is y - h/2.
+        gcx = x + w / 2.0
+        gcy = y - h / 2.0
+        ngcx = _lh57_snap(self, cx + (gcx - cx) * factor)
+        ngcy = _lh57_snap(self, cy + (gcy - cy) * factor)
+
+        shape = str(getattr(gr, 'shape', '') or '').lower()
+        if shape in ('line', 'arc'):
+            nw = _lh57_snap(self, w * factor)
+            nh = _lh57_snap(self, h * factor)
+            # A purely vertical/horizontal line may legitimately have one zero
+            # axis.  Only keep the non-zero/originally dominant axis alive.
+            if abs(w) > 1e-12 and abs(nw) < min_size:
+                nw = min_size if w >= 0 else -min_size
+            if abs(h) > 1e-12 and abs(nh) < min_size:
+                nh = min_size if h >= 0 else -min_size
+            gr.x = _lh57_snap(self, ngcx - nw / 2.0)
+            gr.y = _lh57_snap(self, ngcy + nh / 2.0)
+            gr.w = nw
+            gr.h = nh
+            try:
+                if getattr(gr, 'ctrl_x', None) is not None:
+                    gr.ctrl_x = _lh57_snap(self, float(gr.ctrl_x) * factor)
+                if getattr(gr, 'ctrl_y', None) is not None:
+                    gr.ctrl_y = _lh57_snap(self, float(gr.ctrl_y) * factor)
+                if getattr(gr, 'curve_radius', None) not in (None, 0, 0.0):
+                    gr.curve_radius = _lh57_snap(self, float(gr.curve_radius) * factor)
+            except Exception:
+                pass
+        else:
+            sign_w = -1.0 if w < 0 else 1.0
+            sign_h = -1.0 if h < 0 else 1.0
+            nw_abs = max(min_size, abs(w) * factor)
+            nh_abs = max(min_size, abs(h) * factor)
+            nw = sign_w * _lh57_snap(self, nw_abs)
+            nh = sign_h * _lh57_snap(self, nh_abs)
+            # Snap can round small values down; enforce once more.
+            if abs(nw) < min_size:
+                nw = sign_w * min_size
+            if abs(nh) < min_size:
+                nh = sign_h * min_size
+            gr.w = nw
+            gr.h = nh
+            gr.x = _lh57_snap(self, ngcx - nw / 2.0)
+            gr.y = _lh57_snap(self, ngcy + nh / 2.0)
+
+    try:
+        self.dirty = True
+    except Exception:
+        pass
+    try:
+        self.update_current_unit_canvas_positions()
+    except Exception:
+        try:
+            self.schedule_scene_refresh()
+        except Exception:
+            pass
+    try:
+        self.refresh_properties()
+    except Exception:
+        pass
+    try:
+        self.rebuild_tree()
+    except Exception:
+        pass
+    try:
+        self.view.viewport().update()
+    except Exception:
+        pass
+    return True
+
+
+def _lh57_group_selected_graphics(self):
+    models = _lh57_selected_graphics(self, expand_groups=False)
+    if len(models) < 2:
+        try:
+            QMessageBox.information(self, 'Group Graphics', 'Bitte mindestens zwei Grafikobjekte auswählen.')
+        except Exception:
+            pass
+        return
+    try:
+        self.push_undo_state()
+    except Exception:
+        pass
+    import uuid as _lh57_uuid
+    gid = 'G' + _lh57_uuid.uuid4().hex[:8]
+    for gr in models:
+        _lh57_set_gid(gr, gid)
+    try:
+        self.dirty = True
+        self.rebuild_tree()
+        self.refresh_properties()
+        self.update_current_unit_canvas_positions()
+        self.statusBar().showMessage(f'Grafikgruppe erstellt: {len(models)} Objekte.', 4000)
+    except Exception:
+        pass
+
+
+def _lh57_ungroup_selected_graphics(self):
+    models = _lh57_selected_graphics(self, expand_groups=True)
+    if not models:
+        try:
+            QMessageBox.information(self, 'Ungroup Graphics', 'Keine Grafikgruppe ausgewählt.')
+        except Exception:
+            pass
+        return
+    try:
+        self.push_undo_state()
+    except Exception:
+        pass
+    for gr in models:
+        _lh57_set_gid(gr, '')
+    try:
+        self.dirty = True
+        self.rebuild_tree()
+        self.refresh_properties()
+        self.update_current_unit_canvas_positions()
+        self.statusBar().showMessage('Grafikgruppe aufgehoben.', 4000)
+    except Exception:
+        pass
+
+
+def _lh57_install_group_ui(self):
+    if getattr(self, '_lh57_group_ui_installed', False):
+        return
+    self._lh57_group_ui_installed = True
+    try:
+        edit_menu = None
+        for act in self.menuBar().actions():
+            if str(act.text()).replace('&', '').lower() == 'edit':
+                edit_menu = act.menu()
+                break
+        if edit_menu is None:
+            edit_menu = self.menuBar().addMenu('&Edit')
+        edit_menu.addSeparator()
+        a_group = QAction('Group Graphics', self)
+        a_group.setShortcut(QKeySequence('Ctrl+G'))
+        a_group.triggered.connect(self.group_selected_graphics)
+        edit_menu.addAction(a_group)
+        self.addAction(a_group)
+        a_ungroup = QAction('Ungroup Graphics', self)
+        a_ungroup.setShortcut(QKeySequence('Ctrl+Shift+G'))
+        a_ungroup.triggered.connect(self.ungroup_selected_graphics)
+        edit_menu.addAction(a_ungroup)
+        self.addAction(a_ungroup)
+    except Exception:
+        pass
+    try:
+        tb = self.addToolBar('Graphic Group')
+        btn = QPushButton('Group Graphics')
+        btn.setToolTip('Ausgewählte Grafikobjekte gruppieren (Ctrl+G)')
+        btn.clicked.connect(self.group_selected_graphics)
+        tb.addWidget(btn)
+        btn = QPushButton('Ungroup')
+        btn.setToolTip('Grafikgruppe aufheben (Ctrl+Shift+G)')
+        btn.clicked.connect(self.ungroup_selected_graphics)
+        tb.addWidget(btn)
+    except Exception:
+        pass
+
+
+try:
+    _lh57_prev_scale_selected_grid = MainWindow.scale_selected_grid
+    _lh57_prev_scale_selected = MainWindow.scale_selected
+except Exception:
+    _lh57_prev_scale_selected_grid = None
+    _lh57_prev_scale_selected = None
+
+
+def _lh57_scale_selected_grid(self, direction:int):
+    try:
+        if self._selected_body_active():
+            return _lh57_prev_scale_selected_grid(self, direction) if _lh57_prev_scale_selected_grid else None
+    except Exception:
+        pass
+    if _lh57_apply_graphics_scale(self, int(direction)):
+        return None
+    if _lh57_prev_scale_selected_grid:
+        return _lh57_prev_scale_selected_grid(self, direction)
+
+
+def _lh57_scale_selected(self, factor):
+    try:
+        if self._selected_body_active():
+            return _lh57_prev_scale_selected(self, factor) if _lh57_prev_scale_selected else None
+    except Exception:
+        pass
+    direction = 1
+    try:
+        direction = 1 if float(factor) >= 1.0 else -1
+    except Exception:
+        direction = 1
+    return _lh57_scale_selected_grid(self, direction)
+
+
+try:
+    for _cls in (MainWindow, TemplateEditorDialog):
+        _cls.scale_selected_grid = _lh57_scale_selected_grid
+        _cls.scale_selected = _lh57_scale_selected
+        _cls.group_selected_graphics = _lh57_group_selected_graphics
+        _cls.ungroup_selected_graphics = _lh57_ungroup_selected_graphics
+        _old_init = _cls.__init__
+        def _new_init(self, *args, __old_init=_old_init, **kwargs):
+            __old_init(self, *args, **kwargs)
+            try:
+                _lh57_install_group_ui(self)
+            except Exception:
+                pass
+        _cls.__init__ = _new_init
+except Exception:
+    pass
+
+# ---------------------------------------------------------------------------
+# Liebherr v58: BODY-identical graphic/group scaling around own origin.
+# ---------------------------------------------------------------------------
+# User rule:
+# - Single GRAPHIC scales like BODY, but around the graphic's own origin/center.
+# - A graphic group is one logical object. Its origin is the center of the
+#   maximum x/y bounding box of all group members.
+# - Scale +/- changes the logical object's width and height by one visible grid
+#   unit, snapped to Edit grid, with minimum one Edit-grid step.
+# - Selection highlight for a group is a single bounding rectangle.
+
+try:
+    _lh58_prev_scale_selected_grid = MainWindow.scale_selected_grid
+    _lh58_prev_scale_selected = MainWindow.scale_selected
+except Exception:
+    _lh58_prev_scale_selected_grid = None
+    _lh58_prev_scale_selected = None
+
+
+def _lh58_grid_step(self):
+    try:
+        return max(float(self._edit_grid_step()), 1e-9)
+    except Exception:
+        return 0.05
+
+
+def _lh58_visible_increment(self):
+    # BODY toolbar scaling in this tool is a visible grid-size operation. Keep
+    # the same interaction for graphics: 3x3 -> 4x4 while still snapping to the
+    # active Edit grid.
+    try:
+        return max(1.0, _lh58_grid_step(self))
+    except Exception:
+        return 1.0
+
+
+def _lh58_snap(self, v):
+    st = _lh58_grid_step(self)
+    try:
+        return float(self._snap_to_edit_grid(float(v), st))
+    except Exception:
+        return round(float(v) / st) * st
+
+
+def _lh58_gid(gr):
+    try:
+        gid = str(getattr(gr, 'group_id', '') or '')
+        if gid:
+            return gid
+        role = str(getattr(gr, 'graphic_role', '') or '')
+        if role.startswith('user_graphic_group:'):
+            return role.split(':', 1)[1]
+    except Exception:
+        pass
+    return ''
+
+
+def _lh58_set_gid(gr, gid):
+    gid = str(gid or '')
+    try:
+        gr.group_id = gid
+    except Exception:
+        pass
+    try:
+        gr.graphic_role = ('user_graphic_group:' + gid) if gid else 'user_graphic'
+    except Exception:
+        pass
+
+
+def _lh58_is_user_graphic(gr):
+    try:
+        role = str(getattr(gr, 'graphic_role', '') or '').lower()
+        return (not bool(getattr(gr, 'locked_to_body', False))) and role not in ('body', 'template_body', 'imported_body', 'body_graphic')
+    except Exception:
+        return False
+
+
+def _lh58_selected_graphics(self, expand_groups=True):
+    selected = []
+    gids = set()
+    try:
+        items = list(self.scene.selectedItems()) if getattr(self, 'scene', None) else []
+    except Exception:
+        items = []
+    for it in items:
+        try:
+            if it.data(0) != 'GRAPHIC':
+                continue
+            gr = getattr(it, 'model', None)
+            if gr is None or not _lh58_is_user_graphic(gr):
+                continue
+            if gr not in selected:
+                selected.append(gr)
+            gid = _lh58_gid(gr)
+            if gid:
+                gids.add(gid)
+        except Exception:
+            pass
+    if not selected:
+        return []
+    if not expand_groups:
+        return selected
+    out = []
+    try:
+        all_graphics = list(getattr(getattr(self, 'current_unit', None), 'graphics', []) or [])
+    except Exception:
+        all_graphics = []
+    for gr in all_graphics:
+        try:
+            if not _lh58_is_user_graphic(gr):
+                continue
+            gid = _lh58_gid(gr)
+            if gr in selected or (gid and gid in gids):
+                if gr not in out:
+                    out.append(gr)
+        except Exception:
+            pass
+    return out
+
+
+def _lh58_bbox(gr):
+    x = float(getattr(gr, 'x', 0.0) or 0.0)
+    y = float(getattr(gr, 'y', 0.0) or 0.0)
+    w = float(getattr(gr, 'w', 0.0) or 0.0)
+    h = float(getattr(gr, 'h', 0.0) or 0.0)
+    x2 = x + w
+    y2 = y - h
+    return min(x, x2), min(y, y2), max(x, x2), max(y, y2)
+
+
+def _lh58_group_bbox(graphics):
+    boxes = [_lh58_bbox(g) for g in graphics]
+    if not boxes:
+        return None
+    return min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes)
+
+
+def _lh58_apply_graphics_scale(self, direction:int):
+    graphics = _lh58_selected_graphics(self, expand_groups=True)
+    if not graphics:
+        return False
+    b = _lh58_group_bbox(graphics)
+    if not b:
+        return False
+    minx, miny, maxx, maxy = b
+    cur_w = max(0.0, maxx - minx)
+    cur_h = max(0.0, maxy - miny)
+    min_size = _lh58_grid_step(self)
+    inc = _lh58_visible_increment(self)
+
+    # BODY-like: width and height are stepped independently, then snapped.  This
+    # guarantees a selected 3x3 rectangle becomes 4x4 and stays centered.
+    target_w = max(min_size, _lh58_snap(self, cur_w + (inc if int(direction) > 0 else -inc)))
+    target_h = max(min_size, _lh58_snap(self, cur_h + (inc if int(direction) > 0 else -inc)))
+    sx = target_w / cur_w if cur_w > 1e-12 else 1.0
+    sy = target_h / cur_h if cur_h > 1e-12 else 1.0
+    if abs(sx - 1.0) < 1e-12 and abs(sy - 1.0) < 1e-12:
+        return True
+
+    cx = (minx + maxx) / 2.0
+    cy = (miny + maxy) / 2.0
+    try:
+        self.push_undo_state()
+    except Exception:
+        pass
+
+    for gr in graphics:
+        x = float(getattr(gr, 'x', 0.0) or 0.0)
+        y = float(getattr(gr, 'y', 0.0) or 0.0)
+        w = float(getattr(gr, 'w', 0.0) or 0.0)
+        h = float(getattr(gr, 'h', 0.0) or 0.0)
+        shape = str(getattr(gr, 'shape', '') or '').lower()
+
+        # Transform the object's own center relative to the selected logical
+        # origin. For one object this origin is its own bbox center; for a group
+        # it is the group's maximum x/y bbox center.
+        gcx = x + w / 2.0
+        gcy = y - h / 2.0
+        ngcx = _lh58_snap(self, cx + (gcx - cx) * sx)
+        ngcy = _lh58_snap(self, cy + (gcy - cy) * sy)
+
+        nw = _lh58_snap(self, w * sx)
+        nh = _lh58_snap(self, h * sy)
+        if shape not in ('line', 'arc'):
+            sw = -1.0 if w < 0 else 1.0
+            sh = -1.0 if h < 0 else 1.0
+            if abs(nw) < min_size:
+                nw = sw * min_size
+            if abs(nh) < min_size:
+                nh = sh * min_size
+        else:
+            # Lines may be exactly vertical or horizontal. Preserve legitimate
+            # zero axes, but never collapse an originally non-zero axis.
+            if abs(w) > 1e-12 and abs(nw) < min_size:
+                nw = (1.0 if w >= 0 else -1.0) * min_size
+            if abs(h) > 1e-12 and abs(nh) < min_size:
+                nh = (1.0 if h >= 0 else -1.0) * min_size
+            try:
+                if getattr(gr, 'ctrl_x', None) is not None:
+                    gr.ctrl_x = _lh58_snap(self, float(gr.ctrl_x) * sx)
+                if getattr(gr, 'ctrl_y', None) is not None:
+                    gr.ctrl_y = _lh58_snap(self, float(gr.ctrl_y) * sy)
+                if getattr(gr, 'curve_radius', None) not in (None, 0, 0.0):
+                    gr.curve_radius = _lh58_snap(self, float(gr.curve_radius) * sy)
+            except Exception:
+                pass
+
+        gr.w = nw
+        gr.h = nh
+        gr.x = _lh58_snap(self, ngcx - nw / 2.0)
+        gr.y = _lh58_snap(self, ngcy + nh / 2.0)
+
+    try:
+        self.dirty = True
+    except Exception:
+        pass
+    try:
+        self.update_current_unit_canvas_positions()
+    except Exception:
+        try:
+            self.schedule_scene_refresh()
+        except Exception:
+            pass
+    try:
+        self.refresh_properties()
+    except Exception:
+        pass
+    try:
+        self.rebuild_tree()
+    except Exception:
+        pass
+    try:
+        self.view.viewport().update()
+    except Exception:
+        pass
+    return True
+
+
+def _lh58_scale_selected_grid(self, direction:int):
+    try:
+        if self._selected_body_active():
+            return _lh58_prev_scale_selected_grid(self, direction) if _lh58_prev_scale_selected_grid else None
+    except Exception:
+        pass
+    if _lh58_apply_graphics_scale(self, int(direction)):
+        return None
+    if _lh58_prev_scale_selected_grid:
+        return _lh58_prev_scale_selected_grid(self, direction)
+
+
+def _lh58_scale_selected(self, factor):
+    try:
+        if self._selected_body_active():
+            return _lh58_prev_scale_selected(self, factor) if _lh58_prev_scale_selected else None
+    except Exception:
+        pass
+    try:
+        direction = 1 if float(factor) >= 1.0 else -1
+    except Exception:
+        direction = 1
+    return _lh58_scale_selected_grid(self, direction)
+
+
+def _lh58_group_selected_graphics(self):
+    models = _lh58_selected_graphics(self, expand_groups=False)
+    if len(models) < 2:
+        try:
+            QMessageBox.information(self, 'Group Graphics', 'Bitte mindestens zwei eingefügte Grafikobjekte auswählen.')
+        except Exception:
+            pass
+        return
+    try:
+        self.push_undo_state()
+    except Exception:
+        pass
+    import uuid as _lh58_uuid
+    gid = 'G' + _lh58_uuid.uuid4().hex[:8]
+    for gr in models:
+        _lh58_set_gid(gr, gid)
+    try:
+        self.dirty = True
+        self.update_current_unit_canvas_positions()
+        self.rebuild_tree()
+        self.refresh_properties()
+        self.statusBar().showMessage(f'Grafikgruppe erstellt: {len(models)} Objekte.', 4000)
+    except Exception:
+        pass
+
+
+def _lh58_ungroup_selected_graphics(self):
+    models = _lh58_selected_graphics(self, expand_groups=True)
+    if not models:
+        try:
+            QMessageBox.information(self, 'Ungroup Graphics', 'Keine Grafikgruppe ausgewählt.')
+        except Exception:
+            pass
+        return
+    try:
+        self.push_undo_state()
+    except Exception:
+        pass
+    for gr in models:
+        _lh58_set_gid(gr, '')
+    try:
+        self.dirty = True
+        self.update_current_unit_canvas_positions()
+        self.rebuild_tree()
+        self.refresh_properties()
+        self.statusBar().showMessage('Grafikgruppe aufgehoben.', 4000)
+    except Exception:
+        pass
+
+
+def _lh58_install_group_ui(self):
+    if getattr(self, '_lh58_group_ui_installed', False):
+        return
+    self._lh58_group_ui_installed = True
+    try:
+        edit_menu = None
+        for act in self.menuBar().actions():
+            if str(act.text()).replace('&', '').lower() == 'edit':
+                edit_menu = act.menu()
+                break
+        if edit_menu is None:
+            edit_menu = self.menuBar().addMenu('&Edit')
+        edit_menu.addSeparator()
+        a_group = QAction('Group Graphics', self)
+        a_group.setShortcut(QKeySequence('Ctrl+G'))
+        a_group.triggered.connect(self.group_selected_graphics)
+        edit_menu.addAction(a_group)
+        self.addAction(a_group)
+        a_ungroup = QAction('Ungroup Graphics', self)
+        a_ungroup.setShortcut(QKeySequence('Ctrl+Shift+G'))
+        a_ungroup.triggered.connect(self.ungroup_selected_graphics)
+        edit_menu.addAction(a_ungroup)
+        self.addAction(a_ungroup)
+    except Exception:
+        pass
+    try:
+        tb = self.addToolBar('Graphic Group')
+        btn = QPushButton('Group Graphics')
+        btn.setToolTip('Ausgewählte eingefügte Grafikobjekte gruppieren (Ctrl+G)')
+        btn.clicked.connect(self.group_selected_graphics)
+        tb.addWidget(btn)
+        btn = QPushButton('Ungroup Graphics')
+        btn.setToolTip('Grafikgruppe aufheben (Ctrl+Shift+G)')
+        btn.clicked.connect(self.ungroup_selected_graphics)
+        tb.addWidget(btn)
+    except Exception:
+        pass
+
+
+try:
+    for _cls in (MainWindow, TemplateEditorDialog):
+        _cls.scale_selected_grid = _lh58_scale_selected_grid
+        _cls.scale_selected = _lh58_scale_selected
+        _cls.group_selected_graphics = _lh58_group_selected_graphics
+        _cls.ungroup_selected_graphics = _lh58_ungroup_selected_graphics
+        _old_init = _cls.__init__
+        def _lh58_new_init(self, *args, __old_init=_old_init, **kwargs):
+            __old_init(self, *args, **kwargs)
+            try:
+                _lh58_install_group_ui(self)
+            except Exception:
+                pass
+        _cls.__init__ = _lh58_new_init
+except Exception:
+    pass

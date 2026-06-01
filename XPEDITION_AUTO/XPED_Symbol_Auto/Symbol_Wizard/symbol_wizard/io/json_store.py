@@ -6,9 +6,11 @@ def _font(d, size=.75):
     return FontModel(**d) if isinstance(d, dict) else FontModel(size_grid=size)
 def _style(d): return StyleModel(**d) if isinstance(d, dict) else StyleModel()
 def _graphic(d):
+    # Liebherr v56 tolerant GraphicModel loader: keep new group_id but ignore
+    # unknown future keys so older JSON/templates/imports cannot crash loading.
     d = _coerce_transform(d)
     d['style'] = _style(d.get('style', {}))
-    return GraphicModel(**d)
+    return GraphicModel(**{k: v for k, v in d.items() if k in GraphicModel.__dataclass_fields__})
 def _coerce_transform(d):
     d = dict(d or {})
     for key, default in [('rotation', 0.0), ('scale_x', 1.0), ('scale_y', 1.0)]:

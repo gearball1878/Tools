@@ -1153,3 +1153,202 @@ class GraphicItem(TransformMixin, QGraphicsItem):
     def scale_selected(self, factor):
         self.scale_by(factor)
 
+
+# ---------------------------------------------------------------------------
+# Liebherr v56: move grouped user graphics as one object.
+# ---------------------------------------------------------------------------
+try:
+    _lh56_graphicitem_prev_init = GraphicItem.__init__
+    _lh56_graphicitem_prev_update_model_pos = GraphicItem.update_model_pos
+
+    def _lh56_graphicitem_init(self, model, window):
+        _lh56_graphicitem_prev_init(self, model, window)
+        try:
+            self._lh56_last_model_pos = (float(getattr(model, 'x', 0.0) or 0.0), float(getattr(model, 'y', 0.0) or 0.0))
+        except Exception:
+            self._lh56_last_model_pos = (0.0, 0.0)
+
+    def _lh56_graphicitem_gid(gr):
+        try:
+            gid = str(getattr(gr, 'group_id', '') or '')
+            if gid:
+                return gid
+            role = str(getattr(gr, 'graphic_role', '') or '')
+            if role.startswith('user_graphic_group:'):
+                return role.split(':', 1)[1]
+        except Exception:
+            pass
+        return ''
+
+    def _lh56_graphicitem_is_user(gr):
+        try:
+            role = str(getattr(gr, 'graphic_role', '') or '').lower()
+            return (not bool(getattr(gr, 'locked_to_body', False))) and role not in ('body', 'template_body', 'imported_body')
+        except Exception:
+            return False
+
+    def _lh56_graphicitem_update_model_pos(self):
+        if getattr(self.window, '_lh56_group_move_active', False):
+            return _lh56_graphicitem_prev_update_model_pos(self)
+        old = getattr(self, '_lh56_last_model_pos', None)
+        _lh56_graphicitem_prev_update_model_pos(self)
+        try:
+            new = (float(getattr(self.model, 'x', 0.0) or 0.0), float(getattr(self.model, 'y', 0.0) or 0.0))
+        except Exception:
+            return
+        if old is None:
+            self._lh56_last_model_pos = new
+            return
+        dx, dy = new[0] - old[0], new[1] - old[1]
+        self._lh56_last_model_pos = new
+        if abs(dx) < 1e-12 and abs(dy) < 1e-12:
+            return
+        gid = _lh56_graphicitem_gid(self.model)
+        if not gid or not _lh56_graphicitem_is_user(self.model):
+            return
+        try:
+            self.window._lh56_group_move_active = True
+            unit = getattr(self.window, 'current_unit', None)
+            graphics = list(getattr(unit, 'graphics', []) or [])
+            for gr in graphics:
+                if gr is self.model:
+                    continue
+                if _lh56_graphicitem_gid(gr) == gid and _lh56_graphicitem_is_user(gr):
+                    gr.x = float(getattr(gr, 'x', 0.0) or 0.0) + dx
+                    gr.y = float(getattr(gr, 'y', 0.0) or 0.0) + dy
+            gpx = float(getattr(self.window, 'grid_px', 1.0) or 1.0)
+            try:
+                scene_items = list(self.scene().items()) if self.scene() else []
+            except Exception:
+                scene_items = []
+            for it in scene_items:
+                try:
+                    if it is self or getattr(it, 'data', lambda *_: None)(0) != 'GRAPHIC':
+                        continue
+                    gr = getattr(it, 'model', None)
+                    if gr is not None and _lh56_graphicitem_gid(gr) == gid and _lh56_graphicitem_is_user(gr):
+                        it.setPos(float(getattr(gr, 'x', 0.0) or 0.0) * gpx, -float(getattr(gr, 'y', 0.0) or 0.0) * gpx)
+                        it._lh56_last_model_pos = (float(getattr(gr, 'x', 0.0) or 0.0), float(getattr(gr, 'y', 0.0) or 0.0))
+                except Exception:
+                    pass
+        finally:
+            try:
+                self.window._lh56_group_move_active = False
+            except Exception:
+                pass
+
+    GraphicItem.__init__ = _lh56_graphicitem_init
+    GraphicItem.update_model_pos = _lh56_graphicitem_update_model_pos
+except Exception:
+    pass
+
+# ---------------------------------------------------------------------------
+# Liebherr v58: grouped graphics are highlighted as one logical object.
+# ---------------------------------------------------------------------------
+try:
+    _lh58_graphic_prev_paint = GraphicItem.paint
+
+    def _lh58_graphic_gid(model):
+        try:
+            gid = str(getattr(model, 'group_id', '') or '')
+            if gid:
+                return gid
+            role = str(getattr(model, 'graphic_role', '') or '')
+            if role.startswith('user_graphic_group:'):
+                return role.split(':', 1)[1]
+        except Exception:
+            pass
+        return ''
+
+    def _lh58_graphic_group_models(item, gid):
+        out = []
+        try:
+            unit = getattr(item.window, 'current_unit', None)
+            for gr in list(getattr(unit, 'graphics', []) or []):
+                if _lh58_graphic_gid(gr) == gid:
+                    out.append(gr)
+        except Exception:
+            pass
+        return out
+
+    def _lh58_graphic_is_group_leader(item, gid):
+        try:
+            scene = item.scene()
+            if scene is None:
+                return True
+            selected = []
+            for it in scene.selectedItems():
+                try:
+                    if getattr(it, 'data', lambda *_: None)(0) == 'GRAPHIC' and _lh58_graphic_gid(getattr(it, 'model', None)) == gid:
+                        selected.append(it)
+                except Exception:
+                    pass
+            return not selected or selected[0] is item
+        except Exception:
+            return True
+
+    def _lh58_draw_group_highlight(self, painter, gid):
+        models = _lh58_graphic_group_models(self, gid)
+        if not models:
+            return
+        g = self.window.grid_px
+        boxes = []
+        for gr in models:
+            try:
+                x = float(getattr(gr, 'x', 0.0) or 0.0)
+                y = float(getattr(gr, 'y', 0.0) or 0.0)
+                w = float(getattr(gr, 'w', 0.0) or 0.0)
+                h = float(getattr(gr, 'h', 0.0) or 0.0)
+                x2 = x + w; y2 = y - h
+                boxes.append((min(x, x2), min(y, y2), max(x, x2), max(y, y2)))
+            except Exception:
+                pass
+        if not boxes:
+            return
+        minx = min(b[0] for b in boxes); miny = min(b[1] for b in boxes)
+        maxx = max(b[2] for b in boxes); maxy = max(b[3] for b in boxes)
+        # model -> scene: scene_x=x*g, scene_y=-y*g
+        pts_scene = [QPointF(minx*g, -maxy*g), QPointF(maxx*g, -maxy*g), QPointF(maxx*g, -miny*g), QPointF(minx*g, -miny*g)]
+        pts_local = [self.mapFromScene(p) for p in pts_scene]
+        painter.save()
+        painter.setPen(QPen(QColor(80, 80, 80), 1, Qt.DashLine))
+        painter.setBrush(QBrush(Qt.NoBrush))
+        if len(pts_local) == 4:
+            path = QPainterPath(pts_local[0])
+            for p in pts_local[1:]:
+                path.lineTo(p)
+            path.closeSubpath()
+            painter.drawPath(path)
+            # One set of handles at group bbox corners.
+            s = g * self.handle_size_factor
+            painter.setBrush(QBrush(QColor(255, 255, 255)))
+            for p in pts_local:
+                painter.drawRect(QRectF(p.x()-s/2, p.y()-s/2, s, s))
+            cx = sum(p.x() for p in pts_local)/4.0; cy = sum(p.y() for p in pts_local)/4.0
+            painter.drawEllipse(QRectF(cx-s/2, cy-s/2 - 2*s, s, s))
+        painter.restore()
+
+    def _lh58_graphic_paint(self, painter, option, widget=None):
+        gid = _lh58_graphic_gid(getattr(self, 'model', None))
+        if not gid:
+            return _lh58_graphic_prev_paint(self, painter, option, widget)
+        # Draw the graphic geometry without its individual selection handles.
+        was_selected = False
+        try:
+            was_selected = self.isSelected()
+            if was_selected:
+                self.setSelected(False)
+            _lh58_graphic_prev_paint(self, painter, option, widget)
+        finally:
+            try:
+                if was_selected:
+                    self.setSelected(True)
+            except Exception:
+                pass
+        # Then draw exactly one group highlight for the selected group.
+        if was_selected and _lh58_graphic_is_group_leader(self, gid):
+            _lh58_draw_group_highlight(self, painter, gid)
+
+    GraphicItem.paint = _lh58_graphic_paint
+except Exception:
+    pass
