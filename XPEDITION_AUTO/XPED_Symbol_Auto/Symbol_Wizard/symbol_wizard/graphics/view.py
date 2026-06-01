@@ -181,7 +181,9 @@ class SymbolView(QGraphicsView):
             p = self.mapToScene(event.position().toPoint())
             gx = self.window.scene_to_grid_x(p.x())
             gy = self.window.scene_to_grid_y(p.y())
-            if tool == DrawTool.PIN_LEFT.value:
+            if tool == DrawTool.PIN.value:
+                self.window.add_pin(None, x=gx, y=gy)
+            elif tool == DrawTool.PIN_LEFT.value:
                 self.window.add_pin(PinSide.LEFT.value, x=gx, y=gy)
             elif tool == DrawTool.PIN_RIGHT.value:
                 self.window.add_pin(PinSide.RIGHT.value, x=gx, y=gy)

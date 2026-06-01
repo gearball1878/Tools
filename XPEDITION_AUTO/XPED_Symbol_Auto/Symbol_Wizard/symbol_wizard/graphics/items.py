@@ -623,6 +623,14 @@ class PinItem(TransformMixin, QGraphicsItem):
         self.model.y = -self.pos().y() / g
         dx, dy = float(self.model.x) - old_x, float(self.model.y) - old_y
         if abs(dx) > 1e-9 or abs(dy) > 1e-9:
+            # Loose docking: a user drag intentionally detaches the pin from the
+            # automatic BODY edge. Programmatic moves (scene rebuild/body resize)
+            # keep the existing docking state.
+            try:
+                if QApplication.mouseButtons() & Qt.LeftButton:
+                    self.model.auto_dock = False
+            except Exception:
+                pass
             for ax_name, ay_name in (('label_x', 'label_y'), ('number_x', 'number_y')):
                 if getattr(self.model, ax_name, None) is not None and getattr(self.model, ay_name, None) is not None:
                     setattr(self.model, ax_name, float(getattr(self.model, ax_name)) + dx)

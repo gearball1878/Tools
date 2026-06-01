@@ -10,7 +10,7 @@ class PinSide(str, Enum):
 class OriginMode(str, Enum):
     BOTTOM_LEFT='bottom_left'; BOTTOM_RIGHT='bottom_right'; CENTER='center'; TOP_LEFT='top_left'; TOP_RIGHT='top_right'
 class DrawTool(str, Enum):
-    SELECT='select'; PIN_LEFT='pin_left'; PIN_RIGHT='pin_right'; PIN_TOP='pin_top'; PIN_BOTTOM='pin_bottom'; TEXT='text'; LINE='line'; RECT='rect'; ELLIPSE='ellipse'
+    SELECT='select'; PIN='pin'; PIN_LEFT='pin_left'; PIN_RIGHT='pin_right'; PIN_TOP='pin_top'; PIN_BOTTOM='pin_bottom'; TEXT='text'; LINE='line'; RECT='rect'; ELLIPSE='ellipse'
 class SymbolKind(str, Enum):
     SINGLE='single'; SPLIT='split'
 class SheetFormat(str, Enum):

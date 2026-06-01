@@ -456,13 +456,14 @@ class MainWindow(QMainWindow):
 
         # --- Draw tools -------------------------------------------------
         draw_tb = make_bar('Draw Tools')
+        draw_tb.addWidget(QLabel('Add:'))
+        info_btn = QPushButton('Info')
+        info_btn.clicked.connect(self.show_how_to)
+        draw_tb.addWidget(info_btn)
         self.tool_buttons = {}
         for tool, label in [
             (DrawTool.SELECT, 'Select/Edit'),
-            (DrawTool.PIN_LEFT, 'Pin L'),
-            (DrawTool.PIN_RIGHT, 'Pin R'),
-            (DrawTool.PIN_TOP, 'Pin T'),
-            (DrawTool.PIN_BOTTOM, 'Pin B'),
+            (DrawTool.PIN, 'Pin'),
             (DrawTool.TEXT, 'Text'),
             (DrawTool.LINE, 'Line'),
             (DrawTool.RECT, 'Rect'),
@@ -1160,7 +1161,7 @@ For native Mentor/Xpedition symbols, the Wizard preserves the Mentor coordinate 
 Use the draw tools:
 
 - **Select/Edit**: select and edit existing objects.
-- **Pin L / Pin R**: create left- or right-oriented pins.
+- **Pin**: create a pin docked to the nearest BODY edge at the clicked mouse position.
 - **Text**: create plain text.
 - **Line, Rect, Ellipse**: create graphic objects.
 
@@ -2433,6 +2434,7 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         self.form.addRow('Pin Type', self._combo([x.value for x in PinType], m.pin_type, lambda v: self.set_pin_attr(m, 'pin_type', v)))
         self.form.addRow('Side', self._combo([x.value for x in PinSide], m.side, lambda v: self.set_pin_attr(m, 'side', v)))
         inv = QCheckBox(); inv.setChecked(m.inverted); inv.toggled.connect(lambda v: self.set_pin_attr(m, 'inverted', v)); self.form.addRow('Inverted', inv)
+        docked = QCheckBox(); docked.setChecked(bool(getattr(m, 'auto_dock', True))); docked.toggled.connect(lambda v: self.set_pin_attr(m, 'auto_dock', v)); self.form.addRow('Docked to BODY', docked)
         self.form.addRow(QLabel('<b>PIN Attributes</b>'))
         for label, attr in [('Show Number', 'visible_number'), ('Show Name', 'visible_name'), ('Show Function', 'visible_function')]:
             cb = QCheckBox(); cb.setChecked(getattr(m, attr)); cb.toggled.connect(lambda v, a=attr: self.set_pin_attr(m, a, v)); self.form.addRow(label, cb)
@@ -17568,5 +17570,173 @@ try:
     if 'TemplateEditorDialog' in globals():
         TemplateEditorDialog.clear_properties = _sw94_te_clear_properties
         TemplateEditorDialog.refresh_properties = _sw94_te_refresh_properties
+except Exception:
+    pass
+
+# ---------------------------------------------------------------------------
+# Liebherr v94: single Pin tool + loose BODY docking
+# ---------------------------------------------------------------------------
+# - Replace the L/R/T/B workflow with one Pin tool.
+# - A new pin is docked to the nearest BODY edge at the clicked mouse position.
+# - Docking is loose: moving a pin manually switches auto_dock to False.
+# - Only auto_dock pins are re-docked during BODY resize/rebuild.
+
+def _sw94_float(v, default=0.0):
+    try:
+        return float(v)
+    except Exception:
+        return float(default)
+
+
+def _sw94_snap(win, v):
+    try:
+        return win.snap_grid_value(v)
+    except Exception:
+        try:
+            step = win._edit_grid_step()
+            return round(float(v) / step) * step
+        except Exception:
+            return round(float(v))
+
+
+def _sw94_body_outline(win, unit, body):
+    try:
+        if '_sw92_visible_body_outline' in globals():
+            l, t, r, b = _sw92_visible_body_outline(win, unit, body)
+            return (_sw94_snap(win, l), _sw94_snap(win, t), _sw94_snap(win, r), _sw94_snap(win, b))
+    except Exception:
+        pass
+    l = _sw94_float(getattr(body, 'x', 0.0))
+    t = _sw94_float(getattr(body, 'y', 0.0))
+    r = l + _sw94_float(getattr(body, 'width', 1.0), 1.0)
+    b = t - _sw94_float(getattr(body, 'height', 1.0), 1.0)
+    return (_sw94_snap(win, l), _sw94_snap(win, t), _sw94_snap(win, r), _sw94_snap(win, b))
+
+
+def _sw94_clamp(v, lo, hi):
+    lo, hi = min(lo, hi), max(lo, hi)
+    return max(lo, min(hi, v))
+
+
+def _sw94_side_from_click(win, unit, x, y):
+    b = getattr(unit, 'body', None)
+    if b is None:
+        return PinSide.LEFT.value
+    l, t, r, bot = _sw94_body_outline(win, unit, b)
+    x = _sw94_float(x); y = _sw94_float(y)
+    distances = {
+        PinSide.LEFT.value: abs(x - l),
+        PinSide.RIGHT.value: abs(x - r),
+        PinSide.TOP.value: abs(y - t),
+        PinSide.BOTTOM.value: abs(y - bot),
+    }
+    return min(distances.items(), key=lambda kv: kv[1])[0]
+
+
+def _sw94_place_pin_on_body(win, unit, pin, x=None, y=None, side=None, move_owned_text=True):
+    b = getattr(unit, 'body', None)
+    if b is None:
+        return
+    l, t, r, bot = _sw94_body_outline(win, unit, b)
+    side = side or getattr(pin, 'side', PinSide.LEFT.value) or PinSide.LEFT.value
+    old_x, old_y = _sw94_float(getattr(pin, 'x', 0.0)), _sw94_float(getattr(pin, 'y', 0.0))
+    cx = _sw94_float(x, old_x)
+    cy = _sw94_float(y, old_y)
+    if side == PinSide.RIGHT.value:
+        nx, ny = r, _sw94_clamp(cy, bot, t)
+    elif side == PinSide.TOP.value:
+        nx, ny = _sw94_clamp(cx, l, r), t
+    elif side == PinSide.BOTTOM.value:
+        nx, ny = _sw94_clamp(cx, l, r), bot
+    else:
+        side = PinSide.LEFT.value
+        nx, ny = l, _sw94_clamp(cy, bot, t)
+    nx, ny = _sw94_snap(win, nx), _sw94_snap(win, ny)
+    try:
+        pin.side = side
+        pin.x = nx
+        pin.y = ny
+    except Exception:
+        return
+    if move_owned_text:
+        try:
+            win._move_pin_owned_texts(pin, nx - old_x, ny - old_y)
+        except Exception:
+            try:
+                _sw86_move_pin_texts_keep_offsets(pin, old_x, old_y, nx, ny)
+            except Exception:
+                pass
+
+
+def _sw94_add_pin(self, side=None, x=None, y=None):
+    self.push_undo_state()
+    unit = self.current_unit
+    if side is None:
+        side = _sw94_side_from_click(self, unit, x if x is not None else 0.0, y if y is not None else 0.0)
+    p = create_auto_pin(self.symbol, unit, side)
+    p.name = self._unique_pin_name(getattr(p, 'name', 'PIN'))
+    p.auto_dock = True
+    _sw94_place_pin_on_body(self, unit, p, x, y, side, move_owned_text=False)
+    unit.pins.append(p)
+    self.validate_pins(silent=True)
+    self.select_model_after_rebuild(p)
+    self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
+
+
+def _sw94_dock_pins_to_body(self, unit):
+    if unit is None or getattr(unit, 'body', None) is None:
+        return
+    for p in list(getattr(unit, 'pins', []) or []):
+        if not bool(getattr(p, 'auto_dock', True)):
+            continue
+        _sw94_place_pin_on_body(self, unit, p, getattr(p, 'x', 0.0), getattr(p, 'y', 0.0), getattr(p, 'side', PinSide.LEFT.value), move_owned_text=True)
+
+
+def _sw94_redock_pins(self, start_state, body):
+    u = None
+    try:
+        u = _sw90_unit(self)
+    except Exception:
+        try:
+            u = self.current_unit
+        except Exception:
+            u = None
+    if u is None:
+        return
+    for p in list(getattr(u, 'pins', []) or []):
+        if not bool(getattr(p, 'auto_dock', True)):
+            continue
+        _sw94_place_pin_on_body(self, u, p, getattr(p, 'x', 0.0), getattr(p, 'y', 0.0), getattr(p, 'side', PinSide.LEFT.value), move_owned_text=True)
+
+
+try:
+    _sw94_prev_set_pin_attr = MainWindow.set_pin_attr
+except Exception:
+    _sw94_prev_set_pin_attr = None
+
+
+def _sw94_set_pin_attr(self, m, a, v):
+    if _sw94_prev_set_pin_attr is not None:
+        _sw94_prev_set_pin_attr(self, m, a, v)
+    else:
+        setattr(m, a, v)
+    if a == 'auto_dock' and bool(v):
+        try:
+            _sw94_place_pin_on_body(self, self.current_unit, m, getattr(m, 'x', 0.0), getattr(m, 'y', 0.0), getattr(m, 'side', PinSide.LEFT.value), move_owned_text=True)
+            self.schedule_scene_refresh(visual_only=True)
+        except Exception:
+            pass
+
+
+try:
+    MainWindow.add_pin = _sw94_add_pin
+    MainWindow.dock_pins_to_body = _sw94_dock_pins_to_body
+    MainWindow.set_pin_attr = _sw94_set_pin_attr
+    # These global functions are used by the late BODY-resize monkey-patches.
+    _sw90_redock_pins = _sw94_redock_pins
+    _sw92_redock_pins = _sw94_redock_pins
+    if 'TemplateEditorDialog' in globals():
+        TemplateEditorDialog.add_pin = _sw94_add_pin
+        TemplateEditorDialog.dock_pins_to_body = _sw94_dock_pins_to_body
 except Exception:
     pass
