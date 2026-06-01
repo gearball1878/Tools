@@ -16004,3 +16004,562 @@ try:
         TemplateEditorDialog.select_model_after_rebuild = _sw74_select_model_after_rebuild
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# SW75: make plain TEXT truly standalone from BODY selection/transform.
+# ---------------------------------------------------------------------------
+# The remaining symptom was caused by BODY staying in the active selection when
+# a free TextModel was selected/edited.  Any toolbar transform then went through
+# the BODY-group path, which made the text appear BODY-linked.  Free text now
+# wins the selection: BODY/attribute items are removed from selection and all
+# transforms are applied only to selected free TEXT items.
+
+def _sw75_is_free_text_item(it):
+    try:
+        return (getattr(it, 'data', lambda *_: None)(0) == 'TEXT'
+                and getattr(it, 'model', None) is not None
+                and not bool(getattr(it.model, '_is_attribute_text', False)))
+    except Exception:
+        return False
+
+def _sw75_selected_free_text_items(self):
+    try:
+        return [it for it in self.scene.selectedItems() if _sw75_is_free_text_item(it)]
+    except Exception:
+        return []
+
+try:
+    _sw75_prev_on_sel = MainWindow.on_scene_selection_changed
+except Exception:
+    _sw75_prev_on_sel = None
+
+def _sw75_on_scene_selection_changed(self):
+    try:
+        free_txt = _sw75_selected_free_text_items(self)
+        if free_txt:
+            # A plain text is a top-level object.  It must not share a selection
+            # with BODY or BODY attribute text, otherwise BODY transforms capture it.
+            self.scene.blockSignals(True)
+            for it in list(self.scene.selectedItems()):
+                k = getattr(it, 'data', lambda *_: None)(0)
+                if k in ('BODY', 'ATTR_REF_DES', 'ATTR_BODY'):
+                    it.setSelected(False)
+            self.scene.blockSignals(False)
+    except Exception:
+        try: self.scene.blockSignals(False)
+        except Exception: pass
+    if _sw75_prev_on_sel:
+        return _sw75_prev_on_sel(self)
+    try:
+        self.refresh_properties()
+    except Exception:
+        pass
+
+try:
+    MainWindow.on_scene_selection_changed = _sw75_on_scene_selection_changed
+    if 'TemplateEditorDialog' in globals():
+        _sw75_prev_te_on_sel = TemplateEditorDialog.on_scene_selection_changed
+        def _sw75_te_on_scene_selection_changed(self):
+            try:
+                free_txt = _sw75_selected_free_text_items(self)
+                if free_txt:
+                    self.scene.blockSignals(True)
+                    for it in list(self.scene.selectedItems()):
+                        if getattr(it, 'data', lambda *_: None)(0) in ('BODY', 'ATTR_REF_DES', 'ATTR_BODY'):
+                            it.setSelected(False)
+                    self.scene.blockSignals(False)
+            except Exception:
+                try: self.scene.blockSignals(False)
+                except Exception: pass
+            return _sw75_prev_te_on_sel(self)
+        TemplateEditorDialog.on_scene_selection_changed = _sw75_te_on_scene_selection_changed
+except Exception:
+    pass
+
+# Treat BODY as active only if no free plain text is currently selected.
+try:
+    _sw75_prev_selected_body_active = MainWindow._selected_body_active
+    def _sw75_selected_body_active(self):
+        try:
+            if _sw75_selected_free_text_items(self):
+                return False
+        except Exception:
+            pass
+        return _sw75_prev_selected_body_active(self)
+    MainWindow._selected_body_active = _sw75_selected_body_active
+    if 'TemplateEditorDialog' in globals() and hasattr(TemplateEditorDialog, '_selected_body_active'):
+        _sw75_prev_te_selected_body_active = TemplateEditorDialog._selected_body_active
+        def _sw75_te_selected_body_active(self):
+            try:
+                if _sw75_selected_free_text_items(self):
+                    return False
+            except Exception:
+                pass
+            return _sw75_prev_te_selected_body_active(self)
+        TemplateEditorDialog._selected_body_active = _sw75_te_selected_body_active
+except Exception:
+    pass
+
+# Clicking a free text object starts an exclusive selection unless Ctrl/Shift is held.
+try:
+    _sw75_prev_text_mouse_press = TextItem.mousePressEvent
+    def _sw75_text_mouse_press(self, event):
+        try:
+            if _sw75_is_free_text_item(self) and event.button() == Qt.LeftButton:
+                mods = event.modifiers()
+                if not (mods & (Qt.ControlModifier | Qt.ShiftModifier)):
+                    sc = self.scene()
+                    if sc is not None:
+                        sc.clearSelection()
+                        self.setSelected(True)
+        except Exception:
+            pass
+        return _sw75_prev_text_mouse_press(self, event)
+    TextItem.mousePressEvent = _sw75_text_mouse_press
+except Exception:
+    pass
+
+# Give TextItem the same toolbar entry point as GraphicItem for Scale +/- paths.
+try:
+    def _sw75_text_scale_by(self, factor):
+        try:
+            f = float(factor)
+        except Exception:
+            f = 1.0
+        try:
+            step = float(getattr(self.window, '_edit_grid_step', lambda: 0.1)())
+        except Exception:
+            step = 0.1
+        cur = float(getattr(self.model, 'font_size_grid', 0.75) or 0.75)
+        new = max(step, round((cur * f) / step) * step)
+        self.model.font_size_grid = new
+        try:
+            self.apply_text_from_model()
+        except Exception:
+            self.apply_transform_from_model(); self.update()
+    TextItem.scale_by = _sw75_text_scale_by
+except Exception:
+    pass
+
+# Ensure property edits on BODY do not accidentally restore/carry selected text.
+try:
+    _sw75_prev_capture_selection_ids = MainWindow._capture_selection_ids
+    def _sw75_capture_selection_ids(self):
+        try:
+            free = _sw75_selected_free_text_items(self)
+            if free:
+                return {id(it.model) for it in free}
+        except Exception:
+            pass
+        return _sw75_prev_capture_selection_ids(self)
+    MainWindow._capture_selection_ids = _sw75_capture_selection_ids
+    if 'TemplateEditorDialog' in globals() and hasattr(TemplateEditorDialog, '_capture_selection_ids'):
+        _sw75_prev_te_capture_selection_ids = TemplateEditorDialog._capture_selection_ids
+        def _sw75_te_capture_selection_ids(self):
+            try:
+                free = _sw75_selected_free_text_items(self)
+                if free:
+                    return {id(it.model) for it in free}
+            except Exception:
+                pass
+            return _sw75_prev_te_capture_selection_ids(self)
+        TemplateEditorDialog._capture_selection_ids = _sw75_te_capture_selection_ids
+except Exception:
+    pass
+
+# ---------------------------------------------------------------------------
+# SW76: final hard fix for free/plain TEXT vs BODY transforms.
+# ---------------------------------------------------------------------------
+# A user-created TEXT object is a top-level canvas object.  It must never route
+# toolbar transforms through the BODY transform path, even if BODY was selected
+# before or if focus/selection temporarily changes while a toolbar button is
+# clicked.  We keep an explicit active plain-text model and give plain TEXT
+# exclusive transform handling.
+
+def _sw76_unit_of(win):
+    return getattr(win, 'current_unit', None) or getattr(win, 'unit', None)
+
+def _sw76_is_plain_text_model(m):
+    try:
+        return (m is not None and hasattr(m, 'text') and hasattr(m, 'font_size_grid')
+                and not bool(getattr(m, '_is_attribute_text', False)))
+    except Exception:
+        return False
+
+def _sw76_is_plain_text_item(it):
+    try:
+        return (getattr(it, 'data', lambda *_: None)(0) == 'TEXT'
+                and getattr(it, 'model', None) is not None
+                and not bool(getattr(it.model, '_is_attribute_text', False)))
+    except Exception:
+        return False
+
+def _sw76_find_plain_text_item_for_model(win, model):
+    try:
+        for it in win.scene.items():
+            if _sw76_is_plain_text_item(it) and getattr(it, 'model', None) is model:
+                return it
+    except Exception:
+        pass
+    return None
+
+def _sw76_selected_plain_text_items(win, allow_active=True):
+    items = []
+    try:
+        items = [it for it in win.scene.selectedItems() if _sw76_is_plain_text_item(it)]
+    except Exception:
+        items = []
+    if items:
+        try:
+            win._sw76_active_plain_text_model = getattr(items[0], 'model', None)
+        except Exception:
+            pass
+        return items
+    if allow_active:
+        try:
+            m = getattr(win, '_sw76_active_plain_text_model', None)
+            it = _sw76_find_plain_text_item_for_model(win, m)
+            if it is not None:
+                return [it]
+        except Exception:
+            pass
+    return []
+
+def _sw76_plain_text_selection_active(win):
+    try:
+        return bool(_sw76_selected_plain_text_items(win, allow_active=True))
+    except Exception:
+        return False
+
+# Mark new/existing unit.texts as explicit free objects before every scene rebuild.
+try:
+    _sw76_prev_rebuild_scene_mw = MainWindow.rebuild_scene
+    def _sw76_rebuild_scene(self):
+        try:
+            u = _sw76_unit_of(self)
+            for t in getattr(u, 'texts', []) or []:
+                setattr(t, '_is_attribute_text', False)
+                setattr(t, '_attribute_key', '')
+        except Exception:
+            pass
+        return _sw76_prev_rebuild_scene_mw(self)
+    MainWindow.rebuild_scene = _sw76_rebuild_scene
+except Exception:
+    pass
+
+try:
+    if 'TemplateEditorDialog' in globals():
+        _sw76_prev_rebuild_scene_te = TemplateEditorDialog.rebuild_scene
+        def _sw76_te_rebuild_scene(self):
+            try:
+                u = _sw76_unit_of(self)
+                for t in getattr(u, 'texts', []) or []:
+                    setattr(t, '_is_attribute_text', False)
+                    setattr(t, '_attribute_key', '')
+            except Exception:
+                pass
+            return _sw76_prev_rebuild_scene_te(self)
+        TemplateEditorDialog.rebuild_scene = _sw76_te_rebuild_scene
+except Exception:
+    pass
+
+# Plain text click = exclusive object selection.  Do not allow BODY to remain
+# selected in parallel, because toolbar transforms otherwise use BODY path.
+try:
+    _sw76_prev_text_mouse_press = TextItem.mousePressEvent
+    def _sw76_text_mouse_press(self, event):
+        try:
+            if _sw76_is_plain_text_item(self) and event.button() == Qt.LeftButton:
+                win = getattr(self, 'window', None)
+                if win is not None:
+                    win._sw76_active_plain_text_model = self.model
+                mods = event.modifiers()
+                if not (mods & (Qt.ControlModifier | Qt.ShiftModifier)):
+                    sc = self.scene()
+                    if sc is not None:
+                        sc.blockSignals(True)
+                        try:
+                            for it in list(sc.selectedItems()):
+                                if it is not self:
+                                    it.setSelected(False)
+                            self.setSelected(True)
+                        finally:
+                            sc.blockSignals(False)
+                        try:
+                            win.refresh_properties()
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+        return _sw76_prev_text_mouse_press(self, event)
+    TextItem.mousePressEvent = _sw76_text_mouse_press
+except Exception:
+    pass
+
+# Keep selection clean after Qt emits selectionChanged.
+def _sw76_clean_plain_text_selection(win):
+    try:
+        txt = [it for it in win.scene.selectedItems() if _sw76_is_plain_text_item(it)]
+        if not txt:
+            # If another real object is selected, the remembered text is no longer active.
+            real = [it for it in win.scene.selectedItems() if getattr(it, 'data', lambda *_: None)(0) in ('BODY','PIN','GRAPHIC','ATTR_REF_DES','ATTR_BODY')]
+            if real:
+                win._sw76_active_plain_text_model = None
+            return
+        win._sw76_active_plain_text_model = getattr(txt[0], 'model', None)
+        win.scene.blockSignals(True)
+        try:
+            for it in list(win.scene.selectedItems()):
+                if not _sw76_is_plain_text_item(it):
+                    it.setSelected(False)
+        finally:
+            win.scene.blockSignals(False)
+    except Exception:
+        try: win.scene.blockSignals(False)
+        except Exception: pass
+
+try:
+    _sw76_prev_on_selection_mw = MainWindow.on_scene_selection_changed
+    def _sw76_on_scene_selection_changed(self):
+        _sw76_clean_plain_text_selection(self)
+        return _sw76_prev_on_selection_mw(self)
+    MainWindow.on_scene_selection_changed = _sw76_on_scene_selection_changed
+except Exception:
+    pass
+
+try:
+    if 'TemplateEditorDialog' in globals():
+        _sw76_prev_on_selection_te = TemplateEditorDialog.on_scene_selection_changed
+        def _sw76_te_on_scene_selection_changed(self):
+            _sw76_clean_plain_text_selection(self)
+            return _sw76_prev_on_selection_te(self)
+        TemplateEditorDialog.on_scene_selection_changed = _sw76_te_on_scene_selection_changed
+except Exception:
+    pass
+
+# BODY is never active while a free text item/model is active.
+try:
+    _sw76_prev_body_active_mw = MainWindow._selected_body_active
+    def _sw76_selected_body_active(self):
+        if _sw76_plain_text_selection_active(self):
+            return False
+        return _sw76_prev_body_active_mw(self)
+    MainWindow._selected_body_active = _sw76_selected_body_active
+except Exception:
+    pass
+
+try:
+    if 'TemplateEditorDialog' in globals() and hasattr(TemplateEditorDialog, '_selected_body_active'):
+        _sw76_prev_body_active_te = TemplateEditorDialog._selected_body_active
+        def _sw76_te_selected_body_active(self):
+            if _sw76_plain_text_selection_active(self):
+                return False
+            return _sw76_prev_body_active_te(self)
+        TemplateEditorDialog._selected_body_active = _sw76_te_selected_body_active
+except Exception:
+    pass
+
+def _sw76_refresh_text_items(win, items):
+    for it in items:
+        try:
+            it.apply_text_from_model()
+            it.setSelected(True)
+            it.update()
+        except Exception:
+            try: it.update()
+            except Exception: pass
+    try:
+        win.scene.update(); win.view.viewport().update()
+    except Exception:
+        pass
+    try:
+        win.refresh_properties()
+    except Exception:
+        pass
+
+def _sw76_text_scale_grid(win, items, direction):
+    try:
+        step = float(win._edit_grid_step())
+    except Exception:
+        step = 0.1
+    direction = 1 if int(direction) >= 0 else -1
+    for it in items:
+        m = getattr(it, 'model', None)
+        if m is None:
+            continue
+        cur = float(getattr(m, 'font_size_grid', 0.75) or 0.75)
+        new = max(step, round((cur + direction * step) / step) * step)
+        m.font_size_grid = new
+    _sw76_refresh_text_items(win, items)
+
+try:
+    _sw76_prev_rotate_mw = MainWindow.rotate_selected
+    _sw76_prev_flip_h_mw = MainWindow.flip_selected_horizontal
+    _sw76_prev_flip_v_mw = MainWindow.flip_selected_vertical
+    _sw76_prev_scale_grid_mw = MainWindow.scale_selected_grid
+    _sw76_prev_scale_mw = MainWindow.scale_selected
+
+    def _sw76_rotate_selected(self, deg):
+        items = _sw76_selected_plain_text_items(self, allow_active=True)
+        if items:
+            self.set_tool(DrawTool.SELECT.value)
+            self.push_undo_state()
+            for it in items:
+                try: it.rotate_by(float(deg))
+                except Exception: pass
+            _sw76_refresh_text_items(self, items)
+            self.dirty = True
+            return None
+        return _sw76_prev_rotate_mw(self, deg)
+
+    def _sw76_flip_selected_horizontal(self):
+        items = _sw76_selected_plain_text_items(self, allow_active=True)
+        if items:
+            self.set_tool(DrawTool.SELECT.value)
+            self.push_undo_state()
+            for it in items:
+                try: it.flip_horizontal()
+                except Exception: pass
+            _sw76_refresh_text_items(self, items)
+            self.dirty = True
+            return None
+        return _sw76_prev_flip_h_mw(self)
+
+    def _sw76_flip_selected_vertical(self):
+        items = _sw76_selected_plain_text_items(self, allow_active=True)
+        if items:
+            self.set_tool(DrawTool.SELECT.value)
+            self.push_undo_state()
+            for it in items:
+                try: it.flip_vertical()
+                except Exception: pass
+            _sw76_refresh_text_items(self, items)
+            self.dirty = True
+            return None
+        return _sw76_prev_flip_v_mw(self)
+
+    def _sw76_scale_selected_grid(self, direction:int):
+        items = _sw76_selected_plain_text_items(self, allow_active=True)
+        if items:
+            self.set_tool(DrawTool.SELECT.value)
+            self.push_undo_state()
+            _sw76_text_scale_grid(self, items, direction)
+            self.dirty = True
+            return None
+        return _sw76_prev_scale_grid_mw(self, direction)
+
+    def _sw76_scale_selected(self, factor):
+        items = _sw76_selected_plain_text_items(self, allow_active=True)
+        if items:
+            direction = 1 if float(factor) >= 1.0 else -1
+            return _sw76_scale_selected_grid(self, direction)
+        return _sw76_prev_scale_mw(self, factor)
+
+    MainWindow.rotate_selected = _sw76_rotate_selected
+    MainWindow.flip_selected_horizontal = _sw76_flip_selected_horizontal
+    MainWindow.flip_selected_vertical = _sw76_flip_selected_vertical
+    MainWindow.scale_selected_grid = _sw76_scale_selected_grid
+    MainWindow.scale_selected = _sw76_scale_selected
+except Exception:
+    pass
+
+try:
+    if 'TemplateEditorDialog' in globals():
+        _sw76_prev_rotate_te = TemplateEditorDialog.rotate_selected
+        _sw76_prev_flip_h_te = TemplateEditorDialog.flip_selected_horizontal
+        _sw76_prev_flip_v_te = TemplateEditorDialog.flip_selected_vertical
+        _sw76_prev_scale_grid_te = TemplateEditorDialog.scale_selected_grid
+        _sw76_prev_scale_te = TemplateEditorDialog.scale_selected
+
+        def _sw76_te_rotate_selected(self, deg):
+            items = _sw76_selected_plain_text_items(self, allow_active=True)
+            if items:
+                self.set_tool(DrawTool.SELECT.value); self.push_undo_state()
+                for it in items:
+                    try: it.rotate_by(float(deg))
+                    except Exception: pass
+                _sw76_refresh_text_items(self, items); self.dirty = True; return None
+            return _sw76_prev_rotate_te(self, deg)
+        def _sw76_te_flip_selected_horizontal(self):
+            items = _sw76_selected_plain_text_items(self, allow_active=True)
+            if items:
+                self.set_tool(DrawTool.SELECT.value); self.push_undo_state()
+                for it in items:
+                    try: it.flip_horizontal()
+                    except Exception: pass
+                _sw76_refresh_text_items(self, items); self.dirty = True; return None
+            return _sw76_prev_flip_h_te(self)
+        def _sw76_te_flip_selected_vertical(self):
+            items = _sw76_selected_plain_text_items(self, allow_active=True)
+            if items:
+                self.set_tool(DrawTool.SELECT.value); self.push_undo_state()
+                for it in items:
+                    try: it.flip_vertical()
+                    except Exception: pass
+                _sw76_refresh_text_items(self, items); self.dirty = True; return None
+            return _sw76_prev_flip_v_te(self)
+        def _sw76_te_scale_selected_grid(self, direction:int):
+            items = _sw76_selected_plain_text_items(self, allow_active=True)
+            if items:
+                self.set_tool(DrawTool.SELECT.value); self.push_undo_state()
+                _sw76_text_scale_grid(self, items, direction); self.dirty = True; return None
+            return _sw76_prev_scale_grid_te(self, direction)
+        def _sw76_te_scale_selected(self, factor):
+            items = _sw76_selected_plain_text_items(self, allow_active=True)
+            if items:
+                return _sw76_te_scale_selected_grid(self, 1 if float(factor) >= 1.0 else -1)
+            return _sw76_prev_scale_te(self, factor)
+
+        TemplateEditorDialog.rotate_selected = _sw76_te_rotate_selected
+        TemplateEditorDialog.flip_selected_horizontal = _sw76_te_flip_selected_horizontal
+        TemplateEditorDialog.flip_selected_vertical = _sw76_te_flip_selected_vertical
+        TemplateEditorDialog.scale_selected_grid = _sw76_te_scale_selected_grid
+        TemplateEditorDialog.scale_selected = _sw76_te_scale_selected
+except Exception:
+    pass
+
+# v77: Runtime/UI references must never live on dataclass models, because undo/copy
+# uses deepcopy and Qt/MainWindow objects are not pickleable/deepcopyable.
+def _sw77_strip_runtime_refs(obj, seen=None):
+    if seen is None:
+        seen = set()
+    oid = id(obj)
+    if oid in seen:
+        return
+    seen.add(oid)
+    try:
+        d = getattr(obj, '__dict__', None)
+        if isinstance(d, dict):
+            for k in list(d.keys()):
+                if k in ('_window_ref','window','scene','view','_qt_item','_graphics_item'):
+                    try: delattr(obj, k)
+                    except Exception: d.pop(k, None)
+            for v in list(d.values()):
+                _sw77_strip_runtime_refs(v, seen)
+        elif isinstance(obj, dict):
+            for v in list(obj.values()): _sw77_strip_runtime_refs(v, seen)
+        elif isinstance(obj, (list, tuple, set)):
+            for v in list(obj): _sw77_strip_runtime_refs(v, seen)
+    except Exception:
+        pass
+
+try:
+    _sw77_prev_push_undo_mw = MainWindow.push_undo_state
+    def _sw77_push_undo_state(self):
+        try: _sw77_strip_runtime_refs(getattr(self, 'unit', None)); _sw77_strip_runtime_refs(getattr(self, 'current_unit', None)); _sw77_strip_runtime_refs(getattr(self, 'library', None))
+        except Exception: pass
+        return _sw77_prev_push_undo_mw(self)
+    MainWindow.push_undo_state = _sw77_push_undo_state
+except Exception:
+    pass
+
+try:
+    if 'TemplateEditorDialog' in globals() and hasattr(TemplateEditorDialog, 'push_undo_state'):
+        _sw77_prev_push_undo_te = TemplateEditorDialog.push_undo_state
+        def _sw77_te_push_undo_state(self):
+            try: _sw77_strip_runtime_refs(getattr(self, 'unit', None)); _sw77_strip_runtime_refs(getattr(self, 'current_unit', None)); _sw77_strip_runtime_refs(getattr(self, 'library', None))
+            except Exception: pass
+            return _sw77_prev_push_undo_te(self)
+        TemplateEditorDialog.push_undo_state = _sw77_te_push_undo_state
+except Exception:
+    pass
