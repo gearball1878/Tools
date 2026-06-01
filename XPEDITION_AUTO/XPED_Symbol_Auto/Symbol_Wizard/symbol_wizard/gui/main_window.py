@@ -12589,3 +12589,214 @@ try:
     MainWindow._set_attr_val = _lh47_set_attr_val
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# Liebherr v48 rebuilt: keep the Selectable view absolutely stable and sync
+# the global line controls with the current graphical selection.
+# ---------------------------------------------------------------------------
+
+_LH48_MULTIPLE = '<Multiple>'
+
+
+def _lh48_kind(item):
+    try:
+        k = item.data(0)
+    except Exception:
+        k = None
+    if k in ('BODY_GRAPHIC',):
+        return 'BODY'
+    return k
+
+
+def _lh48_graphical_selected_items(self):
+    try:
+        items = list(self.scene.selectedItems())
+    except Exception:
+        return []
+    out = []
+    for it in items:
+        k = _lh48_kind(it)
+        if k in ('BODY', 'PIN', 'GRAPHIC') and getattr(it, 'model', None) is not None:
+            out.append(it)
+    return out
+
+
+def _lh48_line_value(item, attr):
+    m = getattr(item, 'model', None)
+    if m is None:
+        return None
+    k = _lh48_kind(item)
+    try:
+        if k == 'GRAPHIC':
+            st = getattr(m, 'style', None)
+            return getattr(st, attr, None)
+        return getattr(m, attr, None)
+    except Exception:
+        return None
+
+
+def _lh48_common(values):
+    vals = [v for v in values if v is not None]
+    if not vals:
+        return None, False
+    first = vals[0]
+    return first, all(v == first for v in vals)
+
+
+def _lh48_sync_style_toolbar_to_selection(self):
+    """Show common selected line style/width, or <Multiple> on mismatches.
+
+    This is display-only. Signals are blocked so the Selectable mode and the
+    selected objects are not changed just because the panel is being updated.
+    """
+    if not hasattr(self, 'line_style') or not hasattr(self, 'line_width'):
+        return
+    items = _lh48_graphical_selected_items(self)
+    if not items:
+        return
+    style_val, style_same = _lh48_common([_lh48_line_value(i, 'line_style') for i in items])
+    width_val, width_same = _lh48_common([_lh48_line_value(i, 'line_width') for i in items])
+    try:
+        self.line_style.blockSignals(True)
+        idx = self.line_style.findText(_LH48_MULTIPLE)
+        if style_same and style_val is not None:
+            if idx >= 0:
+                self.line_style.removeItem(idx)
+            self.line_style.setCurrentText(str(style_val))
+        else:
+            if idx < 0:
+                self.line_style.insertItem(0, _LH48_MULTIPLE)
+            self.line_style.setCurrentText(_LH48_MULTIPLE)
+    except Exception:
+        pass
+    finally:
+        try: self.line_style.blockSignals(False)
+        except Exception: pass
+    try:
+        self.line_width.blockSignals(True)
+        if width_same and width_val is not None:
+            self.line_width.setMinimum(0.01)
+            self.line_width.setSpecialValueText('')
+            self.line_width.setValue(float(width_val))
+        else:
+            self.line_width.setMinimum(0.0)
+            self.line_width.setSpecialValueText(_LH48_MULTIPLE)
+            self.line_width.setValue(0.0)
+    except Exception:
+        pass
+    finally:
+        try: self.line_width.blockSignals(False)
+        except Exception: pass
+
+
+try:
+    _lh48_prev_on_scene_selection_changed = MainWindow.on_scene_selection_changed
+except Exception:
+    _lh48_prev_on_scene_selection_changed = None
+
+
+def _lh48_on_scene_selection_changed(self):
+    mode_state = _lh47_selection_filter_state(self) if '_lh47_selection_filter_state' in globals() else None
+    try:
+        if _lh48_prev_on_scene_selection_changed is not None:
+            _lh48_prev_on_scene_selection_changed(self)
+        else:
+            self.refresh_properties()
+    except Exception as e:
+        try: self.statusBar().showMessage(f'Selection update failed: {e}', 4000)
+        except Exception: pass
+    finally:
+        if mode_state is not None and '_lh47_restore_selection_filter_state' in globals():
+            _lh47_restore_selection_filter_state(self, mode_state)
+        _lh48_sync_style_toolbar_to_selection(self)
+
+
+try:
+    _lh48_prev_apply_line_defaults = MainWindow.apply_line_defaults
+except Exception:
+    _lh48_prev_apply_line_defaults = None
+
+
+def _lh48_apply_line_defaults(self):
+    # The placeholder is not a real line style. It appears only when selected
+    # objects have different values. Ignore it until the user chooses a real one.
+    try:
+        if hasattr(self, 'line_style') and self.line_style.currentText() == _LH48_MULTIPLE:
+            return
+        if hasattr(self, 'line_width') and float(self.line_width.value()) <= 0.0:
+            return
+    except Exception:
+        return
+    mode_state = _lh47_selection_filter_state(self) if '_lh47_selection_filter_state' in globals() else None
+    sig = _lh46_selected_signature(self) if '_lh46_selected_signature' in globals() else []
+    try:
+        if _lh48_prev_apply_line_defaults is not None:
+            return _lh48_prev_apply_line_defaults(self)
+    except Exception as e:
+        try: self.statusBar().showMessage(f'Line style update failed: {e}', 5000)
+        except Exception: pass
+    finally:
+        if mode_state is not None and '_lh47_restore_selection_filter_state' in globals():
+            _lh47_restore_selection_filter_state(self, mode_state)
+        if '_lh47_restore_selection_after_action' in globals():
+            _lh47_restore_selection_after_action(self, sig=sig, filter_state=mode_state, force_body=any(str(s[0]) in ('BODY','BODY_GRAPHIC') for s in sig), refresh=False)
+        try: QTimer.singleShot(0, lambda: _lh48_sync_style_toolbar_to_selection(self))
+        except Exception: pass
+
+
+try:
+    _lh48_prev_set_attr_vis = MainWindow._set_attr_vis
+    _lh48_prev_set_attr_val = MainWindow._set_attr_val
+except Exception:
+    _lh48_prev_set_attr_vis = _lh48_prev_set_attr_val = None
+
+
+def _lh48_set_attr_vis(self, key, val):
+    mode_state = _lh47_selection_filter_state(self) if '_lh47_selection_filter_state' in globals() else None
+    sig = _lh46_selected_signature(self) if '_lh46_selected_signature' in globals() else []
+    try:
+        self.push_undo_state()
+        self.current_unit.body.visible_attributes[key] = bool(val)
+        self.dirty = True
+        try: self.update_attribute_items_for_unit()
+        except Exception: pass
+        try: self.scene.update(); self.view.viewport().update()
+        except Exception: pass
+    except Exception as e:
+        try: self.statusBar().showMessage(f'Attribute update failed: {e}', 5000)
+        except Exception: pass
+    finally:
+        if mode_state is not None and '_lh47_restore_selection_filter_state' in globals():
+            _lh47_restore_selection_filter_state(self, mode_state)
+        if '_lh47_restore_selection_after_action' in globals():
+            _lh47_restore_selection_after_action(self, sig=sig, filter_state=mode_state, force_body=any(str(s[0]) in ('BODY','BODY_GRAPHIC') for s in sig), refresh=False)
+
+
+def _lh48_set_attr_val(self, key, val):
+    mode_state = _lh47_selection_filter_state(self) if '_lh47_selection_filter_state' in globals() else None
+    sig = _lh46_selected_signature(self) if '_lh46_selected_signature' in globals() else []
+    try:
+        self.push_undo_state()
+        self.current_unit.body.attributes[key] = str(val)
+        self.dirty = True
+        try: self.update_attribute_items_for_unit()
+        except Exception: pass
+        try: self.scene.update(); self.view.viewport().update()
+        except Exception: pass
+    except Exception as e:
+        try: self.statusBar().showMessage(f'Attribute update failed: {e}', 5000)
+        except Exception: pass
+    finally:
+        if mode_state is not None and '_lh47_restore_selection_filter_state' in globals():
+            _lh47_restore_selection_filter_state(self, mode_state)
+        if '_lh47_restore_selection_after_action' in globals():
+            _lh47_restore_selection_after_action(self, sig=sig, filter_state=mode_state, force_body=any(str(s[0]) in ('BODY','BODY_GRAPHIC') for s in sig), refresh=False)
+
+
+try:
+    MainWindow.on_scene_selection_changed = _lh48_on_scene_selection_changed
+    MainWindow.apply_line_defaults = _lh48_apply_line_defaults
+    MainWindow._set_attr_vis = _lh48_set_attr_vis
+    MainWindow._set_attr_val = _lh48_set_attr_val
+except Exception:
+    pass
