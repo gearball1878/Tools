@@ -24,6 +24,10 @@ def _pin(d):
     d['label_font']=_font(d.get('label_font', {}), .55)
     d.setdefault('attributes', {})
     d.setdefault('visible_attributes', {})
+    if isinstance(d.get('attribute_texts'), dict):
+        d['attribute_texts'] = {str(k): _text(v) for k, v in d.get('attribute_texts', {}).items() if isinstance(v, dict)}
+    else:
+        d['attribute_texts'] = {}
     return PinModel(**d)
 def _text(d): return TextModel(**_coerce_transform(d))
 def _body(d):

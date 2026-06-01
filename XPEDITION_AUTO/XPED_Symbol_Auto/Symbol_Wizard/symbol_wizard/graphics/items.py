@@ -187,6 +187,15 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
         return _corner_handles(self.rect(), self.window.grid_px * self.handle_size_factor)
 
     def paint(self, painter, option, widget=None):
+        # Native Mentor imports use the imported graphics as the visible BODY.
+        # The logical BodyItem is only an anchor/group for pins, graphics and
+        # attributes and must not draw an extra rectangle while selected/moved.
+        try:
+            attrs = getattr(self.model, 'attributes', {}) or {}
+            if str(attrs.get('MENTOR_GRAPHICS_AS_BODY', '0')) == '1':
+                return
+        except Exception:
+            pass
         super().paint(painter, option, widget)
         if self.isSelected():
             painter.save()
@@ -399,11 +408,24 @@ class PinItem(TransformMixin, QGraphicsItem):
             pass
         painter.setPen(pen_for(num_color, m.line_width, m.line_style, g))
         painter.setFont(QFont(m.number_font.family, max(6, int(g * m.number_font.size_grid * .45))))
+        def _qt_align(h, v):
+            ha = {'left': Qt.AlignLeft, 'center': Qt.AlignHCenter, 'right': Qt.AlignRight}.get(str(h or '').lower(), Qt.AlignHCenter)
+            va = {'upper': Qt.AlignTop, 'center': Qt.AlignVCenter, 'lower': Qt.AlignBottom}.get(str(v or '').lower(), Qt.AlignVCenter)
+            return ha | va
+        def _draw_anchored_text(text, ax, ay, w_grid, h_grid, align, font_model):
+            # ax/ay are model-grid coordinates in the symbol coordinate system.
+            # Convert to this pin item's local painter coordinates.
+            lx = (float(ax) - float(m.x)) * g
+            ly = -(float(ay) - float(m.y)) * g
+            rect = QRectF(lx - w_grid * g / 2, ly - h_grid * g / 2, w_grid * g, h_grid * g)
+            painter.drawText(rect, align, str(text))
         if m.visible_number:
-            painter.drawText(QRectF(min(x1, x2) - .4*g, min(y1, y2) - .85 * g, max(abs(x2 - x1), .8*g), max(abs(y2-y1), .5*g)), Qt.AlignCenter, m.number)
+            if getattr(m, 'number_x', None) is not None and getattr(m, 'number_y', None) is not None:
+                _draw_anchored_text(m.number, m.number_x, m.number_y, 4.5, 1.1, _qt_align(getattr(m, 'number_h_align', 'center'), getattr(m, 'number_v_align', 'center')), m.number_font)
+            else:
+                painter.drawText(QRectF(min(x1, x2) - .4*g, min(y1, y2) - .85 * g, max(abs(x2 - x1), .8*g), max(abs(y2-y1), .5*g)), Qt.AlignCenter, m.number)
         # Pin name and pin function are independent display attributes.
-        # If both are visible, both are shown; if only one is visible, only that
-        # value is shown. This keeps Template/Wizard visibility controls honest.
+        # If Mentor-native label coordinates are present, draw exactly at the imported anchor.
         parts = []
         if m.visible_name and str(m.name or '').strip():
             parts.append(m.name)
@@ -419,7 +441,9 @@ class PinItem(TransformMixin, QGraphicsItem):
                 pass
             painter.setPen(pen_for(label_color, m.line_width, m.line_style, g))
             painter.setFont(QFont(m.label_font.family, max(8, int(g * m.label_font.size_grid * .45))))
-            if m.side == PinSide.LEFT.value:
+            if getattr(m, 'label_x', None) is not None and getattr(m, 'label_y', None) is not None:
+                _draw_anchored_text(label, m.label_x, m.label_y, 7.5, 1.1, _qt_align(getattr(m, 'label_h_align', 'center'), getattr(m, 'label_v_align', 'center')), m.label_font)
+            elif m.side == PinSide.LEFT.value:
                 painter.drawText(QRectF(.25 * g, -.35 * g, 6 * g, .7 * g), Qt.AlignVCenter | Qt.AlignLeft, label)
             elif m.side == PinSide.TOP.value:
                 painter.drawText(QRectF(-3 * g, .15 * g, 6 * g, .7 * g), Qt.AlignCenter, label)
@@ -427,6 +451,19 @@ class PinItem(TransformMixin, QGraphicsItem):
                 painter.drawText(QRectF(-3 * g, -.85 * g, 6 * g, .7 * g), Qt.AlignCenter, label)
             else:
                 painter.drawText(QRectF(-6.25 * g, -.35 * g, 6 * g, .7 * g), Qt.AlignVCenter | Qt.AlignRight, label)
+        # Draw imported/custom visible pin attributes as children of the pin.
+        # They use absolute symbol anchors converted into this pin item's local
+        # coordinate space, so dragging the pin keeps attributes attached.
+        for key, tm in (getattr(m, 'attribute_texts', {}) or {}).items():
+            try:
+                if not (getattr(m, 'visible_attributes', {}) or {}).get(key, False):
+                    continue
+                text = getattr(tm, 'text', '') or f'{key}: {(getattr(m, 'attributes', {}) or {}).get(key, '')}'
+                painter.setPen(pen_for(getattr(tm, 'color', (0, 0, 0)), getattr(m, 'line_width', 0.03), getattr(m, 'line_style', 'solid'), g))
+                painter.setFont(QFont(getattr(tm, 'font_family', 'Arial'), max(6, int(g * float(getattr(tm, 'font_size_grid', .45) or .45) * .45))))
+                _draw_anchored_text(text, tm.x, tm.y, 8.0, 1.1, _qt_align(getattr(tm, 'h_align', 'left'), getattr(tm, 'v_align', 'center')), getattr(m, 'label_font', None))
+            except Exception:
+                pass
         if self.isSelected():
             painter.setPen(QPen(QColor(80, 80, 80), 1, Qt.DashLine))
             painter.drawRect(self.boundingRect())
@@ -463,8 +500,21 @@ class PinItem(TransformMixin, QGraphicsItem):
 
     def update_model_pos(self):
         g = self.window.grid_px
+        old_x, old_y = float(self.model.x), float(self.model.y)
         self.model.x = self.pos().x() / g
         self.model.y = -self.pos().y() / g
+        dx, dy = float(self.model.x) - old_x, float(self.model.y) - old_y
+        if abs(dx) > 1e-9 or abs(dy) > 1e-9:
+            for ax_name, ay_name in (('label_x', 'label_y'), ('number_x', 'number_y')):
+                if getattr(self.model, ax_name, None) is not None and getattr(self.model, ay_name, None) is not None:
+                    setattr(self.model, ax_name, float(getattr(self.model, ax_name)) + dx)
+                    setattr(self.model, ay_name, float(getattr(self.model, ay_name)) + dy)
+            for tm in (getattr(self.model, 'attribute_texts', {}) or {}).values():
+                try:
+                    tm.x = float(tm.x) + dx
+                    tm.y = float(tm.y) + dy
+                except Exception:
+                    pass
 
     def scale_selected(self, factor):
         # Pin length is always quantized to full grid units.

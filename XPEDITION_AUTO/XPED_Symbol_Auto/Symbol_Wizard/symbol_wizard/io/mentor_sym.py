@@ -416,6 +416,7 @@ def _import_native_single(text: str, path: Path) -> SymbolModel:
     graphics: list[GraphicModel] = []
     mentor_raw_unknown: list[str] = []
     body_box_seen = False
+    active_pin_id: int | None = None
 
     for line in _logical_mentor_lines(text):
         if not line or line == "E":
@@ -435,6 +436,7 @@ def _import_native_single(text: str, path: Path) -> SymbolModel:
             elif tag == "D" and len(parts) >= 5:
                 d_top = max(float(parts[2]), float(parts[4]), d_top)
             elif tag == "U" and len(parts) >= 8:
+                active_pin_id = None
                 prop = " ".join(parts[7:])
                 if "=" in prop:
                     name, value = prop.split("=", 1)
@@ -447,20 +449,19 @@ def _import_native_single(text: str, path: Path) -> SymbolModel:
                             font_size_grid=_to_grid(float(parts[3]), z), h_align=_align_from_code(parts[5]), v_align="upper"
                         )
             elif tag == "b" and len(parts) >= 5:
+                active_pin_id = None
                 x1, y1, x2, y2 = map(float, parts[1:5])
                 rect_g = _graphic_rect_from_mentor(x1, y1, x2, y2, z, line)
-                if not body_box_seen:
-                    # The first master box remains the editable body. Additional boxes are
-                    # imported as true graphics so templates from the Liebherr library keep
-                    # their original geometry.
-                    body.x = rect_g.x
-                    body.y = rect_g.y
-                    body.width = rect_g.w
-                    body.height = rect_g.h
-                    body_box_seen = True
-                else:
-                    graphics.append(rect_g)
+                # Mentor body artwork must remain real body artwork.  Do not
+                # consume the first box as the Wizard body rectangle because that
+                # drops it from the imported graphic set and makes complex native
+                # symbols look incomplete.  The Wizard body below is only a hidden
+                # logical bounding box; every native b/l/c/a/T record stays visible
+                # as imported geometry/text.
+                graphics.append(rect_g)
+                body_box_seen = True
             elif tag == "l" and len(parts) >= 6:
+                active_pin_id = None
                 # Mentor line/polyline: l <point-count> x1 y1 x2 y2 [x3 y3 ...]
                 try:
                     npts = int(float(parts[1]))
@@ -474,12 +475,15 @@ def _import_native_single(text: str, path: Path) -> SymbolModel:
                 except Exception:
                     mentor_raw_unknown.append(line)
             elif tag == "c" and len(parts) >= 4:
+                active_pin_id = None
                 cx, cy, r = map(float, parts[1:4])
                 graphics.append(_graphic_circle_from_mentor(cx, cy, abs(r), z, line))
             elif tag == "a" and len(parts) >= 7:
+                active_pin_id = None
                 x1, y1, cx, cy, x2, y2 = map(float, parts[1:7])
                 graphics.append(_graphic_arc_from_mentor(x1, y1, cx, cy, x2, y2, z, line))
             elif tag == "T" and len(parts) >= 7:
+                active_pin_id = None
                 text_value = " ".join(parts[6:])
                 texts.append(TextModel(
                     text=text_value,
@@ -507,24 +511,52 @@ def _import_native_single(text: str, path: Path) -> SymbolModel:
                     "mentor_x1": _to_grid(x1, z), "mentor_y1": _to_grid(y1, z),
                     "mentor_x2": _to_grid(x2, z), "mentor_y2": _to_grid(y2, z),
                     "mentor_side_code": str(side_code),
+                    "attribute_texts": {},
                 }
-            elif tag == "L" and len(parts) >= 10 and pins_tmp:
+                active_pin_id = pid
+            elif tag == "L" and len(parts) >= 10 and active_pin_id in pins_tmp:
                 # Pin label follows the most recently declared pin in native files.
-                pid = max(pins_tmp)
+                # Store the original Mentor text anchor as part of the pin so the
+                # UI can draw the label 1:1 instead of auto-placing it inside the body.
+                pid = active_pin_id
                 label = " ".join(parts[9:])
                 pins_tmp[pid]["name"] = label
-                pins_tmp[pid]["function"] = label
-            elif tag == "A" and len(parts) >= 8 and pins_tmp:
+                pins_tmp[pid]["function"] = ""
+                pins_tmp[pid]["visible_name"] = True
+                pins_tmp[pid]["visible_function"] = False
+                try:
+                    pins_tmp[pid]["label_x"] = _to_grid(float(parts[1]), z)
+                    pins_tmp[pid]["label_y"] = _to_grid(float(parts[2]), z)
+                    pins_tmp[pid]["label_h_align"] = _align_from_code(parts[5])
+                    pins_tmp[pid]["label_v_align"] = _valign_from_code(parts[5])
+                except Exception:
+                    pass
+            elif tag == "A" and len(parts) >= 8 and active_pin_id in pins_tmp:
                 attr = " ".join(parts[7:])
-                pid = max(pins_tmp)
+                pid = active_pin_id
                 if attr.startswith("#="):
-                    pins_tmp[pid]["number"] = attr[2:]
+                    pins_tmp[pid]["number"] = attr[2:] or pins_tmp[pid].get("number", str(pid))
+                    try:
+                        pins_tmp[pid]["number_x"] = _to_grid(float(parts[1]), z)
+                        pins_tmp[pid]["number_y"] = _to_grid(float(parts[2]), z)
+                        pins_tmp[pid]["number_h_align"] = _align_from_code(parts[5])
+                        pins_tmp[pid]["number_v_align"] = _valign_from_code(parts[5])
+                    except Exception:
+                        pass
                 elif attr.upper().startswith("PINTYPE="):
                     pins_tmp[pid]["pin_type"] = _pin_type_to_wizard(attr.split("=", 1)[1])
                 elif '=' in attr:
                     an, av = attr.split('=', 1)
                     pins_tmp[pid].setdefault('attributes', {})[an] = av
-                    pins_tmp[pid].setdefault('visible_attributes', {})[an] = parts[6] != '0'
+                    vis = parts[6] != '0'
+                    pins_tmp[pid].setdefault('visible_attributes', {})[an] = vis
+                    if vis:
+                        pins_tmp[pid].setdefault('attribute_texts', {})[an] = TextModel(
+                            text=f'{an}: {av}' if str(av).strip() else an,
+                            x=_to_grid(float(parts[1]), z), y=_to_grid(float(parts[2]), z),
+                            font_size_grid=_to_grid(float(parts[3]), z),
+                            h_align=_align_from_code(parts[5]), v_align=_valign_from_code(parts[5])
+                        )
                     if an.upper() in ('FUNCTION', 'PIN_FUNCTION', 'PINFUNCTION'):
                         pins_tmp[pid]['function'] = av
             elif tag.startswith('|') or tag == 'Q':
@@ -535,6 +567,32 @@ def _import_native_single(text: str, path: Path) -> SymbolModel:
         except Exception:
             mentor_raw_unknown.append(line)
             continue
+
+    # For Mentor-native imports the visible BODY is the complete set of imported
+    # graphic primitives, not a generated Wizard rectangle.  Keep a logical body
+    # bounding box for grouping/metadata, but mark it as hidden in the GUI and
+    # disable automatic pin docking so imported pin anchors stay 1:1.
+    if graphics:
+        xs: list[float] = []
+        ys: list[float] = []
+        for gr in graphics:
+            sh = str(getattr(gr, 'shape', '')).lower()
+            xs.extend([float(gr.x), float(gr.x + gr.w)])
+            if sh == 'line':
+                ys.extend([float(gr.y), float(gr.y - gr.h)])
+            elif sh == 'arc':
+                ys.extend([float(gr.y), float(gr.y + gr.h)])
+                if gr.ctrl_x is not None and gr.ctrl_y is not None:
+                    xs.append(float(gr.x + gr.ctrl_x)); ys.append(float(gr.y + gr.ctrl_y))
+            else:
+                ys.extend([float(gr.y), float(gr.y - gr.h)])
+        if xs and ys:
+            left, right = min(xs), max(xs)
+            top, bottom = max(ys), min(ys)
+            body.x = left
+            body.y = top
+            body.width = max(0.0, right - left)
+            body.height = max(0.0, top - bottom)
 
     if not body.attributes:
         body.attributes.update({"RefDes": "U?", "Value": symbol_name})
@@ -554,13 +612,21 @@ def _import_native_single(text: str, path: Path) -> SymbolModel:
         pmodel.number_font.color = col
         pmodel.label_font.color = col
         pins.append(pmodel)
-    if not body_box_seen:
+    if not body_box_seen and not graphics:
+        # Truly body-less symbol: keep a zero logical body.
         body.x = 0.0; body.y = 0.0; body.width = 0.0; body.height = 0.0
         body.attributes["MENTOR_HAS_BODY"] = "0"
         body.visible_attributes["MENTOR_HAS_BODY"] = False
     else:
+        # Mentor graphic primitives are the visible body.  The logical body bbox is
+        # retained only as anchor/grouping metadata and must not be reset just
+        # because the native symbol used lines instead of a 'b' record.
         body.attributes["MENTOR_HAS_BODY"] = "1"
         body.visible_attributes["MENTOR_HAS_BODY"] = False
+    body.attributes["MENTOR_GRAPHICS_AS_BODY"] = "1"
+    body.visible_attributes["MENTOR_GRAPHICS_AS_BODY"] = False
+    body.attributes["MENTOR_DISABLE_AUTO_DOCK"] = "1"
+    body.visible_attributes["MENTOR_DISABLE_AUTO_DOCK"] = False
     # Store detected import scale for diagnostics/template debugging.
     body.attributes.setdefault("MENTOR_GRID_UNIT", str(int(z) if float(z).is_integer() else z))
     body.visible_attributes.setdefault("MENTOR_GRID_UNIT", False)

@@ -67,10 +67,20 @@ class PinModel(TransformModel):
     label_font: FontModel=field(default_factory=lambda: FontModel(size_grid=0.55))
     attributes: Dict[str,str]=field(default_factory=dict)
     visible_attributes: Dict[str,bool]=field(default_factory=dict)
+    # Persistent display anchors for native/imported pin attributes. These are
+    # owned by the pin, not by the body, so moving a pin moves its attributes.
+    attribute_texts: Dict[str, TextModel]=field(default_factory=dict)
     # Native Mentor endpoint metadata for loss-minimized import/export/debug.
     mentor_x1: float|None=None; mentor_y1: float|None=None
     mentor_x2: float|None=None; mentor_y2: float|None=None
     mentor_side_code: str=''
+    # Optional native Mentor label/number anchor coordinates.  These keep imported
+    # pin labels exactly where the .sym file placed them instead of using the
+    # Wizard's generic inside-body pin-label layout.
+    label_x: float|None=None; label_y: float|None=None
+    label_h_align: str='left'; label_v_align: str='center'
+    number_x: float|None=None; number_y: float|None=None
+    number_h_align: str='center'; number_v_align: str='center'
 
 @dataclass
 class TextModel(TransformModel):

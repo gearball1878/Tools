@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from dataclasses import asdict
 from PySide6.QtCore import Qt, QTimer, QRectF, QEvent, QObject
-from PySide6.QtGui import QAction, QColor, QKeySequence, QFontDatabase
+from PySide6.QtGui import QAction, QColor, QKeySequence, QFontDatabase, QPen, QBrush
 from PySide6.QtWidgets import *
 
 from symbol_wizard.models.document import *
@@ -1117,6 +1117,14 @@ class TemplateEditorDialog(QDialog):
             self.form.addRow('Color', self._color_button_row('Color RGB', getattr(m, 'color', (0, 0, 0)), lambda _checked=False, model=m: self.color_model(model)))
             self.form.addRow('Number font', self._font_combo(m.number_font.family, lambda v: self._set(m.number_font, 'family', v)))
             self.form.addRow('Label font', self._font_combo(m.label_font.family, lambda v: self._set(m.label_font, 'family', v)))
+            # Custom/imported pin attributes are owned by this pin, not by the body.
+            for k in sorted((getattr(m, 'attributes', {}) or {}).keys()):
+                row=QWidget(); l=QHBoxLayout(row); l.setContentsMargins(0,0,0,0)
+                cb=QCheckBox('visible'); cb.setChecked((getattr(m, 'visible_attributes', {}) or {}).get(k, False))
+                ed=QLineEdit(str((getattr(m, 'attributes', {}) or {}).get(k, '')))
+                cb.toggled.connect(lambda v, key=k, model=m: self._set_pin_custom_attr_visible(model, key, v))
+                ed.editingFinished.connect(lambda key=k, model=m, e=ed: self._set_pin_custom_attr_value(model, key, e.text()))
+                l.addWidget(cb); l.addWidget(ed); self.form.addRow(k, row)
         elif kind in ('TEXT', 'ATTR_REF_DES', 'ATTR_BODY'):
             is_attr = kind in ('ATTR_REF_DES', 'ATTR_BODY') or bool(getattr(m, '_is_attribute_text', False))
             line = self._line(m.text, lambda v, item=item: self._set_text_item_attr(item, 'text', v)) if is_attr else self._plain_text_editor(m.text, lambda v, item=item: self._set_text_item_attr(item, 'text', v))
@@ -1144,6 +1152,25 @@ class TemplateEditorDialog(QDialog):
                 self.form.addRow('Curve radius', self._dbl(getattr(m, 'curve_radius', 0), lambda v: self._set(m, 'curve_radius', v), -100, 100, .1))
             self.form.addRow('Rotation [deg]', self._dbl(getattr(m, 'rotation', 0), lambda v: self._set(m, 'rotation', v), -360, 360, 15))
             self.form.addRow('Color', self._color_button_row('Stroke RGB', getattr(m.style, 'stroke', (0, 0, 0)), lambda _checked=False, style=m.style: self.color_model(style, 'stroke')))
+
+    def _set_pin_custom_attr_visible(self, pin, key, visible):
+        self.push_undo_state()
+        pin.visible_attributes[key] = bool(visible)
+        if bool(visible) and key not in getattr(pin, 'attribute_texts', {}):
+            if not hasattr(pin, 'attribute_texts') or pin.attribute_texts is None:
+                pin.attribute_texts = {}
+            pin.attribute_texts[key] = TextModel(text=f'{key}: {pin.attributes.get(key, '')}' if str(pin.attributes.get(key, '')).strip() else str(key), x=pin.x, y=pin.y - 1, font_size_grid=.45)
+        self.dirty = True
+        self.rebuild_scene()
+
+    def _set_pin_custom_attr_value(self, pin, key, value):
+        self.push_undo_state()
+        pin.attributes[key] = value
+        tm = (getattr(pin, 'attribute_texts', {}) or {}).get(key)
+        if tm is not None:
+            tm.text = f'{key}: {value}' if str(value).strip() else str(key)
+        self.dirty = True
+        self.rebuild_scene()
 
     def _line(self, value, fn):
         w=QLineEdit(str(value)); w.returnPressed.connect(lambda widget=w: fn(widget.text())); return w
@@ -1908,7 +1935,7 @@ class MainWindow(QMainWindow):
         self.clipboard_is_cut = False
         self.undo_stack: list[LibraryModel] = []
         self.redo_stack: list[LibraryModel] = []
-        self.max_history = 10
+        self.max_history = 100
         self._history_guard = False
         self.dirty = False
         self._dirty_symbol_index: int | None = None
@@ -2244,6 +2271,12 @@ class MainWindow(QMainWindow):
             if sc:
                 a.setShortcut(QKeySequence(sc))
             edit_menu.addAction(a)
+
+
+        # Ctrl+Z/Ctrl+Y are assigned only once via the Edit menu actions.
+        # Do not install additional QShortcut objects here: Qt reports
+        # 'Ambiguous shortcut overload' when the menu QAction and an application
+        # shortcut both own the same key sequence.
 
         edit_menu.addSeparator()
         a = QAction('Delete Current Symbol / Split Symbol', self)
@@ -3474,7 +3507,23 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         self.set_format_guide_to_active_origin()
         self.dock_pins_to_body(u)
 
+        body_attrs = getattr(u.body, 'attributes', {}) or {}
+        graphics_as_body = str(body_attrs.get('MENTOR_GRAPHICS_AS_BODY', '0')) == '1'
+
+        # Imported Mentor/Xpedition symbols still need a real Wizard body object:
+        # pins, graphics and visible attributes are anchored to it exactly like
+        # internally created symbols.  For native imports the visible body artwork
+        # consists of the imported b/l/c/a graphic primitives, therefore the body
+        # item is only the logical/selectable bounding box and is rendered
+        # transparent until selected/resized/moved.
         body_item = BodyItem(u.body, self)
+        if graphics_as_body:
+            try:
+                body_item.setPen(QPen(QColor(0, 0, 0, 0), 0))
+                body_item.setBrush(QBrush(Qt.NoBrush))
+                body_item.setToolTip('Logischer Body: importierte Grafiken bilden den sichtbaren Body')
+            except Exception:
+                pass
         self.apply_item_selectability(body_item)
         self.scene.addItem(body_item)
         self._restore_or_select_item(body_item, selected_ids)
@@ -4053,6 +4102,16 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         self.font_props('Pin number font', m.number_font)
         self.font_props('Pin label font', m.label_font)
         self.form.addRow('Color', self._color_button_row('Color RGB', m.color, lambda: self.color_model(m)))
+        custom_attrs = getattr(m, 'attributes', {}) or {}
+        if custom_attrs:
+            self.form.addRow(QLabel('<b>Custom Pin Attributes</b>'))
+            for k in sorted(custom_attrs.keys()):
+                row=QWidget(); l=QHBoxLayout(row); l.setContentsMargins(0,0,0,0)
+                cb=QCheckBox('visible'); cb.setChecked((getattr(m, 'visible_attributes', {}) or {}).get(k, False))
+                ed=QLineEdit(str(custom_attrs.get(k, '')))
+                cb.toggled.connect(lambda v, key=k, pin=m: self.set_pin_custom_attr_visible(pin, key, v))
+                ed.editingFinished.connect(lambda key=k, pin=m, e=ed: self.set_pin_custom_attr_value(pin, key, e.text()))
+                l.addWidget(cb); l.addWidget(ed); self.form.addRow(k, row)
 
     def text_props(self, item):
         m = item.model
@@ -4299,6 +4358,30 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
             self.statusBar().showMessage('Duplicate pin number(s): ' + ', '.join(dup), 8000)
         self.schedule_scene_refresh()
 
+    def set_pin_custom_attr_visible(self, pin, key, visible):
+        self.push_undo_state()
+        if not hasattr(pin, 'visible_attributes') or pin.visible_attributes is None:
+            pin.visible_attributes = {}
+        if not hasattr(pin, 'attribute_texts') or pin.attribute_texts is None:
+            pin.attribute_texts = {}
+        pin.visible_attributes[key] = bool(visible)
+        if visible and key not in pin.attribute_texts:
+            val = (getattr(pin, 'attributes', {}) or {}).get(key, '')
+            pin.attribute_texts[key] = TextModel(text=f'{key}: {val}' if str(val).strip() else str(key), x=pin.x, y=pin.y - 1, font_size_grid=.45)
+        self.dirty = True
+        self.schedule_scene_refresh()
+
+    def set_pin_custom_attr_value(self, pin, key, value):
+        self.push_undo_state()
+        if not hasattr(pin, 'attributes') or pin.attributes is None:
+            pin.attributes = {}
+        pin.attributes[key] = value
+        tm = (getattr(pin, 'attribute_texts', {}) or {}).get(key)
+        if tm is not None:
+            tm.text = f'{key}: {value}' if str(value).strip() else str(key)
+        self.dirty = True
+        self.schedule_scene_refresh()
+
     def set_pin_length(self, m, v):
         self.push_undo_state()
         # Pin length is always an integer grid multiple.
@@ -4511,8 +4594,21 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
 
     def dock_pins_to_body(self, u: SymbolUnitModel):
         b = u.body
+        attrs = getattr(b, 'attributes', {}) or {}
+        # Mentor-native imports already contain exact pin endpoints.  Re-docking
+        # during every scene rebuild would move left/right/top/bottom pins to a
+        # generated bounding box and destroy the imported placement.
+        if str(attrs.get('MENTOR_DISABLE_AUTO_DOCK', '0')) == '1' or str(attrs.get('MENTOR_GRAPHICS_AS_BODY', '0')) == '1':
+            return
         for p in u.pins:
-            p.x = b.x if p.side == PinSide.LEFT.value else b.x + b.width
+            if p.side == PinSide.LEFT.value:
+                p.x = b.x
+            elif p.side == PinSide.RIGHT.value:
+                p.x = b.x + b.width
+            elif p.side == PinSide.TOP.value:
+                p.y = b.y
+            elif p.side == PinSide.BOTTOM.value:
+                p.y = b.y - b.height
 
     def symbol_bounds_grid(self, symbol: SymbolModel | None = None):
         symbol = symbol or self.symbol
@@ -5337,6 +5433,11 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         unit.body.y += dy
         for p in unit.pins:
             p.x += dx; p.y += dy
+            for ax_name, ay_name in (('label_x', 'label_y'), ('number_x', 'number_y')):
+                if getattr(p, ax_name, None) is not None:
+                    setattr(p, ax_name, getattr(p, ax_name) + dx)
+                if getattr(p, ay_name, None) is not None:
+                    setattr(p, ay_name, getattr(p, ay_name) + dy)
         for t in unit.texts:
             t.x += dx; t.y += dy
         for t in getattr(unit.body, 'attribute_texts', {}).values():
