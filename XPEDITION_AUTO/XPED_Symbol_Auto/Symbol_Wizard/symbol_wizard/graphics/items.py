@@ -1935,3 +1935,194 @@ try:
     GraphicItem.mouseReleaseEvent = _lh69_graphic_mouse_release
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# Liebherr v70: natural line endpoint scaling.
+# v69 fixed rectangle/ellipse handle scaling. Lines need a separate path because
+# their handles are endpoints, not bbox corners.  Endpoint resize is now done in
+# the frozen local coordinate system from mouse press, the opposite endpoint is
+# held exactly in scene coordinates, and the dragged endpoint is snapped to the
+# edit grid. This keeps line scaling natural after rotate/flip/negative scales.
+# ---------------------------------------------------------------------------
+try:
+    _lh70_prev_graphic_mouse_press = GraphicItem.mousePressEvent
+    _lh70_prev_graphic_mouse_move = GraphicItem.mouseMoveEvent
+    _lh70_prev_graphic_mouse_release = GraphicItem.mouseReleaseEvent
+    _lh70_prev_graphic_hover_move = GraphicItem.hoverMoveEvent
+except Exception:
+    _lh70_prev_graphic_mouse_press = None
+    _lh70_prev_graphic_mouse_move = None
+    _lh70_prev_graphic_mouse_release = None
+    _lh70_prev_graphic_hover_move = None
+
+
+def _lh70_line_endpoint_points(item):
+    g = float(item.window.grid_px)
+    return {
+        'start': QPointF(0.0, 0.0),
+        'end': QPointF(_lh68_float(getattr(item.model, 'w', 0.0), 0.0) * g,
+                       _lh68_float(getattr(item.model, 'h', 0.0), 0.0) * g),
+    }
+
+
+def _lh70_line_min_vector(win, vx, vy):
+    """Keep line length at least one edit-grid step while preserving direction."""
+    import math
+    min_len = max(_lh68_edit_grid_px(win), 1e-9)
+    length = math.hypot(float(vx), float(vy))
+    if length >= min_len:
+        return float(vx), float(vy)
+    if length < 1e-9:
+        return min_len, 0.0
+    f = min_len / length
+    return float(vx) * f, float(vy) * f
+
+
+def _lh70_line_mouse_press(self, event):
+    if event.button() == Qt.LeftButton and self.isSelected():
+        try:
+            if str(getattr(self.model, 'shape', '') or '') == 'line':
+                # Rotation handle stays on the existing v68/v69 path.
+                if _rotation_handle(self._rect(), self.window.grid_px * self.rotate_handle_factor).contains(event.pos()):
+                    return _lh70_prev_graphic_mouse_press(self, event)
+                h = _hit_handle(self._handles(), event.pos())
+                if h in ('start', 'end'):
+                    st = self.sceneTransform()
+                    inv, ok = st.inverted()
+                    if not ok:
+                        return _lh70_prev_graphic_mouse_press(self, event)
+                    pts = _lh70_line_endpoint_points(self)
+                    fixed = 'end' if h == 'start' else 'start'
+                    self._lh70_line_resizing = h
+                    self._lh70_line_fixed_name = fixed
+                    self._lh70_line_start_transform = st
+                    self._lh70_line_scene_to_start_local = inv
+                    self._lh70_line_fixed_scene = self.mapToScene(pts[fixed])
+                    self._lh70_line_start_scene = self.mapToScene(pts['start'])
+                    self._lh70_line_end_scene = self.mapToScene(pts['end'])
+                    self._lh70_line_start = {
+                        'x': _lh68_float(getattr(self.model, 'x', 0.0), 0.0),
+                        'y': _lh68_float(getattr(self.model, 'y', 0.0), 0.0),
+                        'w': _lh68_float(getattr(self.model, 'w', 0.0), 0.0),
+                        'h': _lh68_float(getattr(self.model, 'h', 0.0), 0.0),
+                        'sx': _lh68_float(getattr(self.model, 'scale_x', 1.0), 1.0),
+                        'sy': _lh68_float(getattr(self.model, 'scale_y', 1.0), 1.0),
+                        'rot': _lh68_float(getattr(self.model, 'rotation', 0.0), 0.0),
+                        'pos': QPointF(self.pos()),
+                    }
+                    event.accept(); return
+        except Exception:
+            pass
+    return _lh70_prev_graphic_mouse_press(self, event)
+
+
+def _lh70_line_mouse_move(self, event):
+    if getattr(self, '_lh70_line_resizing', None) and getattr(self, '_lh70_line_start', None) is not None:
+        try:
+            win = self.window
+            g = float(win.grid_px)
+            hname = str(self._lh70_line_resizing)
+            start = dict(self._lh70_line_start)
+            inv = self._lh70_line_scene_to_start_local
+            start_transform = self._lh70_line_start_transform
+            old_end_local = QPointF(start['w'] * g, start['h'] * g)
+
+            # The mouse target is snapped in scene coordinates so line endpoints
+            # land exactly on the visible edit grid.
+            mouse_scene = _lh68_snap_scene_point(win, event.scenePos())
+            mouse_local = inv.map(mouse_scene)
+
+            self.prepareGeometryChange()
+            self.model.scale_x = start['sx']; self.model.scale_y = start['sy']; self.model.rotation = start['rot']
+            self.model.x = start['x']; self.model.y = start['y']
+            self.setPos(QPointF(start['pos']))
+            self.apply_transform_from_model()
+
+            if hname == 'end':
+                # Keep local start as object origin, change only endpoint vector.
+                vx, vy = _lh70_line_min_vector(win, mouse_local.x(), mouse_local.y())
+                self.model.w = vx / g
+                self.model.h = vy / g
+                self.setPos(QPointF(start['pos']))
+                self.model.x = start['x']; self.model.y = start['y']
+                self.apply_transform_from_model()
+                # Correct any transform-origin side effect so the fixed start
+                # endpoint is exactly where it was at mouse press.
+                fixed_now = self.mapToScene(QPointF(0.0, 0.0))
+                delta = self._lh70_line_fixed_scene - fixed_now
+            else:
+                # Move object origin to the new start point in the frozen local
+                # frame. Endpoint vector becomes old_end - new_start.
+                vx = old_end_local.x() - mouse_local.x()
+                vy = old_end_local.y() - mouse_local.y()
+                vx, vy = _lh70_line_min_vector(win, vx, vy)
+                new_origin_scene = start_transform.map(QPointF(old_end_local.x() - vx, old_end_local.y() - vy))
+                self.model.w = vx / g
+                self.model.h = vy / g
+                self.setPos(new_origin_scene)
+                self.model.x = new_origin_scene.x() / g
+                self.model.y = -new_origin_scene.y() / g
+                self.apply_transform_from_model()
+                fixed_now = self.mapToScene(QPointF(self.model.w * g, self.model.h * g))
+                delta = self._lh70_line_fixed_scene - fixed_now
+
+            if abs(delta.x()) > 1e-9 or abs(delta.y()) > 1e-9:
+                final_pos = self.pos() + delta
+                self.setPos(final_pos)
+                self.model.x = final_pos.x() / g
+                self.model.y = -final_pos.y() / g
+
+            try:
+                win.notify_canvas_model_changed()
+            except Exception:
+                try: win.live_refresh()
+                except Exception: pass
+            self.update(); event.accept(); return
+        except Exception:
+            try:
+                self._lh70_line_resizing = None
+            except Exception:
+                pass
+    return _lh70_prev_graphic_mouse_move(self, event)
+
+
+def _lh70_line_mouse_release(self, event):
+    try:
+        self._lh70_line_resizing = None
+        self._lh70_line_start = None
+        self._lh70_line_fixed_scene = None
+        self._lh70_line_start_transform = None
+        self._lh70_line_scene_to_start_local = None
+    except Exception:
+        pass
+    return _lh70_prev_graphic_mouse_release(self, event)
+
+
+def _lh70_line_hover_move(self, event):
+    try:
+        if self.isSelected() and str(getattr(self.model, 'shape', '') or '') == 'line':
+            h = 'rot' if _rotation_handle(self._rect(), self.window.grid_px * self.rotate_handle_factor).contains(event.pos()) else _hit_handle(self._handles(), event.pos())
+            if h in ('start', 'end'):
+                # Endpoint handles should feel like dragging along the visible
+                # line direction; horizontal/vertical/diagonal cursor is chosen
+                # from the transformed line vector.
+                pts = _lh70_line_endpoint_points(self)
+                a = self.mapToScene(pts['start']); b = self.mapToScene(pts['end'])
+                import math
+                ang = (math.degrees(math.atan2(b.y() - a.y(), b.x() - a.x())) + 180.0) % 180.0
+                if ang < 22.5 or ang >= 157.5: cur = Qt.SizeHorCursor
+                elif 67.5 <= ang < 112.5: cur = Qt.SizeVerCursor
+                elif 22.5 <= ang < 67.5: cur = Qt.SizeFDiagCursor
+                else: cur = Qt.SizeBDiagCursor
+                self.setCursor(QCursor(cur)); return QGraphicsItem.hoverMoveEvent(self, event)
+    except Exception:
+        pass
+    return _lh70_prev_graphic_hover_move(self, event)
+
+try:
+    GraphicItem.mousePressEvent = _lh70_line_mouse_press
+    GraphicItem.mouseMoveEvent = _lh70_line_mouse_move
+    GraphicItem.mouseReleaseEvent = _lh70_line_mouse_release
+    GraphicItem.hoverMoveEvent = _lh70_line_hover_move
+except Exception:
+    pass
