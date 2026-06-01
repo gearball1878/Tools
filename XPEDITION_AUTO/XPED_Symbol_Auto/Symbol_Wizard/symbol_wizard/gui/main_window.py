@@ -4,6 +4,7 @@ import csv
 import json
 import re
 import pickle
+import math
 from pathlib import Path
 from dataclasses import asdict
 from PySide6.QtCore import Qt, QTimer, QRectF, QEvent, QObject
@@ -5221,174 +5222,6 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
             gr.w = sg(gw * sx)
             gr.h = sg(gh * sy)
 
-
-    # ------------------------------------------------------------------ Real BODY transforms
-
-    def _body_transform_origin(self, body: SymbolBodyModel):
-        """Return the logical body center in model/grid coordinates (y points up)."""
-        return (float(body.x) + float(body.width) / 2.0,
-                float(body.y) - float(body.height) / 2.0)
-
-    def _rotate_point_model(self, x: float, y: float, cx: float, cy: float, deg: float):
-        import math
-        a = math.radians(float(deg))
-        ca, sa = math.cos(a), math.sin(a)
-        dx, dy = float(x) - cx, float(y) - cy
-        return (cx + dx * ca - dy * sa, cy + dx * sa + dy * ca)
-
-    def _scale_point_model(self, x: float, y: float, cx: float, cy: float, sx: float, sy: float):
-        return (cx + (float(x) - cx) * float(sx), cy + (float(y) - cy) * float(sy))
-
-    def _transform_text_model(self, tm, cx, cy, mode, *, deg=0.0, sx=1.0, sy=1.0):
-        if tm is None:
-            return
-        try:
-            if mode == 'rotate':
-                tm.x, tm.y = self._rotate_point_model(tm.x, tm.y, cx, cy, deg)
-                tm.rotation = (float(getattr(tm, 'rotation', 0.0) or 0.0) + float(deg)) % 360
-            elif mode == 'scale':
-                tm.x, tm.y = self._scale_point_model(tm.x, tm.y, cx, cy, sx, sy)
-                # Keep text readable but let uniform scale change the size.
-                if abs(float(sx) - float(sy)) < 1e-9:
-                    try:
-                        tm.font_size_grid = max(0.05, float(tm.font_size_grid) * abs(float(sx)))
-                    except Exception:
-                        pass
-            elif mode == 'flip_h':
-                tm.x = cx - (float(tm.x) - cx)
-                tm.rotation = (-float(getattr(tm, 'rotation', 0.0) or 0.0)) % 360
-            elif mode == 'flip_v':
-                tm.y = cy - (float(tm.y) - cy)
-                tm.rotation = (180.0 - float(getattr(tm, 'rotation', 0.0) or 0.0)) % 360
-        except Exception:
-            pass
-
-    def _transform_pin_model(self, p, cx, cy, mode, *, deg=0.0, sx=1.0, sy=1.0):
-        def side_after_rotation(side, deg):
-            # Only remap at right angles. For 15/30° arbitrary rotations the side
-            # metadata is kept, while the drawn pin rotation carries the angle.
-            try:
-                d = int(round(float(deg) / 90.0)) % 4
-            except Exception:
-                d = 0
-            order = [PinSide.RIGHT.value, PinSide.TOP.value, PinSide.LEFT.value, PinSide.BOTTOM.value]
-            if d and side in order:
-                return order[(order.index(side) + d) % 4]
-            return side
-        try:
-            if mode == 'rotate':
-                p.x, p.y = self._rotate_point_model(p.x, p.y, cx, cy, deg)
-                p.rotation = (float(getattr(p, 'rotation', 0.0) or 0.0) + float(deg)) % 360
-                p.side = side_after_rotation(getattr(p, 'side', PinSide.LEFT.value), deg)
-            elif mode == 'scale':
-                p.x, p.y = self._scale_point_model(p.x, p.y, cx, cy, sx, sy)
-                p.length = max(0.05, float(getattr(p, 'length', 1.0) or 1.0) * max(abs(float(sx)), abs(float(sy))))
-            elif mode == 'flip_h':
-                p.x = cx - (float(p.x) - cx)
-                p.rotation = (-float(getattr(p, 'rotation', 0.0) or 0.0)) % 360
-                if p.side == PinSide.LEFT.value:
-                    p.side = PinSide.RIGHT.value
-                elif p.side == PinSide.RIGHT.value:
-                    p.side = PinSide.LEFT.value
-            elif mode == 'flip_v':
-                p.y = cy - (float(p.y) - cy)
-                p.rotation = (180.0 - float(getattr(p, 'rotation', 0.0) or 0.0)) % 360
-                if p.side == PinSide.TOP.value:
-                    p.side = PinSide.BOTTOM.value
-                elif p.side == PinSide.BOTTOM.value:
-                    p.side = PinSide.TOP.value
-            # Explicit label/number anchors and pin-owned attribute texts must follow the pin.
-            for ax, ay in (('label_x', 'label_y'), ('number_x', 'number_y')):
-                if getattr(p, ax, None) is not None and getattr(p, ay, None) is not None:
-                    if mode == 'rotate':
-                        nx, ny = self._rotate_point_model(getattr(p, ax), getattr(p, ay), cx, cy, deg)
-                    elif mode == 'scale':
-                        nx, ny = self._scale_point_model(getattr(p, ax), getattr(p, ay), cx, cy, sx, sy)
-                    elif mode == 'flip_h':
-                        nx, ny = cx - (float(getattr(p, ax)) - cx), getattr(p, ay)
-                    else:
-                        nx, ny = getattr(p, ax), cy - (float(getattr(p, ay)) - cy)
-                    setattr(p, ax, nx); setattr(p, ay, ny)
-            for tm in (getattr(p, 'attribute_texts', {}) or {}).values():
-                self._transform_text_model(tm, cx, cy, mode, deg=deg, sx=sx, sy=sy)
-        except Exception:
-            pass
-
-    def _transform_graphic_model(self, gr, cx, cy, mode, *, deg=0.0, sx=1.0, sy=1.0):
-        try:
-            # Treat x/y and x+w/y+h as endpoints for line/arc-like imported primitives.
-            if mode == 'rotate':
-                x1, y1 = self._rotate_point_model(gr.x, gr.y, cx, cy, deg)
-                x2, y2 = self._rotate_point_model(float(gr.x) + float(gr.w), float(gr.y) + float(gr.h), cx, cy, deg)
-                gr.x, gr.y, gr.w, gr.h = x1, y1, x2 - x1, y2 - y1
-                if getattr(gr, 'ctrl_x', None) is not None and getattr(gr, 'ctrl_y', None) is not None:
-                    cax, cay = self._rotate_point_model(float(gr.x) + float(gr.ctrl_x), float(gr.y) + float(gr.ctrl_y), cx, cy, deg)
-                    gr.ctrl_x, gr.ctrl_y = cax - gr.x, cay - gr.y
-                if str(getattr(gr, 'shape', '')).lower() not in ('line', 'arc', 'polyline'):
-                    gr.rotation = (float(getattr(gr, 'rotation', 0.0) or 0.0) + float(deg)) % 360
-            elif mode == 'scale':
-                x1, y1 = self._scale_point_model(gr.x, gr.y, cx, cy, sx, sy)
-                x2, y2 = self._scale_point_model(float(gr.x) + float(gr.w), float(gr.y) + float(gr.h), cx, cy, sx, sy)
-                gr.x, gr.y, gr.w, gr.h = x1, y1, x2 - x1, y2 - y1
-                try:
-                    gr.style.line_width = max(0.001, float(gr.style.line_width) * max(abs(float(sx)), abs(float(sy))))
-                except Exception:
-                    pass
-            elif mode == 'flip_h':
-                x1, y1 = cx - (float(gr.x) - cx), float(gr.y)
-                x2, y2 = cx - (float(gr.x) + float(gr.w) - cx), float(gr.y) + float(gr.h)
-                gr.x, gr.y, gr.w, gr.h = x1, y1, x2 - x1, y2 - y1
-                gr.rotation = (-float(getattr(gr, 'rotation', 0.0) or 0.0)) % 360
-            elif mode == 'flip_v':
-                x1, y1 = float(gr.x), cy - (float(gr.y) - cy)
-                x2, y2 = float(gr.x) + float(gr.w), cy - (float(gr.y) + float(gr.h) - cy)
-                gr.x, gr.y, gr.w, gr.h = x1, y1, x2 - x1, y2 - y1
-                gr.rotation = (180.0 - float(getattr(gr, 'rotation', 0.0) or 0.0)) % 360
-        except Exception:
-            pass
-
-    def transform_current_body_real_objects(self, mode: str, *, deg: float = 0.0, factor: float = 1.0):
-        """Transform the real symbol objects, not a temporary body frame.
-
-        This is intentionally used by BodyItem for rotate/scale/flip. Imported
-        Mentor/template artwork is stored as real graphics in the unit; pins and
-        all pin/body attributes are transformed around the same body origin so
-        their relative coordinates stay fixed and pins remain flush with the body.
-        """
-        u = self.current_unit
-        b = u.body
-        cx, cy = self._body_transform_origin(b)
-        sx = sy = float(factor)
-        if mode == 'rotate':
-            b.rotation = (float(getattr(b, 'rotation', 0.0) or 0.0) + float(deg)) % 360
-        elif mode == 'scale':
-            # Scale the logical body bounds about its center.
-            old_w, old_h = float(b.width), float(b.height)
-            b.width = max(0.1, old_w * abs(sx))
-            b.height = max(0.1, old_h * abs(sy))
-            b.x = cx - b.width / 2.0
-            b.y = cy + b.height / 2.0
-        elif mode == 'flip_h':
-            b.scale_x = -float(getattr(b, 'scale_x', 1.0) or 1.0)
-        elif mode == 'flip_v':
-            b.scale_y = -float(getattr(b, 'scale_y', 1.0) or 1.0)
-        for gr in list(getattr(u, 'graphics', []) or []):
-            self._transform_graphic_model(gr, cx, cy, mode, deg=deg, sx=sx, sy=sy)
-        for p in list(getattr(u, 'pins', []) or []):
-            self._transform_pin_model(p, cx, cy, mode, deg=deg, sx=sx, sy=sy)
-        for tm in list(getattr(u, 'texts', []) or []):
-            self._transform_text_model(tm, cx, cy, mode, deg=deg, sx=sx, sy=sy)
-        for tm in list((getattr(b, 'attribute_texts', {}) or {}).values()):
-            self._transform_text_model(tm, cx, cy, mode, deg=deg, sx=sx, sy=sy)
-        self.update_current_unit_canvas_positions()
-        self.update_attribute_items_for_unit()
-        self.rebuild_tree()
-        self.rebuild_pin_table()
-        try:
-            self.refresh_properties()
-        except Exception:
-            pass
-
     def schedule_scene_refresh(self, visual_only=False):
         # Keep selected canvas objects selected during deferred refreshes.
         self._selection_restore_ids = self._capture_selection_ids()
@@ -5534,33 +5367,203 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         self.select_model_after_rebuild(model)
         self.rebuild_scene(); self.rebuild_tree()
 
+    def _body_center_grid(self, body=None):
+        b = body or self.current_unit.body
+        return (float(b.x) + float(b.width) / 2.0, float(b.y) - float(b.height) / 2.0)
+
+    def _rot_point(self, x, y, cx, cy, deg):
+        a = math.radians(float(deg))
+        dx, dy = float(x) - cx, float(y) - cy
+        return (cx + math.cos(a) * dx - math.sin(a) * dy,
+                cy + math.sin(a) * dx + math.cos(a) * dy)
+
+    def _scale_point(self, x, y, cx, cy, factor):
+        return (cx + (float(x) - cx) * float(factor),
+                cy + (float(y) - cy) * float(factor))
+
+    def _flip_point(self, x, y, cx, cy, horizontal=True):
+        return ((2 * cx - float(x)) if horizontal else float(x),
+                float(y) if horizontal else (2 * cy - float(y)))
+
+    def _add_rotation(self, obj, deg):
+        try:
+            obj.rotation = (float(getattr(obj, 'rotation', 0.0) or 0.0) + float(deg)) % 360.0
+        except Exception:
+            pass
+
+    def _scale_font_model(self, font, factor):
+        try:
+            font.size_grid = max(0.1, float(getattr(font, 'size_grid', 0.75) or 0.75) * float(factor))
+        except Exception:
+            pass
+
+    def _transform_pin_anchors(self, p, point_fn, rotate_deg=None, scale_factor=None, flip_horizontal=None):
+        for ax, ay in (('label_x', 'label_y'), ('number_x', 'number_y')):
+            if getattr(p, ax, None) is not None and getattr(p, ay, None) is not None:
+                nx, ny = point_fn(float(getattr(p, ax)), float(getattr(p, ay)))
+                setattr(p, ax, nx); setattr(p, ay, ny)
+        for tm in (getattr(p, 'attribute_texts', {}) or {}).values():
+            try:
+                tm.x, tm.y = point_fn(float(tm.x), float(tm.y))
+                if rotate_deg is not None:
+                    self._add_rotation(tm, rotate_deg)
+                if scale_factor is not None:
+                    tm.font_size_grid = max(0.1, float(getattr(tm, 'font_size_grid', 0.55) or 0.55) * float(scale_factor))
+                if flip_horizontal is not None:
+                    tm.rotation = (-float(getattr(tm, 'rotation', 0.0) or 0.0)) % 360.0 if flip_horizontal else (180.0 - float(getattr(tm, 'rotation', 0.0) or 0.0)) % 360.0
+            except Exception:
+                pass
+
+    def _transform_body_attribute_texts(self, body, point_fn, rotate_deg=None, scale_factor=None, flip_horizontal=None):
+        for tm in (getattr(body, 'attribute_texts', {}) or {}).values():
+            try:
+                tm.x, tm.y = point_fn(float(tm.x), float(tm.y))
+                if rotate_deg is not None:
+                    self._add_rotation(tm, rotate_deg)
+                if scale_factor is not None:
+                    tm.font_size_grid = max(0.1, float(getattr(tm, 'font_size_grid', 0.75) or 0.75) * float(scale_factor))
+                if flip_horizontal is not None:
+                    r = float(getattr(tm, 'rotation', 0.0) or 0.0)
+                    tm.rotation = (-r) % 360.0 if flip_horizontal else (180.0 - r) % 360.0
+            except Exception:
+                pass
+
+    def _transform_unit_as_body_group(self, op, value=None):
+        """Transform the real symbol objects, not a temporary body frame.
+
+        Imported Mentor/template symbols use graphics as the visible BODY.  Internally
+        created symbols use the rectangular body.  Both must behave identically here:
+        pins, pin labels/attributes, body attributes, user graphics and body graphics
+        are transformed together around the BODY center, so their relative layout does
+        not drift and no proxy rectangle becomes part of the model.
+        """
+        u = self.current_unit
+        b = u.body
+        cx, cy = self._body_center_grid(b)
+
+        if op == 'rotate':
+            deg = float(value or 0.0)
+            def pf(x, y): return self._rot_point(x, y, cx, cy, deg)
+            self._add_rotation(b, deg)
+            for p in u.pins:
+                p.x, p.y = pf(p.x, p.y)
+                self._add_rotation(p, deg)
+                self._transform_pin_anchors(p, pf, rotate_deg=deg)
+            for t in u.texts:
+                t.x, t.y = pf(t.x, t.y); self._add_rotation(t, deg)
+            self._transform_body_attribute_texts(b, pf, rotate_deg=deg)
+            for gr in u.graphics:
+                gr.x, gr.y = pf(gr.x, gr.y); self._add_rotation(gr, deg)
+
+        elif op == 'scale':
+            factor = float(value or 1.0)
+            def pf(x, y): return self._scale_point(x, y, cx, cy, factor)
+            # Keep the body center fixed while resizing.
+            new_w = max(0.1, float(b.width) * factor)
+            new_h = max(0.1, float(b.height) * factor)
+            b.x = cx - new_w / 2.0; b.y = cy + new_h / 2.0
+            b.width = new_w; b.height = new_h
+            for p in u.pins:
+                p.x, p.y = pf(p.x, p.y)
+                p.length = max(0.1, float(getattr(p, 'length', 1.0) or 1.0) * factor)
+                self._scale_font_model(p.number_font, factor); self._scale_font_model(p.label_font, factor)
+                self._transform_pin_anchors(p, pf, scale_factor=factor)
+            for t in u.texts:
+                t.x, t.y = pf(t.x, t.y)
+                t.font_size_grid = max(0.1, float(getattr(t, 'font_size_grid', 0.75) or 0.75) * factor)
+            self._scale_font_model(b.attribute_font, factor); self._scale_font_model(b.refdes_font, factor)
+            self._transform_body_attribute_texts(b, pf, scale_factor=factor)
+            for gr in u.graphics:
+                gr.x, gr.y = pf(gr.x, gr.y)
+                gr.w = float(getattr(gr, 'w', 0.0) or 0.0) * factor
+                gr.h = float(getattr(gr, 'h', 0.0) or 0.0) * factor
+                try:
+                    gr.curve_radius = float(getattr(gr, 'curve_radius', 0.0) or 0.0) * factor
+                except Exception:
+                    pass
+                if getattr(gr, 'ctrl_x', None) is not None:
+                    gr.ctrl_x = float(gr.ctrl_x) * factor
+                if getattr(gr, 'ctrl_y', None) is not None:
+                    gr.ctrl_y = float(gr.ctrl_y) * factor
+
+        elif op in ('flip_h', 'flip_v'):
+            horizontal = op == 'flip_h'
+            def pf(x, y): return self._flip_point(x, y, cx, cy, horizontal)
+            r = float(getattr(b, 'rotation', 0.0) or 0.0)
+            b.rotation = (-r) % 360.0 if horizontal else (180.0 - r) % 360.0
+            for p in u.pins:
+                p.x, p.y = pf(p.x, p.y)
+                pr = float(getattr(p, 'rotation', 0.0) or 0.0)
+                p.rotation = (-pr) % 360.0 if horizontal else (180.0 - pr) % 360.0
+                if horizontal and p.side in (PinSide.LEFT.value, PinSide.RIGHT.value):
+                    p.side = PinSide.RIGHT.value if p.side == PinSide.LEFT.value else PinSide.LEFT.value
+                if (not horizontal) and p.side in (PinSide.TOP.value, PinSide.BOTTOM.value):
+                    p.side = PinSide.BOTTOM.value if p.side == PinSide.TOP.value else PinSide.TOP.value
+                self._transform_pin_anchors(p, pf, flip_horizontal=horizontal)
+            for t in u.texts:
+                t.x, t.y = pf(t.x, t.y)
+                tr = float(getattr(t, 'rotation', 0.0) or 0.0)
+                t.rotation = (-tr) % 360.0 if horizontal else (180.0 - tr) % 360.0
+            self._transform_body_attribute_texts(b, pf, flip_horizontal=horizontal)
+            for gr in u.graphics:
+                # Reflect both endpoints/corners so line endpoints and rect bounds remain real geometry.
+                x1, y1 = pf(float(gr.x), float(gr.y))
+                x2, y2 = pf(float(gr.x) + float(getattr(gr, 'w', 0.0) or 0.0),
+                            float(gr.y) + float(getattr(gr, 'h', 0.0) or 0.0))
+                gr.x, gr.y = x1, y1
+                gr.w, gr.h = x2 - x1, y2 - y1
+                rr = float(getattr(gr, 'rotation', 0.0) or 0.0)
+                gr.rotation = (-rr) % 360.0 if horizontal else (180.0 - rr) % 360.0
+                if getattr(gr, 'ctrl_x', None) is not None:
+                    gr.ctrl_x = -float(gr.ctrl_x) if horizontal else float(gr.ctrl_x)
+                if getattr(gr, 'ctrl_y', None) is not None:
+                    gr.ctrl_y = float(gr.ctrl_y) if horizontal else -float(gr.ctrl_y)
+        self.update_current_unit_canvas_positions()
+        self.update_attribute_items_for_unit()
+        self.rebuild_tree(); self.rebuild_pin_table()
+
+    def _selected_has_body(self):
+        return any(it.data(0) == 'BODY' for it in self.scene.selectedItems())
+
     def rotate_selected(self, deg):
         self.push_undo_state()
-        for it in self.scene.selectedItems():
-            if hasattr(it, 'rotate_by'):
-                it.rotate_by(deg)
+        if self._selected_has_body():
+            self._transform_unit_as_body_group('rotate', deg)
+        else:
+            for it in self.scene.selectedItems():
+                if hasattr(it, 'rotate_by'):
+                    it.rotate_by(deg)
         self.schedule_scene_refresh(visual_only=True)
 
     def scale_selected(self, factor):
         self.push_undo_state()
-        for it in self.scene.selectedItems():
-            if hasattr(it, 'scale_selected'):
-                it.scale_selected(factor)
+        if self._selected_has_body():
+            self._transform_unit_as_body_group('scale', factor)
+        else:
+            for it in self.scene.selectedItems():
+                if hasattr(it, 'scale_selected'):
+                    it.scale_selected(factor)
         self.enforce_symbol_size_limit(silent=True)
         self.schedule_scene_refresh(visual_only=True)
 
     def flip_selected_horizontal(self):
         self.push_undo_state()
-        for it in self.scene.selectedItems():
-            if hasattr(it, 'flip_horizontal'):
-                it.flip_horizontal()
+        if self._selected_has_body():
+            self._transform_unit_as_body_group('flip_h')
+        else:
+            for it in self.scene.selectedItems():
+                if hasattr(it, 'flip_horizontal'):
+                    it.flip_horizontal()
         self.schedule_scene_refresh(visual_only=True)
 
     def flip_selected_vertical(self):
         self.push_undo_state()
-        for it in self.scene.selectedItems():
-            if hasattr(it, 'flip_vertical'):
-                it.flip_vertical()
+        if self._selected_has_body():
+            self._transform_unit_as_body_group('flip_v')
+        else:
+            for it in self.scene.selectedItems():
+                if hasattr(it, 'flip_vertical'):
+                    it.flip_vertical()
         self.schedule_scene_refresh(visual_only=True)
 
     def copy_selected(self):

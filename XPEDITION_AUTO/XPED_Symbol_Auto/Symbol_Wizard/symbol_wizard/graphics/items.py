@@ -225,34 +225,12 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
         except Exception:
             pass
         if graphics_as_body:
-            # For Mentor/template based symbols the visible body consists of the
-            # imported/template graphic primitives.  The rectangular BodyModel is
-            # only a logical anchor/grouping object and must not be painted as an
-            # extra black frame around the artwork.
-            #
-            # Template Editor: never draw the logical body rectangle.  Individual
-            # template graphics remain editable there.
-            if getattr(self.window, 'is_template_editor', False):
-                return
-
-            # Symbol Wizard: show only a lightweight body highlight/selection
-            # frame for the complete body group, never the normal body geometry.
-            painter.save()
-            if self.isSelected():
-                pen = QPen(QColor(0, 150, 170, 230), 2, Qt.DashLine)
-            else:
-                pen = QPen(QColor(0, 150, 170, 95), 1, Qt.DashLine)
-            pen.setCosmetic(True)
-            painter.setPen(pen)
-            painter.setBrush(QBrush(Qt.NoBrush))
-            painter.drawRect(self.rect())
-            if self.isSelected():
-                painter.setPen(QPen(QColor(0, 150, 170, 230), 1))
-                painter.setBrush(QBrush(QColor(255, 255, 255)))
-                s = self.window.grid_px * self.handle_size_factor
-                for r in _corner_handles(self.rect(), s).values():
-                    painter.drawRect(r)
-            painter.restore()
+            # Imported/template symbols behave like internally created symbols,
+            # but their visible BODY is the imported artwork itself.  The
+            # rectangular BodyModel is only the logical hit/anchor object.  Never
+            # paint it as a dashed proxy frame and never transform that frame as
+            # visible geometry.  Selection/toolbar transforms are applied to the
+            # real body graphics, pins and attributes in MainWindow.
             return
         super().paint(painter, option, widget)
         if self.isSelected():
@@ -395,52 +373,22 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
             pass
         super().mouseReleaseEvent(event)
 
-    def rotate_by(self, deg):
-        """Rotate the real BODY group around the body origin.
-
-        Imported/template graphics are the actual body artwork.  Therefore the
-        transform must be applied to all real child objects (graphics, pins,
-        pin attributes, body attributes), not to a temporary rectangular frame.
-        """
-        try:
-            self.window.transform_current_body_real_objects('rotate', deg=deg)
-        except Exception:
-            super().rotate_by(deg)
-        self.update()
-
-    def flip_horizontal(self):
-        try:
-            self.window.transform_current_body_real_objects('flip_h')
-        except Exception:
-            super().flip_horizontal()
-        self.update()
-
-    def flip_vertical(self):
-        try:
-            self.window.transform_current_body_real_objects('flip_v')
-        except Exception:
-            super().flip_vertical()
-        self.update()
-
     def scale_selected(self, factor):
-        try:
-            self.window.transform_current_body_real_objects('scale', factor=factor)
-        except Exception:
-            st = {
-                'x': float(self.model.x), 'y': float(self.model.y),
-                'w': float(self.model.width), 'h': float(self.model.height),
-                'pins': [(p, float(p.x), float(p.y), float(p.length)) for p in self.window.current_unit.pins],
-                'texts': [(t, float(t.x), float(t.y)) for t in self.window.current_unit.texts],
-                'attributes': [(t, float(t.x), float(t.y)) for t in getattr(self.window.current_unit.body, 'attribute_texts', {}).values()],
-                'graphics': [(gr, float(gr.x), float(gr.y), float(gr.w), float(gr.h)) for gr in self.window.current_unit.graphics],
-            }
-            self.model.width = max(1, round(self.model.width * factor))
-            self.model.height = max(1, round(self.model.height * factor))
-            g = self.window.grid_px
-            self.setRect(0, 0, self.model.width * g, self.model.height * g)
-            self.window.scale_current_unit_children_from_body_resize(st, self.model)
-            self.window.update_current_unit_canvas_positions()
-            self.window.update_attribute_items_for_unit()
+        st = {
+            'x': float(self.model.x), 'y': float(self.model.y),
+            'w': float(self.model.width), 'h': float(self.model.height),
+            'pins': [(p, float(p.x), float(p.y), float(p.length)) for p in self.window.current_unit.pins],
+            'texts': [(t, float(t.x), float(t.y)) for t in self.window.current_unit.texts],
+            'attributes': [(t, float(t.x), float(t.y)) for t in getattr(self.window.current_unit.body, 'attribute_texts', {}).values()],
+            'graphics': [(gr, float(gr.x), float(gr.y), float(gr.w), float(gr.h)) for gr in self.window.current_unit.graphics],
+        }
+        self.model.width = max(1, round(self.model.width * factor))
+        self.model.height = max(1, round(self.model.height * factor))
+        g = self.window.grid_px
+        self.setRect(0, 0, self.model.width * g, self.model.height * g)
+        self.window.scale_current_unit_children_from_body_resize(st, self.model)
+        self.window.update_current_unit_canvas_positions()
+        self.window.update_attribute_items_for_unit()
         try:
             self.window.refresh_properties()
         except Exception:
