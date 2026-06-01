@@ -2182,26 +2182,151 @@ class TemplateEditorDialog(QDialog):
             self.schedule_scene_refresh()
         self.dirty = True
 
-    def scale_selected_grid(self, direction: int):
-        """Scale selected BODY by one edit-grid step in width and height.
+    def _next_edit_grid_size(self, value: float, direction: int, step: float) -> float:
+        """Return the next BODY size on the edit grid.
 
-        The toolbar Scale +/- buttons should be deterministic and grid based,
-        not a free 1.1 factor.  When BODY is selected we resize to the next
-        edit-grid multiple; otherwise we fall back to the previous item-level
-        factor behaviour for non-body graphics.
+        Scale +/- is intentionally a BODY-geometry operation, not a free
+        transform of the whole symbol.  Width/height therefore move by one
+        edit-grid step and always end up on an edit-grid multiple.
+        """
+        step = max(float(step or 0.0), 0.001)
+        value = max(float(value or 0.0), step)
+        base = round(value / step) * step
+        # If the current value was slightly off-grid, first normalize to the
+        # nearest grid value, then move one step in the requested direction.
+        if abs(base - value) > 1e-7:
+            value = base
+        return self._clean_float(max(step, value + (step if direction > 0 else -step)))
+
+    def _snap_to_current_edit_grid(self, value: float) -> float:
+        step = self._edit_grid_step()
+        return self._clean_float(round(float(value) / step) * step)
+
+    def _scale_point_about_origin_xy(self, x: float, y: float, sx: float, sy: float):
+        # The logical symbol origin is the transformation pivot.  OriginMode only
+        # says which BODY anchor lies on that 0/0 point; the point itself never
+        # moves during scale +/-.
+        return self._clean_float(float(x) * float(sx)), self._clean_float(float(y) * float(sy))
+
+    def _redock_and_snap_pins_after_body_scale(self, unit=None):
+        """Keep pins legal after BODY-only Scale +/- without scaling the pins.
+
+        Pin length, pin text font sizes and pin attributes are not scaled.  The
+        endpoint is simply re-docked to the current BODY edge and snapped to the
+        edit grid, so pins remain valid schematic connection points.
+        """
+        u = unit or self.current_unit
+        b = u.body
+        grid = self._edit_grid_step()
+        left, right = float(b.x), float(b.x) + float(b.width)
+        top, bottom = float(b.y), float(b.y) - float(b.height)
+        for p in getattr(u, 'pins', []) or []:
+            old_x, old_y = float(p.x), float(p.y)
+            side = str(getattr(p, 'side', '') or '').lower()
+            # Imported pins can be side-less/rotated.  Fall back to the nearest
+            # BODY side when side is not usable.
+            if side not in (PinSide.LEFT.value, PinSide.RIGHT.value, PinSide.TOP.value, PinSide.BOTTOM.value):
+                distances = {
+                    PinSide.LEFT.value: abs(old_x - left),
+                    PinSide.RIGHT.value: abs(old_x - right),
+                    PinSide.TOP.value: abs(old_y - top),
+                    PinSide.BOTTOM.value: abs(old_y - bottom),
+                }
+                side = min(distances, key=distances.get)
+                p.side = side
+            if side == PinSide.LEFT.value:
+                p.x = self._clean_float(left)
+                p.y = self._snap_to_current_edit_grid(old_y)
+            elif side == PinSide.RIGHT.value:
+                p.x = self._clean_float(right)
+                p.y = self._snap_to_current_edit_grid(old_y)
+            elif side == PinSide.TOP.value:
+                p.x = self._snap_to_current_edit_grid(old_x)
+                p.y = self._clean_float(top)
+            elif side == PinSide.BOTTOM.value:
+                p.x = self._snap_to_current_edit_grid(old_x)
+                p.y = self._clean_float(bottom)
+            # Pin length stays constant, only normalized to the edit grid if it
+            # already nearly is a grid-based value.
+            try:
+                p.length = max(grid, self._snap_to_current_edit_grid(float(p.length)))
+            except Exception:
+                pass
+            dx, dy = self._clean_float(float(p.x) - old_x), self._clean_float(float(p.y) - old_y)
+            if abs(dx) > 1e-12 or abs(dy) > 1e-12:
+                self._move_pin_owned_texts(p, dx, dy)
+
+    def _scale_body_geometry_only_grid(self, direction: int) -> bool:
+        """Scale only BODY geometry by one edit-grid step.
+
+        This deliberately does not scale pins, pin text, body attributes or free
+        text.  Imported BODY artwork is the BODY, so locked/imported/template
+        graphics are resized in place.  User graphics remain normal user objects.
+        """
+        u = self.current_unit
+        b = u.body
+        step = self._edit_grid_step()
+        old_w = max(step, float(getattr(b, 'width', step) or step))
+        old_h = max(step, float(getattr(b, 'height', step) or step))
+        new_w = self._next_edit_grid_size(old_w, direction, step)
+        new_h = self._next_edit_grid_size(old_h, direction, step)
+        sx = new_w / old_w
+        sy = new_h / old_h
+        if abs(sx - 1.0) < 1e-12 and abs(sy - 1.0) < 1e-12:
+            return False
+        self._invalidate_body_group_transform_cache(u)
+        body_graphics = self._body_graphics_for_unit(u)
+        if body_graphics:
+            # Scale the real BODY graphics around the fixed symbol origin (0/0).
+            for gr in body_graphics:
+                x1, y1 = float(gr.x), float(gr.y)
+                x2, y2 = float(gr.x) + float(getattr(gr, 'w', 0.0) or 0.0), float(gr.y) - float(getattr(gr, 'h', 0.0) or 0.0)
+                nx1, ny1 = self._scale_point_about_origin_xy(x1, y1, sx, sy)
+                nx2, ny2 = self._scale_point_about_origin_xy(x2, y2, sx, sy)
+                gr.x = self._snap_to_current_edit_grid(nx1)
+                gr.y = self._snap_to_current_edit_grid(ny1)
+                gr.w = self._clean_float(self._snap_to_current_edit_grid(nx2) - gr.x)
+                gr.h = self._clean_float(gr.y - self._snap_to_current_edit_grid(ny2))
+                if getattr(gr, 'ctrl_x', None) is not None:
+                    gr.ctrl_x = self._clean_float(float(gr.ctrl_x) * sx)
+                if getattr(gr, 'ctrl_y', None) is not None:
+                    gr.ctrl_y = self._clean_float(float(gr.ctrl_y) * sy)
+                try:
+                    gr.curve_radius = self._clean_float(float(getattr(gr, 'curve_radius', 0.0) or 0.0) * ((abs(sx) + abs(sy)) / 2.0))
+                except Exception:
+                    pass
+            self._sync_body_model_to_body_bounds_only(u)
+        else:
+            # Native Symbol 1/<NONE> body: resize the actual BODY rect around
+            # the logical origin exactly like the imported BODY graphics.
+            x1, y1 = float(b.x), float(b.y)
+            x2, y2 = float(b.x) + old_w, float(b.y) - old_h
+            nx1, ny1 = self._scale_point_about_origin_xy(x1, y1, sx, sy)
+            nx2, ny2 = self._scale_point_about_origin_xy(x2, y2, sx, sy)
+            b.x = self._snap_to_current_edit_grid(min(nx1, nx2))
+            b.y = self._snap_to_current_edit_grid(max(ny1, ny2))
+            b.width = self._clean_float(abs(self._snap_to_current_edit_grid(nx2) - self._snap_to_current_edit_grid(nx1)))
+            b.height = self._clean_float(abs(self._snap_to_current_edit_grid(ny2) - self._snap_to_current_edit_grid(ny1)))
+        # Pins are not scaled.  They are only redocked/snapped to remain legal.
+        self._redock_and_snap_pins_after_body_scale(u)
+        return True
+
+    def scale_selected_grid(self, direction: int):
+        """Scale selected BODY by one edit-grid step.
+
+        Scale +/- now affects only BODY geometry. Pins do not scale; they remain
+        grid-valid and docked. This matches the requested Symbol Wizard behavior
+        and avoids stretching pin lengths/text when adjusting the body.
         """
         self.set_tool(DrawTool.SELECT.value)
-        step = self._edit_grid_step()
         if self._selected_body_active():
-            body = self.current_unit.body
-            new_w = max(step, self._snap_to_edit_grid(float(body.width) + direction * step, step))
-            new_h = max(step, self._snap_to_edit_grid(float(body.height) + direction * step, step))
             self.push_undo_state()
             self._selection_restore_ids = self._capture_selection_ids()
-            self._transform_unit_as_body_group('scale_x_to', new_w, refresh=False)
-            self._transform_unit_as_body_group('scale_y_to', new_h, refresh=True)
-            self.dirty = True
-            QTimer.singleShot(0, self.refresh_properties)
+            if self._scale_body_geometry_only_grid(int(direction)):
+                self.dirty = True
+                self.update_current_unit_canvas_positions()
+                self.schedule_scene_refresh(visual_only=True)
+                QTimer.singleShot(0, self.refresh_properties)
         else:
             self.scale_selected(1.0 + (0.1 if direction > 0 else -0.1))
 
@@ -5297,35 +5422,48 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
                 pass
         QTimer.singleShot(0, _do)
     def update_current_unit_canvas_positions(self):
-        """Update existing QGraphicsItems from their models without rebuilding the scene."""
+        """Update existing QGraphicsItems from their models without rebuilding.
+
+        Performance note: large imported/split symbols can contain hundreds of
+        pins/text items.  Disable viewport updates during the loop and repaint
+        once at the end; this removes the stutter caused by per-item repaints.
+        """
         g = self.grid_px
-        for item in self.scene.items():
-            model = getattr(item, 'model', None)
-            if model is None:
-                continue
-            kind = item.data(0)
-            if kind == 'BODY':
-                item.setPos(model.x * g, -model.y * g)
-                item.setRect(0, 0, model.width * g, model.height * g)
-                item.setPen(pen_for(model.color, model.line_width, model.line_style, g))
-                if hasattr(item, 'apply_transform_from_model'):
-                    item.apply_transform_from_model()
-            elif kind == 'PIN':
-                item.setPos(model.x * g, -model.y * g)
-                if hasattr(item, 'apply_transform_from_model'):
-                    item.apply_transform_from_model()
-            elif kind in ('TEXT', 'ATTR_REF_DES', 'ATTR_BODY'):
-                if hasattr(item, 'apply_text_from_model'):
-                    item.apply_text_from_model()
-                else:
+        view = getattr(self, 'view', None)
+        if view is not None:
+            view.setUpdatesEnabled(False)
+        try:
+            for item in self.scene.items():
+                model = getattr(item, 'model', None)
+                if model is None:
+                    continue
+                kind = item.data(0)
+                if kind == 'BODY':
                     item.setPos(model.x * g, -model.y * g)
-            elif kind == 'GRAPHIC':
-                item.setPos(model.x * g, -model.y * g)
-                if hasattr(item, 'apply_transform_from_model'):
-                    item.apply_transform_from_model()
-            item.update()
+                    item.setRect(0, 0, model.width * g, model.height * g)
+                    item.setPen(pen_for(model.color, model.line_width, model.line_style, g))
+                    if hasattr(item, 'apply_transform_from_model'):
+                        item.apply_transform_from_model()
+                elif kind == 'PIN':
+                    item.setPos(model.x * g, -model.y * g)
+                    if hasattr(item, 'apply_transform_from_model'):
+                        item.apply_transform_from_model()
+                elif kind in ('TEXT', 'ATTR_REF_DES', 'ATTR_BODY'):
+                    if hasattr(item, 'apply_text_from_model'):
+                        item.apply_text_from_model()
+                    else:
+                        item.setPos(model.x * g, -model.y * g)
+                elif kind == 'GRAPHIC':
+                    item.setPos(model.x * g, -model.y * g)
+                    if hasattr(item, 'apply_transform_from_model'):
+                        item.apply_transform_from_model()
+                item.update()
+        finally:
+            if view is not None:
+                view.setUpdatesEnabled(True)
         self.scene.update()
-        self.view.viewport().update()
+        if view is not None:
+            view.viewport().update()
 
     def update_attribute_items_for_unit(self):
         """Regenerate body-owned attribute text only; keeps normal objects selected and avoids stale text remnants."""
@@ -5378,13 +5516,15 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         # Keep selected canvas objects selected during deferred refreshes.
         self._selection_restore_ids = self._capture_selection_ids()
         self._refresh_visual_only = bool(visual_only)
-        self.refresh_timer.start(35 if visual_only else 80)
+        self.refresh_timer.start(12 if visual_only else 50)
 
     def _scheduled_refresh(self):
         self.enforce_symbol_size_limit(silent=True)
         if self._refresh_visual_only:
+            # Fast path: existing graphics items reference the same models, so
+            # move/update them in place. Avoid regenerating attribute text items
+            # and rebuilding panels on every toolbar/drag operation.
             self.update_current_unit_canvas_positions()
-            self.update_attribute_items_for_unit()
             if not self._property_editor_has_focus():
                 self.refresh_properties()
         else:
@@ -6252,26 +6392,151 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
             self.schedule_scene_refresh()
         self.dirty = True
 
-    def scale_selected_grid(self, direction: int):
-        """Scale selected BODY by one edit-grid step in width and height.
+    def _next_edit_grid_size(self, value: float, direction: int, step: float) -> float:
+        """Return the next BODY size on the edit grid.
 
-        The toolbar Scale +/- buttons should be deterministic and grid based,
-        not a free 1.1 factor.  When BODY is selected we resize to the next
-        edit-grid multiple; otherwise we fall back to the previous item-level
-        factor behaviour for non-body graphics.
+        Scale +/- is intentionally a BODY-geometry operation, not a free
+        transform of the whole symbol.  Width/height therefore move by one
+        edit-grid step and always end up on an edit-grid multiple.
+        """
+        step = max(float(step or 0.0), 0.001)
+        value = max(float(value or 0.0), step)
+        base = round(value / step) * step
+        # If the current value was slightly off-grid, first normalize to the
+        # nearest grid value, then move one step in the requested direction.
+        if abs(base - value) > 1e-7:
+            value = base
+        return self._clean_float(max(step, value + (step if direction > 0 else -step)))
+
+    def _snap_to_current_edit_grid(self, value: float) -> float:
+        step = self._edit_grid_step()
+        return self._clean_float(round(float(value) / step) * step)
+
+    def _scale_point_about_origin_xy(self, x: float, y: float, sx: float, sy: float):
+        # The logical symbol origin is the transformation pivot.  OriginMode only
+        # says which BODY anchor lies on that 0/0 point; the point itself never
+        # moves during scale +/-.
+        return self._clean_float(float(x) * float(sx)), self._clean_float(float(y) * float(sy))
+
+    def _redock_and_snap_pins_after_body_scale(self, unit=None):
+        """Keep pins legal after BODY-only Scale +/- without scaling the pins.
+
+        Pin length, pin text font sizes and pin attributes are not scaled.  The
+        endpoint is simply re-docked to the current BODY edge and snapped to the
+        edit grid, so pins remain valid schematic connection points.
+        """
+        u = unit or self.current_unit
+        b = u.body
+        grid = self._edit_grid_step()
+        left, right = float(b.x), float(b.x) + float(b.width)
+        top, bottom = float(b.y), float(b.y) - float(b.height)
+        for p in getattr(u, 'pins', []) or []:
+            old_x, old_y = float(p.x), float(p.y)
+            side = str(getattr(p, 'side', '') or '').lower()
+            # Imported pins can be side-less/rotated.  Fall back to the nearest
+            # BODY side when side is not usable.
+            if side not in (PinSide.LEFT.value, PinSide.RIGHT.value, PinSide.TOP.value, PinSide.BOTTOM.value):
+                distances = {
+                    PinSide.LEFT.value: abs(old_x - left),
+                    PinSide.RIGHT.value: abs(old_x - right),
+                    PinSide.TOP.value: abs(old_y - top),
+                    PinSide.BOTTOM.value: abs(old_y - bottom),
+                }
+                side = min(distances, key=distances.get)
+                p.side = side
+            if side == PinSide.LEFT.value:
+                p.x = self._clean_float(left)
+                p.y = self._snap_to_current_edit_grid(old_y)
+            elif side == PinSide.RIGHT.value:
+                p.x = self._clean_float(right)
+                p.y = self._snap_to_current_edit_grid(old_y)
+            elif side == PinSide.TOP.value:
+                p.x = self._snap_to_current_edit_grid(old_x)
+                p.y = self._clean_float(top)
+            elif side == PinSide.BOTTOM.value:
+                p.x = self._snap_to_current_edit_grid(old_x)
+                p.y = self._clean_float(bottom)
+            # Pin length stays constant, only normalized to the edit grid if it
+            # already nearly is a grid-based value.
+            try:
+                p.length = max(grid, self._snap_to_current_edit_grid(float(p.length)))
+            except Exception:
+                pass
+            dx, dy = self._clean_float(float(p.x) - old_x), self._clean_float(float(p.y) - old_y)
+            if abs(dx) > 1e-12 or abs(dy) > 1e-12:
+                self._move_pin_owned_texts(p, dx, dy)
+
+    def _scale_body_geometry_only_grid(self, direction: int) -> bool:
+        """Scale only BODY geometry by one edit-grid step.
+
+        This deliberately does not scale pins, pin text, body attributes or free
+        text.  Imported BODY artwork is the BODY, so locked/imported/template
+        graphics are resized in place.  User graphics remain normal user objects.
+        """
+        u = self.current_unit
+        b = u.body
+        step = self._edit_grid_step()
+        old_w = max(step, float(getattr(b, 'width', step) or step))
+        old_h = max(step, float(getattr(b, 'height', step) or step))
+        new_w = self._next_edit_grid_size(old_w, direction, step)
+        new_h = self._next_edit_grid_size(old_h, direction, step)
+        sx = new_w / old_w
+        sy = new_h / old_h
+        if abs(sx - 1.0) < 1e-12 and abs(sy - 1.0) < 1e-12:
+            return False
+        self._invalidate_body_group_transform_cache(u)
+        body_graphics = self._body_graphics_for_unit(u)
+        if body_graphics:
+            # Scale the real BODY graphics around the fixed symbol origin (0/0).
+            for gr in body_graphics:
+                x1, y1 = float(gr.x), float(gr.y)
+                x2, y2 = float(gr.x) + float(getattr(gr, 'w', 0.0) or 0.0), float(gr.y) - float(getattr(gr, 'h', 0.0) or 0.0)
+                nx1, ny1 = self._scale_point_about_origin_xy(x1, y1, sx, sy)
+                nx2, ny2 = self._scale_point_about_origin_xy(x2, y2, sx, sy)
+                gr.x = self._snap_to_current_edit_grid(nx1)
+                gr.y = self._snap_to_current_edit_grid(ny1)
+                gr.w = self._clean_float(self._snap_to_current_edit_grid(nx2) - gr.x)
+                gr.h = self._clean_float(gr.y - self._snap_to_current_edit_grid(ny2))
+                if getattr(gr, 'ctrl_x', None) is not None:
+                    gr.ctrl_x = self._clean_float(float(gr.ctrl_x) * sx)
+                if getattr(gr, 'ctrl_y', None) is not None:
+                    gr.ctrl_y = self._clean_float(float(gr.ctrl_y) * sy)
+                try:
+                    gr.curve_radius = self._clean_float(float(getattr(gr, 'curve_radius', 0.0) or 0.0) * ((abs(sx) + abs(sy)) / 2.0))
+                except Exception:
+                    pass
+            self._sync_body_model_to_body_bounds_only(u)
+        else:
+            # Native Symbol 1/<NONE> body: resize the actual BODY rect around
+            # the logical origin exactly like the imported BODY graphics.
+            x1, y1 = float(b.x), float(b.y)
+            x2, y2 = float(b.x) + old_w, float(b.y) - old_h
+            nx1, ny1 = self._scale_point_about_origin_xy(x1, y1, sx, sy)
+            nx2, ny2 = self._scale_point_about_origin_xy(x2, y2, sx, sy)
+            b.x = self._snap_to_current_edit_grid(min(nx1, nx2))
+            b.y = self._snap_to_current_edit_grid(max(ny1, ny2))
+            b.width = self._clean_float(abs(self._snap_to_current_edit_grid(nx2) - self._snap_to_current_edit_grid(nx1)))
+            b.height = self._clean_float(abs(self._snap_to_current_edit_grid(ny2) - self._snap_to_current_edit_grid(ny1)))
+        # Pins are not scaled.  They are only redocked/snapped to remain legal.
+        self._redock_and_snap_pins_after_body_scale(u)
+        return True
+
+    def scale_selected_grid(self, direction: int):
+        """Scale selected BODY by one edit-grid step.
+
+        Scale +/- now affects only BODY geometry. Pins do not scale; they remain
+        grid-valid and docked. This matches the requested Symbol Wizard behavior
+        and avoids stretching pin lengths/text when adjusting the body.
         """
         self.set_tool(DrawTool.SELECT.value)
-        step = self._edit_grid_step()
         if self._selected_body_active():
-            body = self.current_unit.body
-            new_w = max(step, self._snap_to_edit_grid(float(body.width) + direction * step, step))
-            new_h = max(step, self._snap_to_edit_grid(float(body.height) + direction * step, step))
             self.push_undo_state()
             self._selection_restore_ids = self._capture_selection_ids()
-            self._transform_unit_as_body_group('scale_x_to', new_w, refresh=False)
-            self._transform_unit_as_body_group('scale_y_to', new_h, refresh=True)
-            self.dirty = True
-            QTimer.singleShot(0, self.refresh_properties)
+            if self._scale_body_geometry_only_grid(int(direction)):
+                self.dirty = True
+                self.update_current_unit_canvas_positions()
+                self.schedule_scene_refresh(visual_only=True)
+                QTimer.singleShot(0, self.refresh_properties)
         else:
             self.scale_selected(1.0 + (0.1 if direction > 0 else -0.1))
 
