@@ -1480,3 +1480,44 @@ try:
     GraphicItem.paint = _lh59_graphic_paint
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# Liebherr v62: grouped graphics paint only their own geometry. The one true
+# group outline is a non-selectable scene overlay in MainWindow, computed from
+# transformed model geometry. This avoids stale/wrong per-child painted outlines.
+# ---------------------------------------------------------------------------
+try:
+    def _lh62_item_gid(model):
+        try:
+            gid=str(getattr(model,'group_id','') or '')
+            if gid: return gid
+            role=str(getattr(model,'graphic_role','') or '')
+            if role.startswith('user_graphic_group:'): return role.split(':',1)[1]
+        except Exception: pass
+        return ''
+    def _lh62_item_draw_geometry(self,painter):
+        g,m=self.window.grid_px,self.model
+        painter.setPen(pen_for(m.style.stroke,m.style.line_width,m.style.line_style,g))
+        painter.setBrush(QBrush(rgb(m.style.fill)) if m.style.fill else QBrush(Qt.NoBrush))
+        if m.shape in ('line','arc'):
+            ctrl_x=getattr(m,'ctrl_x',None); ctrl_y=getattr(m,'ctrl_y',None)
+            if ctrl_x is not None and ctrl_y is not None:
+                path=QPainterPath(QPointF(0,0)); path.quadTo(QPointF(float(ctrl_x)*g,-float(ctrl_y)*g),QPointF(m.w*g,-m.h*g)); painter.drawPath(path)
+            else:
+                r=float(getattr(m,'curve_radius',0.0) or 0.0)
+                if abs(r)>1e-9:
+                    path=QPainterPath(QPointF(0,0)); path.quadTo(QPointF(m.w*g/2,m.h*g/2-r*g),QPointF(m.w*g,m.h*g)); painter.drawPath(path)
+                else:
+                    painter.drawLine(QPointF(0,0),QPointF(m.w*g,m.h*g))
+        elif m.shape=='rect': painter.drawRect(QRectF(0,0,m.w*g,m.h*g))
+        elif m.shape in ('ellipse','circle'): painter.drawEllipse(QRectF(0,0,m.w*g,m.h*g))
+    def _lh62_graphic_paint(self,painter,option,widget=None):
+        if _lh62_item_gid(getattr(self,'model',None)):
+            return _lh62_item_draw_geometry(self,painter)
+        # For non-group graphics use the original/base painter if available.
+        if '_lh58_graphic_prev_paint' in globals():
+            return _lh58_graphic_prev_paint(self,painter,option,widget)
+        return _lh59_graphic_paint(self,painter,option,widget) if '_lh59_graphic_paint' in globals() else None
+    GraphicItem.paint=_lh62_graphic_paint
+except Exception:
+    pass

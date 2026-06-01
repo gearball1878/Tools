@@ -15669,3 +15669,662 @@ try:
         MainWindow.__init__ = _lh61_init
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# Liebherr v62: stable graphic-group bbox/origin and shape-preserving transforms.
+# A group is one logical object: outline = max visual x/y extent, pivot = snapped
+# outline center, transformations preserve every child shape and relative layout.
+# ---------------------------------------------------------------------------
+def _lh62_gid(gr):
+    try:
+        gid = str(getattr(gr, 'group_id', '') or '')
+        if gid: return gid
+        role = str(getattr(gr, 'graphic_role', '') or '')
+        if role.startswith('user_graphic_group:'):
+            return role.split(':', 1)[1]
+    except Exception: pass
+    return ''
+
+def _lh62_set_gid(gr, gid):
+    gid = str(gid or '')
+    try: gr.group_id = gid
+    except Exception: pass
+    try: gr.graphic_role = ('user_graphic_group:' + gid) if gid else 'user_graphic'
+    except Exception: pass
+
+def _lh62_is_user_graphic(gr):
+    try:
+        role = str(getattr(gr, 'graphic_role', '') or '').lower()
+        return (not bool(getattr(gr, 'locked_to_body', False))) and role not in ('body','template_body','imported_body','body_graphic')
+    except Exception:
+        return False
+
+def _lh62_grid_step(self):
+    try: return max(1e-9, float(self._edit_grid_step()))
+    except Exception: return 0.05
+
+def _lh62_snap(self, v):
+    st = _lh62_grid_step(self)
+    try: return float(self._snap_to_edit_grid(float(v), st))
+    except Exception: return round(float(v)/st)*st
+
+def _lh62_selected_graphic_items(self):
+    out=[]
+    try: items=list(self.scene.selectedItems()) if getattr(self,'scene',None) else []
+    except Exception: items=[]
+    for it in items:
+        try:
+            if it.data(0)=='GRAPHIC' and getattr(it,'model',None) is not None and _lh62_is_user_graphic(it.model):
+                out.append(it)
+        except Exception: pass
+    return out
+
+def _lh62_all_graphic_items(self):
+    out=[]
+    try: items=list(self.scene.items()) if getattr(self,'scene',None) else []
+    except Exception: items=[]
+    for it in items:
+        try:
+            if it.data(0)=='GRAPHIC' and getattr(it,'model',None) is not None and _lh62_is_user_graphic(it.model):
+                out.append(it)
+        except Exception: pass
+    return out
+
+def _lh62_selected_models(self, expand_groups=True):
+    selected=[]; gids=set()
+    for it in _lh62_selected_graphic_items(self):
+        gr=it.model
+        if gr not in selected: selected.append(gr)
+        gid=_lh62_gid(gr)
+        if gid: gids.add(gid)
+    if not selected: return []
+    if not expand_groups or not gids: return selected
+    out=[]
+    try: all_models=list(getattr(getattr(self,'current_unit',None),'graphics',[]) or [])
+    except Exception: all_models=[]
+    for gr in all_models:
+        try:
+            gid=_lh62_gid(gr)
+            if _lh62_is_user_graphic(gr) and (gr in selected or (gid and gid in gids)) and gr not in out:
+                out.append(gr)
+        except Exception: pass
+    return out
+
+def _lh62_selected_single_gid(self):
+    gids=set()
+    for it in _lh62_selected_graphic_items(self):
+        gid=_lh62_gid(it.model)
+        if not gid: return ''
+        gids.add(gid)
+    return next(iter(gids)) if len(gids)==1 else ''
+
+def _lh62_model_center(gr):
+    x=float(getattr(gr,'x',0.0) or 0.0); y=float(getattr(gr,'y',0.0) or 0.0)
+    w=float(getattr(gr,'w',0.0) or 0.0); h=float(getattr(gr,'h',0.0) or 0.0)
+    return x+w/2.0, y-h/2.0
+
+def _lh62_set_model_center(gr,cx,cy):
+    w=float(getattr(gr,'w',0.0) or 0.0); h=float(getattr(gr,'h',0.0) or 0.0)
+    gr.x = cx - w/2.0
+    gr.y = cy + h/2.0
+
+def _lh62_transformed_points(gr):
+    """Return visible geometry points in grid coordinates after local rot/mirror."""
+    try:
+        x=float(getattr(gr,'x',0.0) or 0.0); y=float(getattr(gr,'y',0.0) or 0.0)
+        w=float(getattr(gr,'w',0.0) or 0.0); h=float(getattr(gr,'h',0.0) or 0.0)
+        shape=str(getattr(gr,'shape','') or '').lower()
+        if shape in ('line','arc'):
+            pts=[(x,y),(x+w,y-h)]
+            cx=(pts[0][0]+pts[1][0])/2.0; cy=(pts[0][1]+pts[1][1])/2.0
+        else:
+            pts=[(x,y),(x+w,y),(x+w,y-h),(x,y-h)]
+            cx=x+w/2.0; cy=y-h/2.0
+        sx=float(getattr(gr,'scale_x',1.0) or 1.0); sy=float(getattr(gr,'scale_y',1.0) or 1.0)
+        rot=float(getattr(gr,'rotation',0.0) or 0.0)
+        rad=math.radians(rot); c=math.cos(rad); s=math.sin(rad)
+        out=[]
+        for px,py in pts:
+            dx=(px-cx)*sx; dy=(py-cy)*sy
+            out.append((cx + dx*c - dy*s, cy + dx*s + dy*c))
+        return out
+    except Exception:
+        return []
+
+def _lh62_bbox(models):
+    pts=[]
+    for gr in models:
+        pts.extend(_lh62_transformed_points(gr))
+    if not pts: return None
+    return min(p[0] for p in pts), min(p[1] for p in pts), max(p[0] for p in pts), max(p[1] for p in pts)
+
+def _lh62_origin(self, models):
+    b=_lh62_bbox(models)
+    if not b: return (0.0,0.0)
+    minx,miny,maxx,maxy=b
+    return _lh62_snap(self,(minx+maxx)/2.0), _lh62_snap(self,(miny+maxy)/2.0)
+
+def _lh62_clear_group_outline(self):
+    try:
+        item=getattr(self,'_lh61_group_outline_item',None) or getattr(self,'_lh62_group_outline_item',None)
+        if item is not None and getattr(self,'scene',None) is not None:
+            self.scene.removeItem(item)
+    except Exception: pass
+    self._lh61_group_outline_item=None; self._lh62_group_outline_item=None
+
+def _lh62_update_group_outline(self):
+    gid=_lh62_selected_single_gid(self)
+    if not gid:
+        _lh62_clear_group_outline(self); return
+    models=_lh62_selected_models(self, expand_groups=True)
+    if len(models)<2:
+        _lh62_clear_group_outline(self); return
+    b=_lh62_bbox(models)
+    if not b:
+        _lh62_clear_group_outline(self); return
+    minx,miny,maxx,maxy=b
+    g=float(getattr(self,'grid_px',20) or 20)
+    # Maximum visible extent rectangle in scene coordinates. No stale child handle
+    # rectangles are used here, only transformed geometry points.
+    rect=QRectF(minx*g, -maxy*g, (maxx-minx)*g, (maxy-miny)*g).normalized()
+    try: pad=max(3.0,g*0.15); rect=rect.adjusted(-pad,-pad,pad,pad)
+    except Exception: pass
+    item=getattr(self,'_lh62_group_outline_item',None) or getattr(self,'_lh61_group_outline_item',None)
+    try:
+        if item is None:
+            item=QGraphicsRectItem()
+            item.setData(0,'HIGHLIGHT')
+            item.setFlag(QGraphicsItem.ItemIsSelectable,False)
+            item.setFlag(QGraphicsItem.ItemIsMovable,False)
+            item.setAcceptedMouseButtons(Qt.NoButton)
+            item.setZValue(1e6)
+            item.setPen(QPen(QColor(80,80,80),1,Qt.DashLine))
+            item.setBrush(QBrush(Qt.NoBrush))
+            self.scene.addItem(item)
+        item.setRect(rect); item.show()
+        self._lh62_group_outline_item=item; self._lh61_group_outline_item=item
+    except Exception: pass
+
+def _lh62_normalize_group_origin(self, models):
+    """Ensure group center is on edit grid without changing relative layout."""
+    b=_lh62_bbox(models)
+    if not b: return
+    ox=(b[0]+b[2])/2.0; oy=(b[1]+b[3])/2.0
+    sx=_lh62_snap(self,ox); sy=_lh62_snap(self,oy)
+    dx=sx-ox; dy=sy-oy
+    if abs(dx)>1e-12 or abs(dy)>1e-12:
+        for gr in models:
+            try:
+                gr.x=float(getattr(gr,'x',0.0) or 0.0)+dx
+                gr.y=float(getattr(gr,'y',0.0) or 0.0)+dy
+            except Exception: pass
+
+def _lh62_sync_group_selection(self):
+    if getattr(self,'_lh62_syncing_selection',False): return
+    selected=_lh62_selected_graphic_items(self)
+    gids={_lh62_gid(it.model) for it in selected if _lh62_gid(it.model)}
+    if not gids:
+        _lh62_update_group_outline(self); return
+    try:
+        self._lh62_syncing_selection=True
+        self.scene.blockSignals(True)
+        for it in _lh62_all_graphic_items(self):
+            try:
+                if _lh62_gid(it.model) in gids: it.setSelected(True)
+            except Exception: pass
+    finally:
+        try: self.scene.blockSignals(False)
+        except Exception: pass
+        self._lh62_syncing_selection=False
+    _lh62_update_group_outline(self)
+
+def _lh62_update_scene(self):
+    try: self.update_current_unit_canvas_positions()
+    except Exception:
+        try: self.schedule_scene_refresh()
+        except Exception: pass
+    try: _lh62_sync_group_selection(self)
+    except Exception: pass
+    try: _lh62_update_group_outline(self)
+    except Exception: pass
+    try: self.refresh_properties()
+    except Exception: pass
+    try: self.rebuild_tree()
+    except Exception: pass
+    try: self.scene.update(); self.view.viewport().update()
+    except Exception: pass
+
+def _lh62_group_selected_graphics(self):
+    models=_lh62_selected_models(self, expand_groups=False)
+    clean=[]
+    for m in models:
+        if m not in clean: clean.append(m)
+    if len(clean)<2:
+        try: QMessageBox.information(self,'Group Graphics','Bitte mindestens zwei eingefügte Grafikobjekte auswählen.')
+        except Exception: pass
+        return
+    try: self.push_undo_state()
+    except Exception: pass
+    import uuid as _uuid
+    gid='G'+_uuid.uuid4().hex[:8]
+    for gr in clean: _lh62_set_gid(gr,gid)
+    _lh62_normalize_group_origin(self, clean)
+    try: self.dirty=True
+    except Exception: pass
+    try:
+        self.scene.blockSignals(True)
+        for it in _lh62_all_graphic_items(self): it.setSelected(_lh62_gid(it.model)==gid)
+    finally:
+        try: self.scene.blockSignals(False)
+        except Exception: pass
+    _lh62_update_scene(self)
+    try: self.statusBar().showMessage(f'Grafikgruppe erstellt: {len(clean)} Objekte als 1 Objekt.',4000)
+    except Exception: pass
+
+def _lh62_ungroup_selected_graphics(self):
+    models=_lh62_selected_models(self, expand_groups=True)
+    if not models:
+        try: QMessageBox.information(self,'Ungroup Graphics','Keine Grafikgruppe ausgewählt.')
+        except Exception: pass
+        return
+    try: self.push_undo_state()
+    except Exception: pass
+    for gr in models: _lh62_set_gid(gr,'')
+    try: self.dirty=True
+    except Exception: pass
+    _lh62_clear_group_outline(self); _lh62_update_scene(self)
+
+def _lh62_apply_scale(self, direction):
+    models=_lh62_selected_models(self, expand_groups=True)
+    if not models: return False
+    b=_lh62_bbox(models)
+    if not b: return False
+    minx,miny,maxx,maxy=b; cur_w=maxx-minx; cur_h=maxy-miny
+    dom=max(cur_w,cur_h,_lh62_grid_step(self))
+    target=max(_lh62_grid_step(self), _lh62_snap(self, dom + (1.0 if int(direction)>0 else -1.0)))
+    factor=target/dom if dom>1e-12 else 1.0
+    if abs(factor-1.0)<1e-12: return True
+    ox,oy=_lh62_origin(self,models)
+    min_dim=_lh62_grid_step(self)
+    try: self.push_undo_state()
+    except Exception: pass
+    for gr in models:
+        try:
+            cx,cy=_lh62_model_center(gr)
+            ncx=ox+(cx-ox)*factor; ncy=oy+(cy-oy)*factor
+            w=float(getattr(gr,'w',0.0) or 0.0); h=float(getattr(gr,'h',0.0) or 0.0)
+            shape=str(getattr(gr,'shape','') or '').lower()
+            nw=_lh62_snap(self,w*factor); nh=_lh62_snap(self,h*factor)
+            if shape not in ('line','arc'):
+                if abs(nw)<min_dim: nw=(1.0 if (nw if abs(nw)>1e-12 else w)>=0 else -1.0)*min_dim
+                if abs(nh)<min_dim: nh=(1.0 if (nh if abs(nh)>1e-12 else h)>=0 else -1.0)*min_dim
+            else:
+                if abs(w)>1e-12 and abs(nw)<min_dim: nw=(1.0 if w>=0 else -1.0)*min_dim
+                if abs(h)>1e-12 and abs(nh)<min_dim: nh=(1.0 if h>=0 else -1.0)*min_dim
+                if getattr(gr,'ctrl_x',None) is not None: gr.ctrl_x=_lh62_snap(self,float(gr.ctrl_x)*factor)
+                if getattr(gr,'ctrl_y',None) is not None: gr.ctrl_y=_lh62_snap(self,float(gr.ctrl_y)*factor)
+                if getattr(gr,'curve_radius',None) not in (None,0,0.0): gr.curve_radius=_lh62_snap(self,float(gr.curve_radius)*factor)
+            gr.w=nw; gr.h=nh; _lh62_set_model_center(gr,ncx,ncy)
+        except Exception: pass
+    try: self.dirty=True
+    except Exception: pass
+    _lh62_update_scene(self); return True
+
+def _lh62_apply_rotate(self, deg):
+    models=_lh62_selected_models(self, expand_groups=True)
+    if not models: return False
+    ox,oy=_lh62_origin(self,models)
+    rad=math.radians(float(deg)); c=math.cos(rad); s=math.sin(rad)
+    try: self.push_undo_state()
+    except Exception: pass
+    for gr in models:
+        try:
+            cx,cy=_lh62_model_center(gr); dx=cx-ox; dy=cy-oy
+            _lh62_set_model_center(gr, ox+dx*c-dy*s, oy+dx*s+dy*c)
+            cur=float(getattr(gr,'rotation',0.0) or 0.0)
+            gr.rotation=(round((cur+float(deg))/90.0)*90.0)%360.0
+        except Exception: pass
+    try: self.dirty=True
+    except Exception: pass
+    _lh62_update_scene(self); return True
+
+def _lh62_apply_flip(self, horizontal=True):
+    models=_lh62_selected_models(self, expand_groups=True)
+    if not models: return False
+    ox,oy=_lh62_origin(self,models)
+    try: self.push_undo_state()
+    except Exception: pass
+    for gr in models:
+        try:
+            cx,cy=_lh62_model_center(gr)
+            if horizontal:
+                _lh62_set_model_center(gr, ox-(cx-ox), cy)
+                gr.scale_x = -float(getattr(gr,'scale_x',1.0) or 1.0)
+            else:
+                _lh62_set_model_center(gr, cx, oy-(cy-oy))
+                gr.scale_y = -float(getattr(gr,'scale_y',1.0) or 1.0)
+        except Exception: pass
+    try: self.dirty=True
+    except Exception: pass
+    _lh62_update_scene(self); return True
+
+def _lh62_scale_selected_grid(self, direction:int):
+    try:
+        if self._selected_body_active():
+            return _lh61_prev_scale_grid(self,direction) if '_lh61_prev_scale_grid' in globals() and _lh61_prev_scale_grid else None
+    except Exception: pass
+    if _lh62_apply_scale(self,direction): return None
+    if '_lh61_prev_scale_grid' in globals() and _lh61_prev_scale_grid: return _lh61_prev_scale_grid(self,direction)
+
+def _lh62_rotate_selected(self, deg):
+    try:
+        if self._selected_body_active():
+            return _lh61_prev_rotate_selected(self,deg) if '_lh61_prev_rotate_selected' in globals() and _lh61_prev_rotate_selected else None
+    except Exception: pass
+    if _lh62_apply_rotate(self,deg): return None
+    if '_lh61_prev_rotate_selected' in globals() and _lh61_prev_rotate_selected: return _lh61_prev_rotate_selected(self,deg)
+
+def _lh62_flip_h(self):
+    try:
+        if self._selected_body_active():
+            return _lh61_prev_flip_h(self) if '_lh61_prev_flip_h' in globals() and _lh61_prev_flip_h else None
+    except Exception: pass
+    if _lh62_apply_flip(self,True): return None
+    if '_lh61_prev_flip_h' in globals() and _lh61_prev_flip_h: return _lh61_prev_flip_h(self)
+
+def _lh62_flip_v(self):
+    try:
+        if self._selected_body_active():
+            return _lh61_prev_flip_v(self) if '_lh61_prev_flip_v' in globals() and _lh61_prev_flip_v else None
+    except Exception: pass
+    if _lh62_apply_flip(self,False): return None
+    if '_lh61_prev_flip_v' in globals() and _lh61_prev_flip_v: return _lh61_prev_flip_v(self)
+
+def _lh62_copy_selected(self):
+    self.set_tool(DrawTool.SELECT.value)
+    self.clipboard_is_cut=False; self.clipboard=[]
+    # If a grouped graphic is selected, copy all group children once so paste
+    # creates a new independent group, not aliases of the old group id.
+    gids=[]
+    for it in _lh62_selected_graphic_items(self):
+        gid=_lh62_gid(it.model)
+        if gid and gid not in gids: gids.append(gid)
+    copied_models=set()
+    try:
+        for gid in gids:
+            for gr in list(getattr(self.current_unit,'graphics',[]) or []):
+                if _lh62_gid(gr)==gid and id(gr) not in copied_models:
+                    self.clipboard.append(('GRAPHIC', copy.deepcopy(gr)))
+                    copied_models.add(id(gr))
+        for it in self.scene.selectedItems():
+            if it.data(0) in ('PIN','TEXT','BODY'):
+                self.clipboard.append((it.data(0), copy.deepcopy(it.model)))
+            elif it.data(0)=='GRAPHIC' and not _lh62_gid(it.model) and id(it.model) not in copied_models:
+                self.clipboard.append(('GRAPHIC', copy.deepcopy(it.model)))
+        if self.clipboard: self.statusBar().showMessage(f'Copied {len(self.clipboard)} object(s).',2500)
+    except Exception: pass
+
+def _lh62_paste_selected(self):
+    self.set_tool(DrawTool.SELECT.value)
+    if not self.clipboard: return
+    try: self.push_undo_state()
+    except Exception: pass
+    existing_pins=[p.number for u in self.symbol.units for p in u.pins]
+    import uuid as _uuid
+    gid_map={}
+    pasted_models=[]
+    for kind,src in self.clipboard:
+        m=copy.deepcopy(src)
+        if hasattr(m,'x'): m.x += 1
+        if hasattr(m,'y'): m.y -= 1
+        if kind=='PIN':
+            if not getattr(self,'clipboard_is_cut',False):
+                m.number=next_pin_number(existing_pins); existing_pins.append(m.number); m.name=self._unique_pin_name(getattr(m,'name','PIN'))
+            self.current_unit.pins.append(m); pasted_models.append(m)
+        elif kind=='TEXT':
+            self.current_unit.texts.append(m); pasted_models.append(m)
+        elif kind=='GRAPHIC':
+            old_gid=_lh62_gid(m)
+            if old_gid:
+                if old_gid not in gid_map: gid_map[old_gid]='G'+_uuid.uuid4().hex[:8]
+                _lh62_set_gid(m,gid_map[old_gid])
+            else:
+                _lh62_set_gid(m,'')
+            m.locked_to_body=False
+            if not _lh62_gid(m): m.graphic_role='user_graphic'
+            m.mentor_raw='__USER_GRAPHIC__'
+            self.current_unit.graphics.append(m); pasted_models.append(m)
+        elif kind=='BODY':
+            self.current_unit.body=m; pasted_models.append(m)
+    try: self.dock_pins_to_body(self.current_unit)
+    except Exception: pass
+    self.clipboard_is_cut=False; self._selection_restore_ids={id(m) for m in pasted_models}
+    try: self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
+    except Exception: _lh62_update_scene(self)
+
+try:
+    for _cls in (MainWindow, TemplateEditorDialog):
+        _cls.scale_selected_grid=_lh62_scale_selected_grid
+        _cls.rotate_selected=_lh62_rotate_selected
+        _cls.flip_selected_horizontal=_lh62_flip_h
+        _cls.flip_selected_vertical=_lh62_flip_v
+        _cls.group_selected_graphics=_lh62_group_selected_graphics
+        _cls.ungroup_selected_graphics=_lh62_ungroup_selected_graphics
+        _cls.copy_selected=_lh62_copy_selected
+        _cls.paste_selected=_lh62_paste_selected
+        if hasattr(_cls,'on_scene_selection_changed'):
+            def _lh62_on_scene_selection_changed(self):
+                try: _lh62_sync_group_selection(self)
+                except Exception: pass
+                try: self.refresh_properties()
+                except Exception: pass
+            _cls.on_scene_selection_changed=_lh62_on_scene_selection_changed
+except Exception: pass
+
+# Liebherr v63: grouping must never move graphics. The group origin is a
+# logical, snapped pivot stored on the group children; geometry stays exactly
+# where it was when the group is created.
+def _lh63_group_models_by_gid(self, gid):
+    out=[]
+    try:
+        for gr in list(getattr(self.current_unit,'graphics',[]) or []):
+            if _lh62_gid(gr)==gid:
+                out.append(gr)
+    except Exception:
+        pass
+    return out
+
+def _lh63_get_group_origin(self, models):
+    try:
+        gids=[_lh62_gid(m) for m in models if _lh62_gid(m)]
+        gid=gids[0] if gids and all(g==gids[0] for g in gids) else ''
+        if gid:
+            for m in models:
+                gx=getattr(m,'group_origin_x',None); gy=getattr(m,'group_origin_y',None)
+                if gx is not None and gy is not None:
+                    return float(gx), float(gy)
+    except Exception:
+        pass
+    b=_lh62_bbox(models)
+    if not b: return (0.0,0.0)
+    return _lh62_snap(self,(b[0]+b[2])/2.0), _lh62_snap(self,(b[1]+b[3])/2.0)
+
+def _lh63_set_group_origin(self, models, ox=None, oy=None):
+    if ox is None or oy is None:
+        b=_lh62_bbox(models)
+        if not b: return
+        ox=_lh62_snap(self,(b[0]+b[2])/2.0); oy=_lh62_snap(self,(b[1]+b[3])/2.0)
+    for m in models:
+        try:
+            m.group_origin_x=float(ox); m.group_origin_y=float(oy)
+        except Exception:
+            pass
+
+def _lh63_group_selected_graphics(self):
+    models=_lh62_selected_models(self, expand_groups=False)
+    clean=[]
+    for m in models:
+        if m not in clean: clean.append(m)
+    if len(clean)<2:
+        try: QMessageBox.information(self,'Group Graphics','Bitte mindestens zwei eingefügte Grafikobjekte auswählen.')
+        except Exception: pass
+        return
+    try: self.push_undo_state()
+    except Exception: pass
+    import uuid as _uuid
+    gid='G'+_uuid.uuid4().hex[:8]
+    # Compute the logical pivot, but DO NOT normalize/translate children.
+    b=_lh62_bbox(clean)
+    ox=oy=0.0
+    if b:
+        ox=_lh62_snap(self,(b[0]+b[2])/2.0); oy=_lh62_snap(self,(b[1]+b[3])/2.0)
+    for gr in clean:
+        _lh62_set_gid(gr,gid)
+        try:
+            gr.group_origin_x=float(ox); gr.group_origin_y=float(oy)
+        except Exception: pass
+    try: self.dirty=True
+    except Exception: pass
+    try:
+        self.scene.blockSignals(True)
+        for it in _lh62_all_graphic_items(self): it.setSelected(_lh62_gid(it.model)==gid)
+    finally:
+        try: self.scene.blockSignals(False)
+        except Exception: pass
+    _lh62_update_scene(self)
+    try: self.statusBar().showMessage(f'Grafikgruppe erstellt: {len(clean)} Objekte als 1 Objekt.',4000)
+    except Exception: pass
+
+def _lh63_ungroup_selected_graphics(self):
+    models=_lh62_selected_models(self, expand_groups=True)
+    if not models:
+        try: QMessageBox.information(self,'Ungroup Graphics','Keine Grafikgruppe ausgewählt.')
+        except Exception: pass
+        return
+    try: self.push_undo_state()
+    except Exception: pass
+    for gr in models:
+        _lh62_set_gid(gr,'')
+        for attr in ('group_origin_x','group_origin_y'):
+            try:
+                if hasattr(gr, attr): delattr(gr, attr)
+            except Exception: pass
+    try: self.dirty=True
+    except Exception: pass
+    _lh62_clear_group_outline(self); _lh62_update_scene(self)
+
+def _lh63_apply_scale(self, direction):
+    models=_lh62_selected_models(self, expand_groups=True)
+    if not models: return False
+    b=_lh62_bbox(models)
+    if not b: return False
+    minx,miny,maxx,maxy=b; cur_w=maxx-minx; cur_h=maxy-miny
+    step=_lh62_grid_step(self)
+    dom=max(cur_w,cur_h,step)
+    target=max(step, _lh62_snap(self, dom + (step if int(direction)>0 else -step)))
+    factor=target/dom if dom>1e-12 else 1.0
+    if abs(factor-1.0)<1e-12: return True
+    ox,oy=_lh63_get_group_origin(self,models)
+    try: self.push_undo_state()
+    except Exception: pass
+    for gr in models:
+        try:
+            cx,cy=_lh62_model_center(gr)
+            ncx=ox+(cx-ox)*factor; ncy=oy+(cy-oy)*factor
+            w=float(getattr(gr,'w',0.0) or 0.0); h=float(getattr(gr,'h',0.0) or 0.0)
+            nw=_lh62_snap(self,w*factor); nh=_lh62_snap(self,h*factor)
+            shape=str(getattr(gr,'shape','') or '').lower()
+            if shape not in ('line','arc'):
+                if abs(nw)<step: nw=(1.0 if (nw if abs(nw)>1e-12 else w)>=0 else -1.0)*step
+                if abs(nh)<step: nh=(1.0 if (nh if abs(nh)>1e-12 else h)>=0 else -1.0)*step
+            gr.w=nw; gr.h=nh; _lh62_set_model_center(gr,ncx,ncy)
+        except Exception: pass
+    # Pivot remains fixed relative to group transform operation; if a gid exists,
+    # keep the same logical origin on all children.
+    _lh63_set_group_origin(self, models, ox, oy)
+    try: self.dirty=True
+    except Exception: pass
+    _lh62_update_scene(self); return True
+
+def _lh63_apply_rotate(self, deg):
+    models=_lh62_selected_models(self, expand_groups=True)
+    if not models: return False
+    ox,oy=_lh63_get_group_origin(self,models)
+    rad=math.radians(float(deg)); c=math.cos(rad); s=math.sin(rad)
+    try: self.push_undo_state()
+    except Exception: pass
+    for gr in models:
+        try:
+            cx,cy=_lh62_model_center(gr); dx=cx-ox; dy=cy-oy
+            _lh62_set_model_center(gr, ox+dx*c-dy*s, oy+dx*s+dy*c)
+            cur=float(getattr(gr,'rotation',0.0) or 0.0)
+            gr.rotation=(round((cur+float(deg))/90.0)*90.0)%360.0
+        except Exception: pass
+    _lh63_set_group_origin(self, models, ox, oy)
+    try: self.dirty=True
+    except Exception: pass
+    _lh62_update_scene(self); return True
+
+def _lh63_apply_flip(self, horizontal=True):
+    models=_lh62_selected_models(self, expand_groups=True)
+    if not models: return False
+    ox,oy=_lh63_get_group_origin(self,models)
+    try: self.push_undo_state()
+    except Exception: pass
+    for gr in models:
+        try:
+            cx,cy=_lh62_model_center(gr)
+            if horizontal:
+                _lh62_set_model_center(gr, ox-(cx-ox), cy)
+                gr.scale_x = -float(getattr(gr,'scale_x',1.0) or 1.0)
+            else:
+                _lh62_set_model_center(gr, cx, oy-(cy-oy))
+                gr.scale_y = -float(getattr(gr,'scale_y',1.0) or 1.0)
+        except Exception: pass
+    _lh63_set_group_origin(self, models, ox, oy)
+    try: self.dirty=True
+    except Exception: pass
+    _lh62_update_scene(self); return True
+
+def _lh63_scale_selected_grid(self, direction:int):
+    try:
+        if self._selected_body_active():
+            return _lh61_prev_scale_grid(self,direction) if '_lh61_prev_scale_grid' in globals() and _lh61_prev_scale_grid else None
+    except Exception: pass
+    if _lh63_apply_scale(self,direction): return None
+    if '_lh61_prev_scale_grid' in globals() and _lh61_prev_scale_grid: return _lh61_prev_scale_grid(self,direction)
+
+def _lh63_rotate_selected(self, deg):
+    try:
+        if self._selected_body_active():
+            return _lh61_prev_rotate_selected(self,deg) if '_lh61_prev_rotate_selected' in globals() and _lh61_prev_rotate_selected else None
+    except Exception: pass
+    if _lh63_apply_rotate(self,deg): return None
+    if '_lh61_prev_rotate_selected' in globals() and _lh61_prev_rotate_selected: return _lh61_prev_rotate_selected(self,deg)
+
+def _lh63_flip_h(self):
+    try:
+        if self._selected_body_active():
+            return _lh61_prev_flip_h(self) if '_lh61_prev_flip_h' in globals() and _lh61_prev_flip_h else None
+    except Exception: pass
+    if _lh63_apply_flip(self,True): return None
+    if '_lh61_prev_flip_h' in globals() and _lh61_prev_flip_h: return _lh61_prev_flip_h(self)
+
+def _lh63_flip_v(self):
+    try:
+        if self._selected_body_active():
+            return _lh61_prev_flip_v(self) if '_lh61_prev_flip_v' in globals() and _lh61_prev_flip_v else None
+    except Exception: pass
+    if _lh63_apply_flip(self,False): return None
+    if '_lh61_prev_flip_v' in globals() and _lh61_prev_flip_v: return _lh61_prev_flip_v(self)
+
+try:
+    for _cls in (MainWindow, TemplateEditorDialog):
+        _cls.group_selected_graphics=_lh63_group_selected_graphics
+        _cls.ungroup_selected_graphics=_lh63_ungroup_selected_graphics
+        _cls.scale_selected_grid=_lh63_scale_selected_grid
+        _cls.rotate_selected=_lh63_rotate_selected
+        _cls.flip_selected_horizontal=_lh63_flip_h
+        _cls.flip_selected_vertical=_lh63_flip_v
+except Exception:
+    pass
