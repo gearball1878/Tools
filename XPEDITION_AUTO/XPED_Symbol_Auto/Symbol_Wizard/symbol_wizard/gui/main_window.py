@@ -12252,3 +12252,340 @@ try:
         _cls.scale_current_unit_children_from_body_resize = _lh46_scale_current_unit_children_from_body_resize
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# Liebherr v47: keep Selectable/selection/property panel stable and make all
+# property widgets crash-safe.
+# ---------------------------------------------------------------------------
+
+def _lh47_selection_filter_state(self):
+    try:
+        mode = self.selection_mode_combo.currentText() if hasattr(self, 'selection_mode_combo') else None
+    except Exception:
+        mode = None
+    try:
+        enabled = dict(getattr(self, 'selection_enabled', {}) or {})
+    except Exception:
+        enabled = {}
+    return mode, enabled
+
+
+def _lh47_restore_selection_filter_state(self, state):
+    mode, enabled = state or (None, {})
+    try:
+        if enabled:
+            self.selection_enabled.update(enabled)
+    except Exception:
+        pass
+    try:
+        if mode is not None and hasattr(self, 'selection_mode_combo'):
+            self.selection_mode_combo.blockSignals(True)
+            self.selection_mode_combo.setCurrentText(mode)
+            self.selection_mode_combo.blockSignals(False)
+    except Exception:
+        try: self.selection_mode_combo.blockSignals(False)
+        except Exception: pass
+    try:
+        if mode == 'Custom' and hasattr(self, 'selection_custom_checks'):
+            for k, cb in self.selection_custom_checks.items():
+                cb.blockSignals(True); cb.setChecked(bool(self.selection_enabled.get(k, False))); cb.blockSignals(False)
+        elif hasattr(self, 'selection_custom_checks'):
+            for k, cb in self.selection_custom_checks.items():
+                cb.blockSignals(True); cb.setChecked(bool(self.selection_enabled.get(k, False))); cb.blockSignals(False)
+    except Exception:
+        pass
+
+
+def _lh47_is_body_like_item(it):
+    try:
+        if it.data(0) in ('BODY', 'BODY_GRAPHIC'):
+            return True
+        m = getattr(it, 'model', None)
+        return bool(m is not None and (getattr(m, 'locked_to_body', False) or str(getattr(m, 'graphic_role', '') or '').lower() in ('body','template_body','imported_body')))
+    except Exception:
+        return False
+
+
+def _lh47_select_one_logical_body(self):
+    try:
+        preferred = None
+        fallback = None
+        cur_body = getattr(getattr(self, 'current_unit', None), 'body', None)
+        for it in list(self.scene.items()):
+            try:
+                k = it.data(0)
+                if k == 'BODY' and (getattr(it, 'model', None) is cur_body or preferred is None):
+                    preferred = it
+                    if getattr(it, 'model', None) is cur_body:
+                        break
+                elif k == 'BODY_GRAPHIC' and fallback is None:
+                    fallback = it
+            except Exception:
+                pass
+        target = preferred or fallback
+        if target is None:
+            return False
+        self.scene.blockSignals(True)
+        try:
+            for it in self.scene.items():
+                try: it.setSelected(False)
+                except Exception: pass
+            target.setSelected(True)
+        finally:
+            self.scene.blockSignals(False)
+        try: self.view.viewport().update()
+        except Exception: pass
+        return True
+    except Exception:
+        try: self.scene.blockSignals(False)
+        except Exception: pass
+        return False
+
+
+def _lh47_restore_selection_after_action(self, sig=None, filter_state=None, force_body=False, refresh=True):
+    def run():
+        try:
+            if filter_state is not None:
+                _lh47_restore_selection_filter_state(self, filter_state)
+            body_before = force_body or any(str(s[0]) in ('BODY','BODY_GRAPHIC') for s in (sig or []))
+            if body_before:
+                _lh47_select_one_logical_body(self)
+            elif sig:
+                try:
+                    ids = {s[1] for s in sig if len(s) > 1 and s[1] is not None}
+                    self.scene.blockSignals(True)
+                    for it in self.scene.items():
+                        try: it.setSelected(False)
+                        except Exception: pass
+                    for it in self.scene.items():
+                        try:
+                            if id(getattr(it, 'model', None)) in ids:
+                                it.setSelected(True)
+                        except Exception:
+                            pass
+                finally:
+                    try: self.scene.blockSignals(False)
+                    except Exception: pass
+            if refresh:
+                try: self.refresh_properties()
+                except Exception: pass
+        except Exception as e:
+            try: self.statusBar().showMessage(f'Selection restore failed: {e}', 3000)
+            except Exception: pass
+    try: QTimer.singleShot(0, run)
+    except Exception: run()
+
+
+def _lh47_with_selection_stable(self, work, force_body=False):
+    sig = _lh46_selected_signature(self) if '_lh46_selected_signature' in globals() else []
+    filter_state = _lh47_selection_filter_state(self)
+    try:
+        return work()
+    finally:
+        _lh47_restore_selection_after_action(self, sig=sig, filter_state=filter_state, force_body=force_body)
+
+
+try:
+    _lh47_prev_rotate_selected = MainWindow.rotate_selected
+    _lh47_prev_flip_selected_horizontal = MainWindow.flip_selected_horizontal
+    _lh47_prev_flip_selected_vertical = MainWindow.flip_selected_vertical
+    _lh47_prev_scale_selected_grid = MainWindow.scale_selected_grid
+    _lh47_prev_scale_selected = MainWindow.scale_selected
+except Exception:
+    _lh47_prev_rotate_selected = _lh47_prev_flip_selected_horizontal = _lh47_prev_flip_selected_vertical = None
+    _lh47_prev_scale_selected_grid = _lh47_prev_scale_selected = None
+
+
+def _lh47_rotate_selected(self, deg):
+    return _lh47_with_selection_stable(self, lambda: _lh47_prev_rotate_selected(self, deg), force_body=bool(self._selected_body_active()))
+
+
+def _lh47_flip_selected_horizontal(self):
+    return _lh47_with_selection_stable(self, lambda: _lh47_prev_flip_selected_horizontal(self), force_body=bool(self._selected_body_active()))
+
+
+def _lh47_flip_selected_vertical(self):
+    return _lh47_with_selection_stable(self, lambda: _lh47_prev_flip_selected_vertical(self), force_body=bool(self._selected_body_active()))
+
+
+def _lh47_scale_selected_grid(self, direction:int):
+    def work():
+        # Pins must never be geometrically scaled. If BODY is part of the current
+        # selection, route exclusively through BODY resize/redock. If only pins
+        # are selected, Scale +/- is a no-op for them.
+        try:
+            if self._selected_body_active():
+                return _lh47_prev_scale_selected_grid(self, direction)
+            selected = list(self.scene.selectedItems())
+            if selected and all(getattr(i, 'data', lambda *_: None)(0) == 'PIN' for i in selected):
+                try: self.statusBar().showMessage('Pins are not scaled by Scale +/-; edit pin length explicitly.', 2500)
+                except Exception: pass
+                return None
+        except Exception:
+            pass
+        return _lh47_prev_scale_selected_grid(self, direction)
+    return _lh47_with_selection_stable(self, work, force_body=bool(self._selected_body_active()))
+
+
+def _lh47_scale_selected(self, factor):
+    def work():
+        try:
+            if self._selected_body_active():
+                return _lh47_prev_scale_selected(self, factor)
+            selected = list(self.scene.selectedItems())
+            if selected and all(getattr(i, 'data', lambda *_: None)(0) == 'PIN' for i in selected):
+                try: self.statusBar().showMessage('Pins are not scaled; edit pin length explicitly.', 2500)
+                except Exception: pass
+                return None
+        except Exception:
+            pass
+        return _lh47_prev_scale_selected(self, factor)
+    return _lh47_with_selection_stable(self, work, force_body=bool(self._selected_body_active()))
+
+
+# More conservative property widgets: no synchronous form rebuild from inside
+# the editor signal, and no signal during initial value population.
+def _lh47_dbl(self, value, fn, lo=-999, hi=999, step=.1):
+    w = QDoubleSpinBox()
+    w.setRange(lo, hi); w.setSingleStep(step); w.setDecimals(3); w.setKeyboardTracking(False)
+    w.blockSignals(True)
+    try: w.setValue(float(value))
+    except Exception: w.setValue(0.0)
+    w.blockSignals(False)
+    def safe(v):
+        sig = _lh46_selected_signature(self) if '_lh46_selected_signature' in globals() else []
+        fs = _lh47_selection_filter_state(self)
+        def do():
+            try:
+                fn(float(v))
+            except RuntimeError:
+                return
+            except Exception as e:
+                try: self.statusBar().showMessage(f'Property update failed: {e}', 5000)
+                except Exception: pass
+            finally:
+                _lh47_restore_selection_after_action(self, sig=sig, filter_state=fs, force_body=any(str(s[0]) in ('BODY','BODY_GRAPHIC') for s in sig), refresh=False)
+        try: QTimer.singleShot(0, do)
+        except Exception: do()
+    w.valueChanged.connect(safe)
+    return w
+
+
+def _lh47_combo(self, items, val, fn):
+    w = QComboBox(); w.blockSignals(True); w.addItems([str(x) for x in items]); w.setCurrentText(str(val)); w.blockSignals(False)
+    def safe(v):
+        sig = _lh46_selected_signature(self) if '_lh46_selected_signature' in globals() else []
+        fs = _lh47_selection_filter_state(self)
+        def do():
+            try: fn(v)
+            except RuntimeError: return
+            except Exception as e:
+                try: self.statusBar().showMessage(f'Property update failed: {e}', 5000)
+                except Exception: pass
+            finally:
+                _lh47_restore_selection_after_action(self, sig=sig, filter_state=fs, force_body=any(str(s[0]) in ('BODY','BODY_GRAPHIC') for s in sig), refresh=False)
+        try: QTimer.singleShot(0, do)
+        except Exception: do()
+    w.currentTextChanged.connect(safe)
+    return w
+
+
+def _lh47_check(self, value, fn):
+    w = QCheckBox(); w.blockSignals(True); w.setChecked(bool(value)); w.blockSignals(False)
+    def safe(v):
+        sig = _lh46_selected_signature(self) if '_lh46_selected_signature' in globals() else []
+        fs = _lh47_selection_filter_state(self)
+        def do():
+            try: fn(bool(v))
+            except RuntimeError: return
+            except Exception as e:
+                try: self.statusBar().showMessage(f'Property update failed: {e}', 5000)
+                except Exception: pass
+            finally:
+                _lh47_restore_selection_after_action(self, sig=sig, filter_state=fs, force_body=any(str(s[0]) in ('BODY','BODY_GRAPHIC') for s in sig), refresh=False)
+        try: QTimer.singleShot(0, do)
+        except Exception: do()
+    w.toggled.connect(safe)
+    return w
+
+
+def _lh47_set_safe(self, m, a, v):
+    sig = _lh46_selected_signature(self) if '_lh46_selected_signature' in globals() else []
+    fs = _lh47_selection_filter_state(self)
+    try: self.push_undo_state()
+    except Exception: pass
+    try:
+        if a == 'rotation':
+            v = (round(float(v) / 15.0) * 15.0) % 360
+        setattr(m, a, v)
+        self.dirty = True
+        try: self.update_current_unit_canvas_positions()
+        except Exception: pass
+        try: self.update_attribute_items_for_unit()
+        except Exception: pass
+        try: self.scene.update()
+        except Exception: pass
+        try: self.view.viewport().update()
+        except Exception: pass
+    except Exception as e:
+        try: self.statusBar().showMessage(f'Property update failed: {e}', 5000)
+        except Exception: pass
+    _lh47_restore_selection_after_action(self, sig=sig, filter_state=fs, force_body=any(str(s[0]) in ('BODY','BODY_GRAPHIC') for s in sig), refresh=False)
+
+
+try:
+    _lh47_prev_set_attr_vis = MainWindow._set_attr_vis
+    _lh47_prev_set_attr_val = MainWindow._set_attr_val
+except Exception:
+    _lh47_prev_set_attr_vis = _lh47_prev_set_attr_val = None
+
+
+def _lh47_set_attr_vis(self, key, val):
+    sig = _lh46_selected_signature(self) if '_lh46_selected_signature' in globals() else []
+    fs = _lh47_selection_filter_state(self)
+    try:
+        self.push_undo_state()
+        self.current_unit.body.visible_attributes[key] = bool(val)
+        self.dirty = True
+        try: self.update_attribute_items_for_unit()
+        except Exception: pass
+        try: self.scene.update(); self.view.viewport().update()
+        except Exception: pass
+    except Exception as e:
+        try: self.statusBar().showMessage(f'Attribute update failed: {e}', 5000)
+        except Exception: pass
+    _lh47_restore_selection_after_action(self, sig=sig, filter_state=fs, force_body=any(str(s[0]) in ('BODY','BODY_GRAPHIC') for s in sig), refresh=False)
+
+
+def _lh47_set_attr_val(self, key, val):
+    sig = _lh46_selected_signature(self) if '_lh46_selected_signature' in globals() else []
+    fs = _lh47_selection_filter_state(self)
+    try:
+        self.push_undo_state()
+        self.current_unit.body.attributes[key] = str(val)
+        self.dirty = True
+        try: self.update_attribute_items_for_unit()
+        except Exception: pass
+        try: self.scene.update(); self.view.viewport().update()
+        except Exception: pass
+    except Exception as e:
+        try: self.statusBar().showMessage(f'Attribute update failed: {e}', 5000)
+        except Exception: pass
+    _lh47_restore_selection_after_action(self, sig=sig, filter_state=fs, force_body=any(str(s[0]) in ('BODY','BODY_GRAPHIC') for s in sig), refresh=False)
+
+
+try:
+    for _cls in (MainWindow, TemplateEditorDialog):
+        _cls._dbl = _lh47_dbl
+        _cls._combo = _lh47_combo
+        _cls._check = _lh47_check
+        _cls._set = _lh47_set_safe
+        _cls.rotate_selected = _lh47_rotate_selected
+        _cls.flip_selected_horizontal = _lh47_flip_selected_horizontal
+        _cls.flip_selected_vertical = _lh47_flip_selected_vertical
+        _cls.scale_selected_grid = _lh47_scale_selected_grid
+        _cls.scale_selected = _lh47_scale_selected
+    MainWindow._set_attr_vis = _lh47_set_attr_vis
+    MainWindow._set_attr_val = _lh47_set_attr_val
+except Exception:
+    pass
