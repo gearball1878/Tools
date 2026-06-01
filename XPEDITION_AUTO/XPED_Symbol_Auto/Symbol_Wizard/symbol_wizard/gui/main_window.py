@@ -18574,3 +18574,1004 @@ try:
     TemplateEditorDialog.scale_current_unit_children_from_body_resize = _sw99_scale_current_unit_children_from_body_resize
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# SW100: true vector BODY canvas scaling from immutable drag-start geometry.
+# ---------------------------------------------------------------------------
+# Canvas handle resize must behave like a vector transform, not like cumulative
+# mutation of already-scaled objects.  Every mouseMove/release maps the frozen
+# start geometry into the requested BODY bounds.  This preserves mixed graphic
+# structure (lines, rects, ellipses, arcs/quadratic control points) and keeps
+# pins in their original relative docking slots.
+
+def _sw100_clean(self, v):
+    try:
+        v = round(float(v), 9)
+        return 0.0 if abs(v) < 1e-9 else v
+    except Exception:
+        return v
+
+
+def _sw100_step(self):
+    try:
+        return max(0.001, float(getattr(self, 'edit_grid_step', 0) or self.edit_grid.value() or getattr(self, 'grid_inch', 1.0) or 1.0))
+    except Exception:
+        return 1.0
+
+
+def _sw100_snap(self, v):
+    try:
+        s = _sw100_step(self)
+        return _sw100_clean(self, round(float(v) / s) * s)
+    except Exception:
+        return _sw100_clean(self, v)
+
+
+def _sw100_is_body_graphic(self, gr, imported=False):
+    try:
+        role = str(getattr(gr, 'graphic_role', '') or '').lower()
+        raw = str(getattr(gr, 'mentor_raw', '') or '')
+        if raw == '__USER_GRAPHIC__' or role == 'user_graphic':
+            return False
+        return bool(imported or getattr(gr, 'locked_to_body', False) or role in ('body', 'template_body', 'imported_body'))
+    except Exception:
+        return False
+
+
+def _sw100_body_graphics(self, unit=None):
+    try:
+        u = unit or self.current_unit
+        imported = False
+        try:
+            attrs = getattr(getattr(u, 'body', None), 'attributes', {}) or {}
+            imported = any(str(attrs.get(k, '0')).strip().upper() in ('1', 'TRUE', 'YES') for k in (
+                'MENTOR_GRAPHICS_AS_BODY', 'TEMPLATE_GRAPHICS_AS_BODY', 'MENTOR_HAS_BODY', 'MENTOR_BODY_GRAPHICS_LOCKED'
+            ))
+        except Exception:
+            imported = False
+        return [g for g in getattr(u, 'graphics', []) or [] if _sw100_is_body_graphic(self, g, imported)]
+    except Exception:
+        return []
+
+
+def _sw100_snapshot_index(graphics_snapshot):
+    out = {}
+    for rec in graphics_snapshot or []:
+        try:
+            gr = rec[0]
+            out[gr] = rec
+        except Exception:
+            pass
+    return out
+
+
+def _sw100_graphic_start_tuple(gr, rec=None):
+    """Return frozen graphic state as a uniform tuple.
+
+    Tuple layout: gr,x,y,w,h,ctrl_x,ctrl_y,curve_radius,rotation,scale_x,scale_y
+    Older snapshots may only contain gr,x,y,w,h.  Missing values are read once
+    from the current model as a fallback, not during repeated scaling.
+    """
+    if rec is None:
+        rec = (gr, float(getattr(gr, 'x', 0.0) or 0.0), float(getattr(gr, 'y', 0.0) or 0.0),
+               float(getattr(gr, 'w', 0.0) or 0.0), float(getattr(gr, 'h', 0.0) or 0.0))
+    x = float(rec[1]); y = float(rec[2]); w = float(rec[3]); h = float(rec[4])
+    cx = rec[5] if len(rec) > 5 else getattr(gr, 'ctrl_x', None)
+    cy = rec[6] if len(rec) > 6 else getattr(gr, 'ctrl_y', None)
+    cr = rec[7] if len(rec) > 7 else getattr(gr, 'curve_radius', None)
+    rot = rec[8] if len(rec) > 8 else getattr(gr, 'rotation', 0.0)
+    scx = rec[9] if len(rec) > 9 else getattr(gr, 'scale_x', 1.0)
+    scy = rec[10] if len(rec) > 10 else getattr(gr, 'scale_y', 1.0)
+    return gr, x, y, w, h, cx, cy, cr, rot, scx, scy
+
+
+def _sw100_map_point(self, old_bounds, new_bounds, x, y):
+    ox, oy, ow, oh = old_bounds
+    nx, ny, nw, nh = new_bounds
+    ow = max(float(ow), 1e-9); oh = max(float(oh), 1e-9)
+    sx = float(nw) / ow; sy = float(nh) / oh
+    return (_sw100_clean(self, float(nx) + (float(x) - float(ox)) * sx),
+            _sw100_clean(self, float(ny) - (float(oy) - float(y)) * sy))
+
+
+def _sw100_scale_graphic_from_start(self, rec, old_bounds, new_bounds):
+    gr, x, y, w, h, ctrl_x, ctrl_y, curve_radius, rot, scx, scy = _sw100_graphic_start_tuple(rec[0], rec)
+    p1 = _sw100_map_point(None, old_bounds, new_bounds, x, y)
+    p2 = _sw100_map_point(None, old_bounds, new_bounds, x + w, y - h)
+    gr.x = _sw100_clean(None, p1[0])
+    gr.y = _sw100_clean(None, p1[1])
+    gr.w = _sw100_clean(None, p2[0] - p1[0])
+    gr.h = _sw100_clean(None, p1[1] - p2[1])
+
+    # Quadratic/arc control point is a vector endpoint in the same coordinate
+    # space, so map the absolute control point and convert back to local vector.
+    try:
+        if ctrl_x is not None and ctrl_y is not None:
+            cp = _sw100_map_point(None, old_bounds, new_bounds, x + float(ctrl_x), y - float(ctrl_y))
+            gr.ctrl_x = _sw100_clean(None, cp[0] - gr.x)
+            gr.ctrl_y = _sw100_clean(None, gr.y - cp[1])
+        else:
+            gr.ctrl_x = ctrl_x
+            gr.ctrl_y = ctrl_y
+    except Exception:
+        pass
+
+    # curve_radius is a vertical/vector offset in this model.  Scaling with Y
+    # preserves the visible arc direction and avoids cumulative curvature drift.
+    try:
+        if curve_radius is not None:
+            ox, oy, ow, oh = old_bounds; nx, ny, nw, nh = new_bounds
+            sy = float(nh) / max(float(oh), 1e-9)
+            gr.curve_radius = _sw100_clean(None, float(curve_radius) * sy)
+    except Exception:
+        pass
+    try:
+        gr.rotation = float(rot or 0.0)
+        gr.scale_x = float(scx or 1.0)
+        gr.scale_y = float(scy or 1.0)
+    except Exception:
+        pass
+
+
+def _sw100_real_bounds_from_graphics(self, graphics):
+    xs, ys = [], []
+    for gr in graphics or []:
+        try:
+            x = float(getattr(gr, 'x', 0.0) or 0.0)
+            y = float(getattr(gr, 'y', 0.0) or 0.0)
+            w = float(getattr(gr, 'w', 0.0) or 0.0)
+            h = float(getattr(gr, 'h', 0.0) or 0.0)
+            xs.extend([x, x + w]); ys.extend([y, y - h])
+            cx = getattr(gr, 'ctrl_x', None); cy = getattr(gr, 'ctrl_y', None)
+            if cx is not None and cy is not None:
+                xs.append(x + float(cx)); ys.append(y - float(cy))
+        except Exception:
+            pass
+    if not xs or not ys:
+        return None
+    left, right = min(xs), max(xs)
+    bottom, top = min(ys), max(ys)
+    return (_sw100_clean(self, left), _sw100_clean(self, top), _sw100_clean(self, right-left), _sw100_clean(self, top-bottom))
+
+
+def _sw100_sync_body_to_graphics_or_bounds(self, unit, fallback_bounds=None):
+    try:
+        b = unit.body
+        gs = _sw100_body_graphics(self, unit)
+        bounds = _sw100_real_bounds_from_graphics(self, gs) if gs else None
+        if bounds is None:
+            bounds = fallback_bounds
+        if bounds is not None:
+            b.x, b.y, b.width, b.height = bounds
+            b.width = max(_sw100_step(self), float(b.width))
+            b.height = max(_sw100_step(self), float(b.height))
+    except Exception:
+        pass
+
+
+def _sw100_move_pin_owned_texts(self, pin, dx, dy):
+    try:
+        return self._move_pin_owned_texts(pin, dx, dy)
+    except Exception:
+        pass
+    for ax, ay in (('label_x', 'label_y'), ('number_x', 'number_y')):
+        try:
+            if getattr(pin, ax, None) is not None and getattr(pin, ay, None) is not None:
+                setattr(pin, ax, _sw100_clean(self, float(getattr(pin, ax)) + dx))
+                setattr(pin, ay, _sw100_clean(self, float(getattr(pin, ay)) + dy))
+        except Exception:
+            pass
+    for tm in (getattr(pin, 'attribute_texts', {}) or {}).values():
+        try:
+            tm.x = _sw100_clean(self, float(tm.x) + dx)
+            tm.y = _sw100_clean(self, float(tm.y) + dy)
+        except Exception:
+            pass
+
+
+def _sw100_redock_pins_from_start(self, start_state, old_bounds, new_bounds):
+    for p, px, py, plen in start_state.get('pins', []) or []:
+        try:
+            old_px = float(getattr(p, 'x', px)); old_py = float(getattr(p, 'y', py))
+            side = str(getattr(p, 'side', '') or '')
+            auto_dock = bool(getattr(p, 'auto_dock', True))
+            if auto_dock and side == PinSide.LEFT.value:
+                nx, ny = new_bounds[0], _sw100_map_point(self, old_bounds, new_bounds, px, py)[1]
+            elif auto_dock and side == PinSide.RIGHT.value:
+                nx, ny = new_bounds[0] + new_bounds[2], _sw100_map_point(self, old_bounds, new_bounds, px, py)[1]
+            elif auto_dock and side == PinSide.TOP.value:
+                nx, ny = _sw100_map_point(self, old_bounds, new_bounds, px, py)[0], new_bounds[1]
+            elif auto_dock and side == PinSide.BOTTOM.value:
+                nx, ny = _sw100_map_point(self, old_bounds, new_bounds, px, py)[0], new_bounds[1] - new_bounds[3]
+            else:
+                nx, ny = _sw100_map_point(self, old_bounds, new_bounds, px, py)
+            p.x = _sw100_snap(self, nx)
+            p.y = _sw100_snap(self, ny)
+            p.length = float(plen)
+            _sw100_move_pin_owned_texts(self, p, p.x - old_px, p.y - old_py)
+        except Exception:
+            pass
+
+
+def _sw100_scale_current_unit_children_from_body_resize(self, start_state, body):
+    """Authoritative canvas BODY-resize vector mapping.
+
+    Called repeatedly during mouseMove.  It never reads already-mutated graphic
+    dimensions as the next source.  Instead it maps the immutable start snapshot
+    into the current BODY bounds.  That removes transient distortion while the
+    mouse is moving and keeps post-scale geometry aligned.
+    """
+    try:
+        u = self.current_unit
+        old_bounds = (float(start_state.get('x', body.x)), float(start_state.get('y', body.y)),
+                      max(float(start_state.get('w', body.width)), 1e-9), max(float(start_state.get('h', body.height)), 1e-9))
+        new_bounds = (_sw100_snap(self, float(body.x)), _sw100_snap(self, float(body.y)),
+                      max(_sw100_step(self), _sw100_snap(self, float(body.width))),
+                      max(_sw100_step(self), _sw100_snap(self, float(body.height))))
+        body.x, body.y, body.width, body.height = new_bounds
+
+        body_graphics = set(_sw100_body_graphics(self, u))
+        snap_index = _sw100_snapshot_index(start_state.get('graphics', []))
+        for gr in list(body_graphics):
+            rec = snap_index.get(gr)
+            if rec is not None:
+                _sw100_scale_graphic_from_start(self, rec, old_bounds, new_bounds)
+
+        # If graphics define the visible body, sync the logical BODY to the real
+        # transformed graphics.  Otherwise keep the requested rect from BodyItem.
+        if body_graphics:
+            _sw100_sync_body_to_graphics_or_bounds(self, u, new_bounds)
+            new_bounds = (float(u.body.x), float(u.body.y), float(u.body.width), float(u.body.height))
+        else:
+            u.body.x, u.body.y, u.body.width, u.body.height = new_bounds
+
+        _sw100_redock_pins_from_start(self, start_state, old_bounds, new_bounds)
+
+        # Texts and BODY attributes stay attached by position. Glyph geometry is
+        # not scaled. This matches the existing Symbol-1 expectation.
+        for t, tx, ty in start_state.get('texts', []) or []:
+            t.x, t.y = (_sw100_snap(self, _sw100_map_point(self, old_bounds, new_bounds, tx, ty)[0]),
+                        _sw100_snap(self, _sw100_map_point(self, old_bounds, new_bounds, tx, ty)[1]))
+        for t, tx, ty in start_state.get('attributes', []) or []:
+            t.x, t.y = (_sw100_snap(self, _sw100_map_point(self, old_bounds, new_bounds, tx, ty)[0]),
+                        _sw100_snap(self, _sw100_map_point(self, old_bounds, new_bounds, tx, ty)[1]))
+
+        # Non-body user graphics preserve their local shape and are only moved
+        # as authored objects unless they were selected/resized separately.
+        for rec in start_state.get('graphics', []) or []:
+            try:
+                gr, gx, gy, gw, gh, cx, cy, cr, rot, scx, scy = _sw100_graphic_start_tuple(rec[0], rec)
+                if gr in body_graphics:
+                    continue
+                mapped = _sw100_map_point(self, old_bounds, new_bounds, gx, gy)
+                gr.x, gr.y = _sw100_snap(self, mapped[0]), _sw100_snap(self, mapped[1])
+                gr.w, gr.h = gw, gh
+                gr.ctrl_x, gr.ctrl_y = cx, cy
+                if cr is not None:
+                    gr.curve_radius = cr
+                gr.rotation = rot; gr.scale_x = scx; gr.scale_y = scy
+            except Exception:
+                pass
+
+        try:
+            if hasattr(u, '_body_group_transform'):
+                delattr(u, '_body_group_transform')
+        except Exception:
+            pass
+        self.dirty = True
+    except Exception as e:
+        try: self.statusBar().showMessage(f'Vector BODY canvas scale failed: {e}', 5000)
+        except Exception: pass
+
+
+def _sw100_capture_resize_state(self, unit=None):
+    u = unit or self.current_unit
+    b = u.body
+    return {
+        'x': float(b.x), 'y': float(b.y), 'w': float(b.width), 'h': float(b.height),
+        'pins': [(p, float(getattr(p, 'x', 0.0)), float(getattr(p, 'y', 0.0)), float(getattr(p, 'length', 1.0) or 1.0)) for p in getattr(u, 'pins', []) or []],
+        'texts': [(t, float(getattr(t, 'x', 0.0)), float(getattr(t, 'y', 0.0))) for t in getattr(u, 'texts', []) or []],
+        'attributes': [(t, float(getattr(t, 'x', 0.0)), float(getattr(t, 'y', 0.0))) for t in (getattr(b, 'attribute_texts', {}) or {}).values()],
+        'graphics': [_sw100_graphic_start_tuple(g) for g in getattr(u, 'graphics', []) or []],
+    }
+
+
+def _sw100_resize_body_geometry(self, new_w=None, new_h=None, refresh=True):
+    """Property/ribbon Scale +/- path using the same vector mapper as canvas."""
+    try:
+        u = self.current_unit; b = u.body
+        start = _sw100_capture_resize_state(self, u)
+        old_bounds = (start['x'], start['y'], max(start['w'], 1e-9), max(start['h'], 1e-9))
+        w = old_bounds[2] if new_w is None else float(new_w)
+        h = old_bounds[3] if new_h is None else float(new_h)
+        # Keep top-left anchor stable, same as canvas BODY resize.
+        b.x, b.y = old_bounds[0], old_bounds[1]
+        b.width = max(_sw100_step(self), _sw100_snap(self, w))
+        b.height = max(_sw100_step(self), _sw100_snap(self, h))
+        _sw100_scale_current_unit_children_from_body_resize(self, start, b)
+        if refresh:
+            try:
+                self._selection_restore_ids = self._capture_selection_ids()
+            except Exception:
+                pass
+            try: self.rebuild_scene()
+            except Exception:
+                try: self.update_current_unit_canvas_positions()
+                except Exception: pass
+            try: self.rebuild_tree(); self.rebuild_pin_table(); self.refresh_properties()
+            except Exception: pass
+    except Exception as e:
+        try: self.statusBar().showMessage(f'BODY vector resize failed: {e}', 5000)
+        except Exception: pass
+
+
+def _sw100_set_body_width_grid(self, body, value):
+    self.push_undo_state()
+    self._selection_restore_ids = self._capture_selection_ids()
+    return _sw100_resize_body_geometry(self, new_w=float(value), new_h=None, refresh=True)
+
+
+def _sw100_set_body_height_grid(self, body, value):
+    self.push_undo_state()
+    self._selection_restore_ids = self._capture_selection_ids()
+    return _sw100_resize_body_geometry(self, new_w=None, new_h=float(value), refresh=True)
+
+
+def _sw100_scale_selected_grid(self, direction: int):
+    self.set_tool(DrawTool.SELECT.value)
+    if self._selected_body_active():
+        step = _sw100_step(self)
+        b = self.current_unit.body
+        self.push_undo_state()
+        self._selection_restore_ids = self._capture_selection_ids()
+        return _sw100_resize_body_geometry(self, new_w=float(b.width) + int(direction) * step, new_h=float(b.height) + int(direction) * step, refresh=True)
+    try:
+        return _sw39_prev_scale_selected_grid(self, direction)
+    except Exception:
+        return self.scale_selected(1.0 + (0.1 if direction > 0 else -0.1))
+
+
+def _sw100_transform_unit_as_body_group(self, op, value=None, refresh=True):
+    if op in ('scale', 'scale_x_to', 'scale_y_to'):
+        b = self.current_unit.body
+        if op == 'scale_x_to':
+            return _sw100_resize_body_geometry(self, new_w=float(value), new_h=None, refresh=refresh)
+        if op == 'scale_y_to':
+            return _sw100_resize_body_geometry(self, new_w=None, new_h=float(value), refresh=refresh)
+        f = float(value or 1.0)
+        return _sw100_resize_body_geometry(self, new_w=float(b.width) * f, new_h=float(b.height) * f, refresh=refresh)
+    try:
+        return _sw39_prev_transform_unit_as_body_group(self, op, value, refresh)
+    except Exception:
+        return None
+
+try:
+    MainWindow.scale_current_unit_children_from_body_resize = _sw100_scale_current_unit_children_from_body_resize
+    MainWindow._sw100_resize_body_geometry = _sw100_resize_body_geometry
+    MainWindow._set_body_width_grid = _sw100_set_body_width_grid
+    MainWindow._set_body_height_grid = _sw100_set_body_height_grid
+    MainWindow.scale_selected_grid = _sw100_scale_selected_grid
+    MainWindow._transform_unit_as_body_group = _sw100_transform_unit_as_body_group
+except Exception:
+    pass
+
+
+# ---------------------------------------------------------------------------
+# SW101: restore BODY canvas scaling and use one non-cumulative vector mapper.
+# ---------------------------------------------------------------------------
+# SW100 was too aggressive for imported/template BODY graphics and could sync
+# the logical BODY back to the old graphic bounds, which made canvas scaling look
+# disabled.  SW101 makes the dragged BODY rectangle the single source of truth:
+# every child graphic is recalculated from the frozen mouse-press snapshot into
+# the current BODY rectangle.  The model is never re-derived from a highlight or
+# proxy graphic during resize.
+
+def _sw101_float(v, default=0.0):
+    try:
+        return float(v)
+    except Exception:
+        return float(default)
+
+
+def _sw101_clean(self, v):
+    try:
+        v = round(float(v), 9)
+        return 0.0 if abs(v) < 1e-9 else v
+    except Exception:
+        return v
+
+
+def _sw101_step(self):
+    try:
+        s = getattr(self, 'edit_grid_step', None)
+        if callable(s):
+            s = s()
+        return max(0.001, float(s or 1.0))
+    except Exception:
+        return 1.0
+
+
+def _sw101_snap(self, v):
+    try:
+        step = _sw101_step(self)
+        return _sw101_clean(self, round(float(v) / step) * step)
+    except Exception:
+        return _sw101_clean(self, v)
+
+
+def _sw101_map_point(self, x, y, old_box, new_box):
+    ox, oy, ow, oh = old_box
+    nx, ny, nw, nh = new_box
+    ow = max(abs(float(ow)), 1e-12)
+    oh = max(abs(float(oh)), 1e-12)
+    sx = float(nw) / ow
+    sy = float(nh) / oh
+    return (_sw101_clean(self, float(nx) + (float(x) - float(ox)) * sx),
+            _sw101_clean(self, float(ny) - (float(oy) - float(y)) * sy))
+
+
+def _sw101_restore_pin_texts_by_delta(self, pin, old_x, old_y, new_x, new_y):
+    dx = float(new_x) - float(old_x)
+    dy = float(new_y) - float(old_y)
+    try:
+        self._move_pin_owned_texts(pin, dx, dy)
+        return
+    except Exception:
+        pass
+    for ax, ay in (('label_x', 'label_y'), ('number_x', 'number_y')):
+        try:
+            if getattr(pin, ax, None) is not None and getattr(pin, ay, None) is not None:
+                setattr(pin, ax, _sw101_clean(self, float(getattr(pin, ax)) + dx))
+                setattr(pin, ay, _sw101_clean(self, float(getattr(pin, ay)) + dy))
+        except Exception:
+            pass
+    for tm in (getattr(pin, 'attribute_texts', {}) or {}).values():
+        try:
+            tm.x = _sw101_clean(self, float(tm.x) + dx)
+            tm.y = _sw101_clean(self, float(tm.y) + dy)
+        except Exception:
+            pass
+
+
+def _sw101_scale_graphic_entry(self, entry, old_box, new_box):
+    if not entry or len(entry) < 5:
+        return
+    gr = entry[0]
+    gx = _sw101_float(entry[1]); gy = _sw101_float(entry[2])
+    gw = _sw101_float(entry[3]); gh = _sw101_float(entry[4])
+    ctrl_x = entry[5] if len(entry) > 5 else getattr(gr, 'ctrl_x', None)
+    ctrl_y = entry[6] if len(entry) > 6 else getattr(gr, 'ctrl_y', None)
+    curve_radius = entry[7] if len(entry) > 7 else getattr(gr, 'curve_radius', None)
+    rotation = entry[8] if len(entry) > 8 else getattr(gr, 'rotation', 0.0)
+    scale_x = entry[9] if len(entry) > 9 else getattr(gr, 'scale_x', 1.0)
+    scale_y = entry[10] if len(entry) > 10 else getattr(gr, 'scale_y', 1.0)
+
+    # Map the original start and end points as true vectors. This preserves line
+    # direction, rectangle/ellipse proportions under non-uniform BODY scaling,
+    # and prevents cumulative mouseMove distortion.
+    x1, y1 = _sw101_map_point(self, gx, gy, old_box, new_box)
+    x2, y2 = _sw101_map_point(self, gx + gw, gy - gh, old_box, new_box)
+    gr.x = _sw101_snap(self, x1)
+    gr.y = _sw101_snap(self, y1)
+    gr.w = _sw101_clean(self, _sw101_snap(self, x2 - x1))
+    gr.h = _sw101_clean(self, _sw101_snap(self, y1 - y2))
+
+    # Control points are local vectors from the same anchor. Map the absolute
+    # control point from the frozen start state, then convert back to local.
+    try:
+        if ctrl_x is not None and ctrl_y is not None:
+            cx, cy = _sw101_map_point(self, gx + float(ctrl_x), gy - float(ctrl_y), old_box, new_box)
+            gr.ctrl_x = _sw101_clean(self, _sw101_snap(self, cx - gr.x))
+            gr.ctrl_y = _sw101_clean(self, _sw101_snap(self, gr.y - cy))
+        else:
+            gr.ctrl_x = ctrl_x
+            gr.ctrl_y = ctrl_y
+    except Exception:
+        pass
+
+    # Radius is a vector magnitude. Use the average absolute factor so arcs do
+    # not invert or collapse when x/y factors differ.
+    try:
+        if curve_radius is not None:
+            sx = abs(float(new_box[2]) / max(abs(float(old_box[2])), 1e-12))
+            sy = abs(float(new_box[3]) / max(abs(float(old_box[3])), 1e-12))
+            gr.curve_radius = _sw101_clean(self, float(curve_radius or 0.0) * ((sx + sy) / 2.0))
+    except Exception:
+        pass
+    try:
+        gr.rotation = _sw101_float(rotation, 0.0)
+        gr.scale_x = _sw101_float(scale_x, 1.0)
+        gr.scale_y = _sw101_float(scale_y, 1.0)
+    except Exception:
+        pass
+
+
+def _sw101_scale_current_unit_children_from_body_resize(self, start_state: dict, body: SymbolBodyModel):
+    try:
+        old_x = _sw101_float(start_state.get('x', getattr(body, 'x', 0.0)))
+        old_y = _sw101_float(start_state.get('y', getattr(body, 'y', 0.0)))
+        old_w = max(1e-12, abs(_sw101_float(start_state.get('w', getattr(body, 'width', 1.0)), 1.0)))
+        old_h = max(1e-12, abs(_sw101_float(start_state.get('h', getattr(body, 'height', 1.0)), 1.0)))
+
+        step = _sw101_step(self)
+        body.x = _sw101_snap(self, getattr(body, 'x', old_x))
+        body.y = _sw101_snap(self, getattr(body, 'y', old_y))
+        body.width = max(step, _sw101_snap(self, getattr(body, 'width', old_w)))
+        body.height = max(step, _sw101_snap(self, getattr(body, 'height', old_h)))
+
+        old_box = (old_x, old_y, old_w, old_h)
+        new_box = (float(body.x), float(body.y), float(body.width), float(body.height))
+
+        # All graphics inside the unit are transformed from the same immutable
+        # start state. This is the same behaviour expected from Symbol 1.
+        for entry in list(start_state.get('graphics', []) or []):
+            try:
+                _sw101_scale_graphic_entry(self, entry, old_box, new_box)
+            except Exception:
+                pass
+
+        for entry in list(start_state.get('texts', []) or []):
+            try:
+                t, tx, ty = entry[:3]
+                t.x, t.y = _sw101_map_point(self, tx, ty, old_box, new_box)
+                t.x = _sw101_snap(self, t.x)
+                t.y = _sw101_snap(self, t.y)
+            except Exception:
+                pass
+
+        for entry in list(start_state.get('attributes', []) or []):
+            try:
+                t, tx, ty = entry[:3]
+                t.x, t.y = _sw101_map_point(self, tx, ty, old_box, new_box)
+                t.x = _sw101_snap(self, t.x)
+                t.y = _sw101_snap(self, t.y)
+            except Exception:
+                pass
+
+        # Pins keep their original relative slot. Docked pins are projected back
+        # to the new BODY edge; loose pins are vector-mapped.
+        for entry in list(start_state.get('pins', []) or []):
+            try:
+                p, px, py, plen = entry[:4]
+                old_px, old_py = float(getattr(p, 'x', px)), float(getattr(p, 'y', py))
+                mx, my = _sw101_map_point(self, px, py, old_box, new_box)
+                side = str(getattr(p, 'side', '') or '')
+                auto_dock = bool(getattr(p, 'auto_dock', True))
+                if auto_dock and side == PinSide.LEFT.value:
+                    nx, ny = new_box[0], my
+                elif auto_dock and side == PinSide.RIGHT.value:
+                    nx, ny = new_box[0] + new_box[2], my
+                elif auto_dock and side == PinSide.TOP.value:
+                    nx, ny = mx, new_box[1]
+                elif auto_dock and side == PinSide.BOTTOM.value:
+                    nx, ny = mx, new_box[1] - new_box[3]
+                else:
+                    nx, ny = mx, my
+                p.x = _sw101_snap(self, nx)
+                p.y = _sw101_snap(self, ny)
+                p.length = float(plen)
+                _sw101_restore_pin_texts_by_delta(self, p, old_px, old_py, p.x, p.y)
+            except Exception:
+                pass
+
+        try:
+            if hasattr(self.current_unit, '_body_group_transform'):
+                delattr(self.current_unit, '_body_group_transform')
+        except Exception:
+            pass
+        self._selection_restore_ids = {id(body)}
+        self.dirty = True
+    except Exception as exc:
+        try:
+            self.statusBar().showMessage(f'BODY vector scale failed: {exc}', 6000)
+        except Exception:
+            pass
+        try:
+            return _sw99_scale_current_unit_children_from_body_resize(self, start_state, body)
+        except Exception:
+            return None
+
+
+def _sw101_capture_body_resize_state(self, unit=None):
+    u = unit or self.current_unit
+    b = u.body
+    graphics = []
+    for gr in getattr(u, 'graphics', []) or []:
+        try:
+            graphics.append((
+                gr,
+                float(getattr(gr, 'x', 0.0) or 0.0),
+                float(getattr(gr, 'y', 0.0) or 0.0),
+                float(getattr(gr, 'w', 0.0) or 0.0),
+                float(getattr(gr, 'h', 0.0) or 0.0),
+                getattr(gr, 'ctrl_x', None),
+                getattr(gr, 'ctrl_y', None),
+                getattr(gr, 'curve_radius', None),
+                float(getattr(gr, 'rotation', 0.0) or 0.0),
+                float(getattr(gr, 'scale_x', 1.0) or 1.0),
+                float(getattr(gr, 'scale_y', 1.0) or 1.0),
+            ))
+        except Exception:
+            pass
+    return {
+        'x': float(getattr(b, 'x', 0.0) or 0.0),
+        'y': float(getattr(b, 'y', 0.0) or 0.0),
+        'w': float(getattr(b, 'width', 1.0) or 1.0),
+        'h': float(getattr(b, 'height', 1.0) or 1.0),
+        'pins': [(p, float(getattr(p, 'x', 0.0) or 0.0), float(getattr(p, 'y', 0.0) or 0.0), float(getattr(p, 'length', 1.0) or 1.0)) for p in getattr(u, 'pins', []) or []],
+        'texts': [(t, float(getattr(t, 'x', 0.0) or 0.0), float(getattr(t, 'y', 0.0) or 0.0)) for t in getattr(u, 'texts', []) or []],
+        'attributes': [(t, float(getattr(t, 'x', 0.0) or 0.0), float(getattr(t, 'y', 0.0) or 0.0)) for t in (getattr(b, 'attribute_texts', {}) or {}).values()],
+        'graphics': graphics,
+    }
+
+
+def _sw101_resize_body_geometry(self, new_w=None, new_h=None, refresh=True):
+    u = self.current_unit
+    b = u.body
+    start = _sw101_capture_body_resize_state(self, u)
+    if new_w is not None:
+        b.width = max(_sw101_step(self), _sw101_snap(self, new_w))
+    if new_h is not None:
+        b.height = max(_sw101_step(self), _sw101_snap(self, new_h))
+    _sw101_scale_current_unit_children_from_body_resize(self, start, b)
+    if refresh:
+        try:
+            self._selection_restore_ids = {id(b)}
+            self.rebuild_scene()
+            self.rebuild_tree()
+            self.rebuild_pin_table()
+            self.refresh_properties()
+            if hasattr(self, 'view'):
+                self.view.viewport().update()
+        except Exception:
+            try:
+                self.update_current_unit_canvas_positions()
+            except Exception:
+                pass
+
+
+def _sw101_set_body_width_grid(self, body, value):
+    self.push_undo_state()
+    return _sw101_resize_body_geometry(self, new_w=float(value), new_h=None, refresh=True)
+
+
+def _sw101_set_body_height_grid(self, body, value):
+    self.push_undo_state()
+    return _sw101_resize_body_geometry(self, new_w=None, new_h=float(value), refresh=True)
+
+
+def _sw101_scale_selected_grid(self, direction: int):
+    self.set_tool(DrawTool.SELECT.value)
+    if self._selected_body_active():
+        step = _sw101_step(self)
+        b = self.current_unit.body
+        self.push_undo_state()
+        return _sw101_resize_body_geometry(self, new_w=float(b.width) + int(direction) * step, new_h=float(b.height) + int(direction) * step, refresh=True)
+    # Leave individual pin/text/graphic behaviour untouched.
+    try:
+        return _sw97_prev_scale_selected_grid(self, direction)
+    except Exception:
+        try:
+            return self.scale_selected(1.0 + (0.1 if direction > 0 else -0.1))
+        except Exception:
+            return None
+
+try:
+    MainWindow.scale_current_unit_children_from_body_resize = _sw101_scale_current_unit_children_from_body_resize
+    MainWindow._set_body_width_grid = _sw101_set_body_width_grid
+    MainWindow._set_body_height_grid = _sw101_set_body_height_grid
+    MainWindow.scale_selected_grid = _sw101_scale_selected_grid
+    MainWindow._sw101_resize_body_geometry = _sw101_resize_body_geometry
+except Exception:
+    pass
+try:
+    TemplateEditorDialog.scale_current_unit_children_from_body_resize = _sw101_scale_current_unit_children_from_body_resize
+except Exception:
+    pass
+
+# ---------------------------------------------------------------------------
+# SW102: non-destructive vector BODY scaling for canvas resize.
+# ---------------------------------------------------------------------------
+# The previous SW101 mapper still snapped every graphic endpoint/control point on
+# each mouse move.  With mixed template/import primitives this could visually
+# deform the internal vector structure.  SW102 keeps BODY snapping for the target
+# rectangle and pins, but maps graphic geometry as floating-point vectors from
+# the immutable press snapshot.  Control-point sign handling is aligned with
+# GraphicItem.paint(): ctrl_y is an upward model-space vector from the graphic
+# anchor.
+
+def _sw102_float(v, default=0.0):
+    try:
+        return float(v)
+    except Exception:
+        return float(default)
+
+
+def _sw102_clean(self, v):
+    try:
+        v = round(float(v), 9)
+        return 0.0 if abs(v) < 1e-9 else v
+    except Exception:
+        return v
+
+
+def _sw102_step(self):
+    try:
+        s = getattr(self, 'edit_grid_step', None)
+        if callable(s):
+            s = s()
+        return max(0.001, float(s or 1.0))
+    except Exception:
+        return 1.0
+
+
+def _sw102_snap(self, v):
+    try:
+        step = _sw102_step(self)
+        return _sw102_clean(self, round(float(v) / step) * step)
+    except Exception:
+        return _sw102_clean(self, v)
+
+
+def _sw102_map_point(self, x, y, old_box, new_box):
+    ox, oy, ow, oh = old_box
+    nx, ny, nw, nh = new_box
+    ow = max(abs(float(ow)), 1e-12)
+    oh = max(abs(float(oh)), 1e-12)
+    sx = float(nw) / ow
+    sy = float(nh) / oh
+    return (_sw102_clean(self, float(nx) + (float(x) - float(ox)) * sx),
+            _sw102_clean(self, float(ny) - (float(oy) - float(y)) * sy))
+
+
+def _sw102_restore_pin_texts_by_delta(self, pin, old_x, old_y, new_x, new_y):
+    dx = float(new_x) - float(old_x)
+    dy = float(new_y) - float(old_y)
+    try:
+        self._move_pin_owned_texts(pin, dx, dy)
+        return
+    except Exception:
+        pass
+    for ax, ay in (('label_x', 'label_y'), ('number_x', 'number_y')):
+        try:
+            if getattr(pin, ax, None) is not None and getattr(pin, ay, None) is not None:
+                setattr(pin, ax, _sw102_clean(self, float(getattr(pin, ax)) + dx))
+                setattr(pin, ay, _sw102_clean(self, float(getattr(pin, ay)) + dy))
+        except Exception:
+            pass
+    for tm in (getattr(pin, 'attribute_texts', {}) or {}).values():
+        try:
+            tm.x = _sw102_clean(self, float(tm.x) + dx)
+            tm.y = _sw102_clean(self, float(tm.y) + dy)
+        except Exception:
+            pass
+
+
+def _sw102_scale_graphic_entry(self, entry, old_box, new_box):
+    if not entry or len(entry) < 5:
+        return
+    gr = entry[0]
+    gx = _sw102_float(entry[1]); gy = _sw102_float(entry[2])
+    gw = _sw102_float(entry[3]); gh = _sw102_float(entry[4])
+    ctrl_x = entry[5] if len(entry) > 5 else getattr(gr, 'ctrl_x', None)
+    ctrl_y = entry[6] if len(entry) > 6 else getattr(gr, 'ctrl_y', None)
+    curve_radius = entry[7] if len(entry) > 7 else getattr(gr, 'curve_radius', None)
+    rotation = entry[8] if len(entry) > 8 else getattr(gr, 'rotation', 0.0)
+    scale_x = entry[9] if len(entry) > 9 else getattr(gr, 'scale_x', 1.0)
+    scale_y = entry[10] if len(entry) > 10 else getattr(gr, 'scale_y', 1.0)
+
+    # Use the graphic's authored anchor and opposite endpoint/corner as vectors.
+    # Do not snap each primitive endpoint: independent snapping is exactly what
+    # destroys the inner vector geometry of imported/template artwork.
+    x1, y1 = _sw102_map_point(self, gx, gy, old_box, new_box)
+    x2, y2 = _sw102_map_point(self, gx + gw, gy - gh, old_box, new_box)
+    gr.x = _sw102_clean(self, x1)
+    gr.y = _sw102_clean(self, y1)
+    gr.w = _sw102_clean(self, x2 - x1)
+    gr.h = _sw102_clean(self, y1 - y2)
+
+    # GraphicItem.paint() interprets ctrl as QPointF(ctrl_x, -ctrl_y), hence the
+    # absolute model-space control point is (x + ctrl_x, y + ctrl_y).
+    try:
+        if ctrl_x is not None and ctrl_y is not None:
+            cx, cy = _sw102_map_point(self, gx + float(ctrl_x), gy + float(ctrl_y), old_box, new_box)
+            gr.ctrl_x = _sw102_clean(self, cx - gr.x)
+            gr.ctrl_y = _sw102_clean(self, cy - gr.y)
+        else:
+            gr.ctrl_x = ctrl_x
+            gr.ctrl_y = ctrl_y
+    except Exception:
+        pass
+
+    try:
+        if curve_radius is not None:
+            sx = abs(float(new_box[2]) / max(abs(float(old_box[2])), 1e-12))
+            sy = abs(float(new_box[3]) / max(abs(float(old_box[3])), 1e-12))
+            # Keep sign, scale by geometric mean for curved line offset.  This
+            # behaves like a vector magnitude without flipping the arc.
+            factor = (sx * sy) ** 0.5
+            gr.curve_radius = _sw102_clean(self, float(curve_radius or 0.0) * factor)
+    except Exception:
+        pass
+    try:
+        gr.rotation = _sw102_float(rotation, 0.0)
+        gr.scale_x = _sw102_float(scale_x, 1.0)
+        gr.scale_y = _sw102_float(scale_y, 1.0)
+    except Exception:
+        pass
+
+
+def _sw102_scale_current_unit_children_from_body_resize(self, start_state: dict, body: SymbolBodyModel):
+    try:
+        old_x = _sw102_float(start_state.get('x', getattr(body, 'x', 0.0)))
+        old_y = _sw102_float(start_state.get('y', getattr(body, 'y', 0.0)))
+        old_w = max(1e-12, abs(_sw102_float(start_state.get('w', getattr(body, 'width', 1.0)), 1.0)))
+        old_h = max(1e-12, abs(_sw102_float(start_state.get('h', getattr(body, 'height', 1.0)), 1.0)))
+
+        step = _sw102_step(self)
+        body.x = _sw102_snap(self, getattr(body, 'x', old_x))
+        body.y = _sw102_snap(self, getattr(body, 'y', old_y))
+        body.width = max(step, _sw102_snap(self, getattr(body, 'width', old_w)))
+        body.height = max(step, _sw102_snap(self, getattr(body, 'height', old_h)))
+
+        old_box = (old_x, old_y, old_w, old_h)
+        new_box = (float(body.x), float(body.y), float(body.width), float(body.height))
+
+        for entry in list(start_state.get('graphics', []) or []):
+            try:
+                _sw102_scale_graphic_entry(self, entry, old_box, new_box)
+            except Exception:
+                pass
+
+        # Texts and BODY attributes are anchors.  They may snap to the edit grid;
+        # their glyph shapes are not scaled during BODY resize.
+        for entry in list(start_state.get('texts', []) or []):
+            try:
+                t, tx, ty = entry[:3]
+                t.x, t.y = _sw102_map_point(self, tx, ty, old_box, new_box)
+                t.x = _sw102_snap(self, t.x)
+                t.y = _sw102_snap(self, t.y)
+            except Exception:
+                pass
+
+        for entry in list(start_state.get('attributes', []) or []):
+            try:
+                t, tx, ty = entry[:3]
+                t.x, t.y = _sw102_map_point(self, tx, ty, old_box, new_box)
+                t.x = _sw102_snap(self, t.x)
+                t.y = _sw102_snap(self, t.y)
+            except Exception:
+                pass
+
+        for entry in list(start_state.get('pins', []) or []):
+            try:
+                p, px, py, plen = entry[:4]
+                old_px, old_py = float(getattr(p, 'x', px)), float(getattr(p, 'y', py))
+                side = str(getattr(p, 'side', '') or '')
+                auto_dock = bool(getattr(p, 'auto_dock', True))
+                # Slot values are computed from the immutable start BODY.  Docked
+                # pins are reprojected to the new edge; loose pins are vector-mapped.
+                if auto_dock and side in (PinSide.LEFT.value, PinSide.RIGHT.value):
+                    slot = (old_y - float(py)) / old_h
+                    ny = float(body.y) - slot * float(body.height)
+                    nx = float(body.x) if side == PinSide.LEFT.value else float(body.x) + float(body.width)
+                elif auto_dock and side in (PinSide.TOP.value, PinSide.BOTTOM.value):
+                    slot = (float(px) - old_x) / old_w
+                    nx = float(body.x) + slot * float(body.width)
+                    ny = float(body.y) if side == PinSide.TOP.value else float(body.y) - float(body.height)
+                else:
+                    nx, ny = _sw102_map_point(self, px, py, old_box, new_box)
+                p.x = _sw102_snap(self, nx)
+                p.y = _sw102_snap(self, ny)
+                p.length = float(plen)
+                _sw102_restore_pin_texts_by_delta(self, p, old_px, old_py, p.x, p.y)
+            except Exception:
+                pass
+
+        try:
+            if hasattr(self.current_unit, '_body_group_transform'):
+                delattr(self.current_unit, '_body_group_transform')
+        except Exception:
+            pass
+        self._selection_restore_ids = {id(body)}
+        self.dirty = True
+    except Exception as exc:
+        try:
+            self.statusBar().showMessage(f'BODY vector scale failed: {exc}', 6000)
+        except Exception:
+            pass
+        try:
+            return _sw101_scale_current_unit_children_from_body_resize(self, start_state, body)
+        except Exception:
+            return None
+
+
+def _sw102_capture_body_resize_state(self, unit=None):
+    u = unit or self.current_unit
+    b = u.body
+    graphics = []
+    for gr in getattr(u, 'graphics', []) or []:
+        try:
+            graphics.append((
+                gr,
+                float(getattr(gr, 'x', 0.0) or 0.0),
+                float(getattr(gr, 'y', 0.0) or 0.0),
+                float(getattr(gr, 'w', 0.0) or 0.0),
+                float(getattr(gr, 'h', 0.0) or 0.0),
+                getattr(gr, 'ctrl_x', None),
+                getattr(gr, 'ctrl_y', None),
+                getattr(gr, 'curve_radius', None),
+                float(getattr(gr, 'rotation', 0.0) or 0.0),
+                float(getattr(gr, 'scale_x', 1.0) or 1.0),
+                float(getattr(gr, 'scale_y', 1.0) or 1.0),
+            ))
+        except Exception:
+            pass
+    return {
+        'x': float(getattr(b, 'x', 0.0) or 0.0),
+        'y': float(getattr(b, 'y', 0.0) or 0.0),
+        'w': float(getattr(b, 'width', 1.0) or 1.0),
+        'h': float(getattr(b, 'height', 1.0) or 1.0),
+        'pins': [(p, float(getattr(p, 'x', 0.0) or 0.0), float(getattr(p, 'y', 0.0) or 0.0), float(getattr(p, 'length', 1.0) or 1.0)) for p in getattr(u, 'pins', []) or []],
+        'texts': [(t, float(getattr(t, 'x', 0.0) or 0.0), float(getattr(t, 'y', 0.0) or 0.0)) for t in getattr(u, 'texts', []) or []],
+        'attributes': [(t, float(getattr(t, 'x', 0.0) or 0.0), float(getattr(t, 'y', 0.0) or 0.0)) for t in (getattr(b, 'attribute_texts', {}) or {}).values()],
+        'graphics': graphics,
+    }
+
+
+def _sw102_resize_body_geometry(self, new_w=None, new_h=None, refresh=True):
+    u = self.current_unit
+    b = u.body
+    start = _sw102_capture_body_resize_state(self, u)
+    if new_w is not None:
+        b.width = max(_sw102_step(self), _sw102_snap(self, new_w))
+    if new_h is not None:
+        b.height = max(_sw102_step(self), _sw102_snap(self, new_h))
+    _sw102_scale_current_unit_children_from_body_resize(self, start, b)
+    if refresh:
+        try:
+            self._selection_restore_ids = {id(b)}
+            self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table(); self.refresh_properties()
+            if hasattr(self, 'view'):
+                self.view.viewport().update()
+        except Exception:
+            try:
+                self.update_current_unit_canvas_positions()
+            except Exception:
+                pass
+
+
+def _sw102_set_body_width_grid(self, body, value):
+    self.push_undo_state()
+    return _sw102_resize_body_geometry(self, new_w=float(value), new_h=None, refresh=True)
+
+
+def _sw102_set_body_height_grid(self, body, value):
+    self.push_undo_state()
+    return _sw102_resize_body_geometry(self, new_w=None, new_h=float(value), refresh=True)
+
+
+def _sw102_scale_selected_grid(self, direction: int):
+    self.set_tool(DrawTool.SELECT.value)
+    if self._selected_body_active():
+        b = self.current_unit.body
+        step = _sw102_step(self)
+        self.push_undo_state()
+        return _sw102_resize_body_geometry(self, new_w=float(b.width) + int(direction) * step, new_h=float(b.height) + int(direction) * step, refresh=True)
+    try:
+        return _sw101_scale_selected_grid(self, direction)
+    except Exception:
+        return None
+
+try:
+    MainWindow.scale_current_unit_children_from_body_resize = _sw102_scale_current_unit_children_from_body_resize
+    MainWindow._set_body_width_grid = _sw102_set_body_width_grid
+    MainWindow._set_body_height_grid = _sw102_set_body_height_grid
+    MainWindow.scale_selected_grid = _sw102_scale_selected_grid
+    MainWindow._sw102_resize_body_geometry = _sw102_resize_body_geometry
+except Exception:
+    pass
+try:
+    TemplateEditorDialog.scale_current_unit_children_from_body_resize = _sw102_scale_current_unit_children_from_body_resize
+except Exception:
+    pass

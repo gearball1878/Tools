@@ -2813,3 +2813,30 @@ try:
     BodyItem.mouseReleaseEvent = _sw99_body_mouse_release
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# SW102 graphics refresh safety: external BODY vector scaling changes GraphicModel
+# w/h/curve data from MainWindow.  Let Qt know the bounding rect may change before
+# repainting the existing item during live canvas resize.
+# ---------------------------------------------------------------------------
+try:
+    _sw102_prev_graphic_update = GraphicItem.update
+except Exception:
+    _sw102_prev_graphic_update = None
+
+def _sw102_graphic_safe_update(self, *args, **kwargs):
+    try:
+        self.prepareGeometryChange()
+    except Exception:
+        pass
+    if _sw102_prev_graphic_update is not None:
+        return _sw102_prev_graphic_update(self, *args, **kwargs)
+    try:
+        return QGraphicsItem.update(self, *args, **kwargs)
+    except Exception:
+        return None
+
+try:
+    GraphicItem.update = _sw102_graphic_safe_update
+except Exception:
+    pass
