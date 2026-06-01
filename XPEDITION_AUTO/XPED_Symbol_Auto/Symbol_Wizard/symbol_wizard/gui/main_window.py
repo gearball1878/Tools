@@ -15669,3 +15669,121 @@ try:
         MainWindow.__init__ = _lh61_init
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# SW72: graphic Flip-H/V axis correction + plain TEXT standalone selection/transform.
+# ---------------------------------------------------------------------------
+try:
+    from PySide6.QtWidgets import QGraphicsItem as _SW72_QGraphicsItem
+except Exception:
+    _SW72_QGraphicsItem = None
+
+def _sw72_selected_non_body_items(self):
+    try:
+        return [it for it in self.scene.selectedItems()
+                if getattr(it, 'data', lambda *_: None)(0) != 'BODY'
+                and not bool(getattr(getattr(it, 'model', None), '_is_attribute_text', False))]
+    except Exception:
+        return []
+
+def _sw72_selected_graphic_models(self):
+    try:
+        return [getattr(it, 'model', None) for it in self.scene.selectedItems()
+                if getattr(it, 'data', lambda *_: None)(0) == 'GRAPHIC'
+                and getattr(it, 'model', None) is not None]
+    except Exception:
+        return []
+
+try:
+    _sw72_prev_flip_h = MainWindow.flip_selected_horizontal
+    _sw72_prev_flip_v = MainWindow.flip_selected_vertical
+    _sw72_prev_te_flip_h = TemplateEditorDialog.flip_selected_horizontal if 'TemplateEditorDialog' in globals() else None
+    _sw72_prev_te_flip_v = TemplateEditorDialog.flip_selected_vertical if 'TemplateEditorDialog' in globals() else None
+except Exception:
+    _sw72_prev_flip_h = _sw72_prev_flip_v = _sw72_prev_te_flip_h = _sw72_prev_te_flip_v = None
+
+def _sw72_flip_h(self):
+    # For graphics the previous H/V mapping was inverted on the canvas.  Use the
+    # opposite geometric axis for GRAPHIC-only/group selections while leaving BODY
+    # transforms untouched. Plain TEXT falls through to the normal item-local path.
+    try:
+        if not self._selected_body_active() and _sw72_selected_graphic_models(self):
+            if '_lh61_apply_flip' in globals() and _lh61_apply_flip(self, False):
+                return None
+    except Exception:
+        pass
+    return _sw72_prev_flip_h(self) if _sw72_prev_flip_h else None
+
+def _sw72_flip_v(self):
+    try:
+        if not self._selected_body_active() and _sw72_selected_graphic_models(self):
+            if '_lh61_apply_flip' in globals() and _lh61_apply_flip(self, True):
+                return None
+    except Exception:
+        pass
+    return _sw72_prev_flip_v(self) if _sw72_prev_flip_v else None
+
+def _sw72_te_flip_h(self):
+    try:
+        if not self._selected_body_active() and _sw72_selected_graphic_models(self):
+            if '_lh61_apply_flip' in globals() and _lh61_apply_flip(self, False):
+                return None
+    except Exception:
+        pass
+    return _sw72_prev_te_flip_h(self) if _sw72_prev_te_flip_h else None
+
+def _sw72_te_flip_v(self):
+    try:
+        if not self._selected_body_active() and _sw72_selected_graphic_models(self):
+            if '_lh61_apply_flip' in globals() and _lh61_apply_flip(self, True):
+                return None
+    except Exception:
+        pass
+    return _sw72_prev_te_flip_v(self) if _sw72_prev_te_flip_v else None
+
+# Direct item-level graphic flips are also corrected for keyboard/context paths.
+try:
+    _sw72_old_g_flip_h = GraphicItem.flip_horizontal
+    _sw72_old_g_flip_v = GraphicItem.flip_vertical
+    def _sw72_graphic_flip_h(self):
+        try:
+            return _sw72_old_g_flip_v(self)
+        except Exception:
+            return None
+    def _sw72_graphic_flip_v(self):
+        try:
+            return _sw72_old_g_flip_h(self)
+        except Exception:
+            return None
+    GraphicItem.flip_horizontal = _sw72_graphic_flip_h
+    GraphicItem.flip_vertical = _sw72_graphic_flip_v
+except Exception:
+    pass
+
+# Plain TEXT must never be treated as BODY-owned attribute text.  This keeps it
+# selectable/movable/rotatable/scalable as an independent canvas object.
+try:
+    _sw72_old_text_init = TextItem.__init__
+    def _sw72_text_init(self, model, window):
+        _sw72_old_text_init(self, model, window)
+        try:
+            if getattr(self, 'data', lambda *_: None)(0) == 'TEXT':
+                setattr(self.model, '_is_attribute_text', False)
+                if _SW72_QGraphicsItem is not None:
+                    self.setFlag(_SW72_QGraphicsItem.ItemIsSelectable, True)
+                    self.setFlag(_SW72_QGraphicsItem.ItemIsMovable, True)
+                    self.setFlag(_SW72_QGraphicsItem.ItemIsFocusable, True)
+        except Exception:
+            pass
+    TextItem.__init__ = _sw72_text_init
+except Exception:
+    pass
+
+try:
+    MainWindow.flip_selected_horizontal = _sw72_flip_h
+    MainWindow.flip_selected_vertical = _sw72_flip_v
+    if 'TemplateEditorDialog' in globals():
+        TemplateEditorDialog.flip_selected_horizontal = _sw72_te_flip_h
+        TemplateEditorDialog.flip_selected_vertical = _sw72_te_flip_v
+except Exception:
+    pass
