@@ -5698,124 +5698,170 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         QTimer.singleShot(0, self.refresh_properties)
 
     def _transform_unit_as_body_group(self, op, value=None, refresh=True):
-        """Transform the complete symbol part as one rigid BODY group.
+        """Transform the complete current unit as one logical BODY group.
 
-        The BODY is not a temporary rectangular proxy.  It is the logical root of
-        all visible/imported body graphics, user graphics, pins, pin attributes,
-        body attributes and texts.  Every member is transformed around the same
-        symbol origin, and rect-like items are moved by their center so repeated
-        rotations do not accumulate anchor drift.
+        This version keeps the selected BODY-origin as the mathematical pivot
+        for every operation.  All visible objects (BODY, imported/template BODY
+        graphics, user graphics, pins, pin-owned texts, BODY attributes and free
+        texts) are transformed from the same start pivot in one pass.
+
+        Important: after the transform we do *not* apply a second corrective
+        shift to all child objects.  Older builds did this to keep non-center
+        origins fixed, but that created cumulative drift: each rotate/scale
+        transformed already-correct child positions and then translated them
+        again.  Instead width/height scaling is calculated from the snapped target
+        dimensions first, so the BODY anchor remains stable by construction.
         """
         u = self.current_unit
         b, pins, texts, body_attrs, graphics = self._body_group_objects(u)
+        mode = getattr(self.symbol, 'origin', OriginMode.CENTER.value)
         px, py = self._symbol_group_pivot_grid()
 
-        if op == 'rotate':
-            deg = float(value or 0.0)
-            def pf(x, y): return self._rot_point(x, y, px, py, deg)
+        def all_text_models():
+            # free texts + body attrs + pin-owned label/number/attribute texts
+            for t in texts:
+                yield t
+            for t in (getattr(b, 'attribute_texts', {}) or {}).values():
+                yield t
+            for p in pins:
+                for ax, ay in (('label_x', 'label_y'), ('number_x', 'number_y')):
+                    if getattr(p, ax, None) is not None and getattr(p, ay, None) is not None:
+                        # handled by _transform_pin_anchors
+                        pass
+                for tm in (getattr(p, 'attribute_texts', {}) or {}).values():
+                    yield tm
 
-            bc = self._body_center_grid(b)
-            self._set_body_center_grid(b, *pf(*bc))
+        if op == 'rotate':
+            # Rotation is restricted to 90 degree steps from the property panel,
+            # but toolbar buttons may still pass +/-15 for manual testing.  The
+            # transform itself is mathematically generic and non-drifting.
+            deg = float(value or 0.0)
+            def pf(x, y):
+                return self._rot_point(x, y, px, py, deg)
+
+            # BODY rectangle: move its center and rotate the real BODY model.
+            self._set_body_center_grid(b, *pf(*self._body_center_grid(b)))
             self._add_rotation(b, deg)
 
-            for p in pins:
-                p.x, p.y = pf(p.x, p.y)
-                self._add_rotation(p, deg)
-                self._transform_pin_anchors(p, pf, rotate_deg=deg)
-            for t in texts:
-                # Text is position-true only. It follows the BODY position but
-                # its orientation is not additionally rotated.
-                t.x, t.y = pf(t.x, t.y)
-            self._transform_body_attribute_texts(b, pf, rotate_deg=None)
+            # Imported/template BODY graphics and user graphics are real objects,
+            # not a proxy frame.  Their centers follow the same pivot.
             for gr in graphics:
-                gc = self._graphic_center_grid(gr)
-                self._set_graphic_center_grid(gr, *pf(*gc))
+                self._set_graphic_center_grid(gr, *pf(*self._graphic_center_grid(gr)))
                 self._add_rotation(gr, deg)
 
+            for p in pins:
+                p.x, p.y = pf(float(p.x), float(p.y))
+                self._add_rotation(p, deg)
+                self._transform_pin_anchors(p, pf, rotate_deg=None)
+
+            # Text follows position exactly but is not mirrored or additionally
+            # rotated.  It stays readable while remaining attached to the group.
+            for t in texts:
+                t.x, t.y = pf(float(t.x), float(t.y))
+            self._transform_body_attribute_texts(b, pf, rotate_deg=None)
+
         elif op in ('scale', 'scale_x_to', 'scale_y_to'):
-            sx = sy = float(value or 1.0)
+            old_w = max(1e-9, float(getattr(b, 'width', 1.0) or 1.0))
+            old_h = max(1e-9, float(getattr(b, 'height', 1.0) or 1.0))
+
             if op == 'scale_x_to':
-                sx = float(value) / max(1e-9, float(getattr(b, 'width', 1.0) or 1.0)); sy = 1.0
+                new_w = self._snap_to_edit_grid(float(value), 0.01)
+                new_h = old_h
             elif op == 'scale_y_to':
-                sx = 1.0; sy = float(value) / max(1e-9, float(getattr(b, 'height', 1.0) or 1.0))
+                new_w = old_w
+                new_h = self._snap_to_edit_grid(float(value), 0.01)
+            else:
+                f = float(value or 1.0)
+                new_w = self._snap_to_edit_grid(old_w * f, 0.01)
+                new_h = self._snap_to_edit_grid(old_h * f, 0.01)
+
+            sx = new_w / old_w
+            sy = new_h / old_h
             if abs(sx) < 1e-9 or abs(sy) < 1e-9:
                 return
+
             def pf(x, y):
                 return (self._clean_float(px + (float(x) - px) * sx),
                         self._clean_float(py + (float(y) - py) * sy))
 
-            bc = pf(*self._body_center_grid(b))
-            b.width = max(0.01, self._snap_to_edit_grid(float(b.width) * sx, 0.01))
-            b.height = max(0.01, self._snap_to_edit_grid(float(b.height) * sy, 0.01))
-            # Exact target after snapping, so spinboxes do not drift.
-            if op == 'scale_x_to': b.width = self._snap_to_edit_grid(value, 0.01)
-            if op == 'scale_y_to': b.height = self._snap_to_edit_grid(value, 0.01)
-            self._set_body_center_grid(b, *bc)
+            # Move center with the actual snapped scale factor, then assign the
+            # snapped dimensions.  This keeps bottom/left/top/right origins from
+            # drifting because the pivot is already the selected anchor.
+            new_center = pf(*self._body_center_grid(b))
+            b.width = self._clean_float(new_w)
+            b.height = self._clean_float(new_h)
+            self._set_body_center_grid(b, *new_center)
 
             font_factor = (abs(sx) + abs(sy)) / 2.0
-            for p in pins:
-                p.x, p.y = pf(p.x, p.y)
-                # Pin length is geometric; scale with dominant axis to keep docking usable.
-                p.length = max(0.1, float(getattr(p, 'length', 1.0) or 1.0) * max(abs(sx), abs(sy)))
-                self._scale_font_model(p.number_font, font_factor)
-                self._scale_font_model(p.label_font, font_factor)
-                self._transform_pin_anchors(p, pf, scale_factor=font_factor)
-            for t in texts:
-                t.x, t.y = pf(t.x, t.y)
-                t.font_size_grid = max(0.1, float(getattr(t, 'font_size_grid', 0.75) or 0.75) * font_factor)
-            self._scale_font_model(b.attribute_font, font_factor)
-            self._scale_font_model(b.refdes_font, font_factor)
-            self._transform_body_attribute_texts(b, pf, scale_factor=font_factor)
             for gr in graphics:
                 gc = pf(*self._graphic_center_grid(gr))
-                gr.w = float(getattr(gr, 'w', 0.0) or 0.0) * sx
-                gr.h = float(getattr(gr, 'h', 0.0) or 0.0) * sy
+                gr.w = self._clean_float(float(getattr(gr, 'w', 0.0) or 0.0) * sx)
+                gr.h = self._clean_float(float(getattr(gr, 'h', 0.0) or 0.0) * sy)
                 if getattr(gr, 'ctrl_x', None) is not None:
-                    gr.ctrl_x = float(gr.ctrl_x) * sx
+                    gr.ctrl_x = self._clean_float(float(gr.ctrl_x) * sx)
                 if getattr(gr, 'ctrl_y', None) is not None:
-                    gr.ctrl_y = float(gr.ctrl_y) * sy
+                    gr.ctrl_y = self._clean_float(float(gr.ctrl_y) * sy)
                 try:
-                    gr.curve_radius = float(getattr(gr, 'curve_radius', 0.0) or 0.0) * font_factor
+                    gr.curve_radius = self._clean_float(float(getattr(gr, 'curve_radius', 0.0) or 0.0) * font_factor)
                 except Exception:
                     pass
                 self._set_graphic_center_grid(gr, *gc)
 
+            for p in pins:
+                p.x, p.y = pf(float(p.x), float(p.y))
+                p.length = max(0.1, self._clean_float(float(getattr(p, 'length', 1.0) or 1.0) * max(abs(sx), abs(sy))))
+                self._scale_font_model(getattr(p, 'number_font', None), font_factor)
+                self._scale_font_model(getattr(p, 'label_font', None), font_factor)
+                self._transform_pin_anchors(p, pf, scale_factor=font_factor)
+
+            for t in texts:
+                t.x, t.y = pf(float(t.x), float(t.y))
+                try:
+                    t.font_size_grid = max(0.1, self._clean_float(float(getattr(t, 'font_size_grid', 0.75) or 0.75) * font_factor))
+                except Exception:
+                    pass
+            self._scale_font_model(getattr(b, 'attribute_font', None), font_factor)
+            self._scale_font_model(getattr(b, 'refdes_font', None), font_factor)
+            self._transform_body_attribute_texts(b, pf, scale_factor=font_factor)
+
         elif op in ('flip_h', 'flip_v'):
             horizontal = op == 'flip_h'
-            def pf(x, y): return self._flip_point(x, y, px, py, horizontal)
+            def pf(x, y):
+                return self._flip_point(x, y, px, py, horizontal)
+
+            self._set_body_center_grid(b, *pf(*self._body_center_grid(b)))
             r = float(getattr(b, 'rotation', 0.0) or 0.0)
             b.rotation = self._clean_float((-r) % 360.0 if horizontal else (180.0 - r) % 360.0)
-            self._set_body_center_grid(b, *pf(*self._body_center_grid(b)))
 
-            for p in pins:
-                p.x, p.y = pf(p.x, p.y)
-                pr = float(getattr(p, 'rotation', 0.0) or 0.0)
-                p.rotation = self._clean_float((-pr) % 360.0 if horizontal else (180.0 - pr) % 360.0)
-                self._transform_pin_anchors(p, pf, flip_horizontal=horizontal)
-            for t in texts:
-                # Text follows the mirrored position only; it must never be mirrored.
-                t.x, t.y = pf(t.x, t.y)
-            self._transform_body_attribute_texts(b, pf, flip_horizontal=None)
             for gr in graphics:
                 self._set_graphic_center_grid(gr, *pf(*self._graphic_center_grid(gr)))
                 rr = float(getattr(gr, 'rotation', 0.0) or 0.0)
                 gr.rotation = self._clean_float((-rr) % 360.0 if horizontal else (180.0 - rr) % 360.0)
                 if getattr(gr, 'ctrl_x', None) is not None:
-                    gr.ctrl_x = -float(gr.ctrl_x) if horizontal else float(gr.ctrl_x)
+                    gr.ctrl_x = self._clean_float(-float(gr.ctrl_x) if horizontal else float(gr.ctrl_x))
                 if getattr(gr, 'ctrl_y', None) is not None:
-                    gr.ctrl_y = float(gr.ctrl_y) if horizontal else -float(gr.ctrl_y)
+                    gr.ctrl_y = self._clean_float(float(gr.ctrl_y) if horizontal else -float(gr.ctrl_y))
 
-        # Keep the selected/oriented origin fixed for every BODY transform,
-        # including imported symbols and non-center origins.  Width/height snapping
-        # may otherwise move the raw rectangle anchor and cause cumulative drift of
-        # pins/text/attributes after repeated transforms.
-        try:
-            ax, ay = self.body_anchor_point_oriented(b, getattr(self.symbol, 'origin', OriginMode.CENTER.value))
-            dx, dy = self._clean_float(px - ax), self._clean_float(py - ay)
-            if abs(dx) > 1e-9 or abs(dy) > 1e-9:
-                self._shift_current_unit_all(dx, dy)
-        except Exception:
-            pass
+            for p in pins:
+                p.x, p.y = pf(float(p.x), float(p.y))
+                pr = float(getattr(p, 'rotation', 0.0) or 0.0)
+                p.rotation = self._clean_float((-pr) % 360.0 if horizontal else (180.0 - pr) % 360.0)
+                self._transform_pin_anchors(p, pf, flip_horizontal=None)
+
+            # Text is moved position-true only; no mirror-flip of glyphs.
+            for t in texts:
+                t.x, t.y = pf(float(t.x), float(t.y))
+            self._transform_body_attribute_texts(b, pf, flip_horizontal=None)
+
+        # Normalize tiny floating point noise only; never re-anchor with a second
+        # object-wide shift, because that is what caused non-center-origin drift.
+        for obj in [b] + list(pins) + list(texts) + list(graphics) + list((getattr(b, 'attribute_texts', {}) or {}).values()):
+            for attr in ('x', 'y', 'width', 'height', 'rotation'):
+                if hasattr(obj, attr):
+                    try:
+                        setattr(obj, attr, self._clean_float(getattr(obj, attr)))
+                    except Exception:
+                        pass
 
         if refresh:
             self.update_current_unit_canvas_positions()
