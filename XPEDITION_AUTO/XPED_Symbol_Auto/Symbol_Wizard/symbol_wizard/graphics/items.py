@@ -297,7 +297,7 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
     def mouseMoveEvent(self, event):
         if getattr(self, '_rotating', False):
             delta = _angle_from(self._rotate_center_scene, event.scenePos()) - self._rotate_start_angle
-            target = (round((self._rotate_start_model + delta) / 15.0) * 15.0) % 360
+            target = (round((self._rotate_start_model + delta) / 90.0) * 90.0) % 360
             step = target - float(getattr(self.model, 'rotation', 0.0) or 0.0)
             if abs(step) > 180:
                 step -= 360 if step > 0 else -360
@@ -315,7 +315,7 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
             event.accept(); return
         if self._resizing and self._resize_start is not None:
             g = self.window.grid_px
-            p = QPointF(snap(event.scenePos().x(), g), snap(event.scenePos().y(), g))
+            p = QPointF(snap(event.scenePos().x(), self.window.edit_grid_px), snap(event.scenePos().y(), self.window.edit_grid_px))
             st = self._resize_start
 
             left = st['x'] * g
@@ -971,7 +971,7 @@ class GraphicItem(TransformMixin, QGraphicsItem):
             event.accept(); return
         if self._resizing and self._resize_start is not None:
             g = self.window.grid_px
-            p = QPointF(snap(event.scenePos().x(), g), snap(event.scenePos().y(), g))
+            p = QPointF(snap(event.scenePos().x(), self.window.edit_grid_px), snap(event.scenePos().y(), self.window.edit_grid_px))
             st = self._resize_start
             left = st['x'] * g
             top = -st['y'] * g

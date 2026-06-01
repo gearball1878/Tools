@@ -877,7 +877,7 @@ class TemplateEditorDialog(QDialog):
 
         tools.addStretch(); layout.addLayout(tools)
         tools = QHBoxLayout()
-        for label, fn in [('⟲ 15°', lambda: self.rotate_selected(-15)), ('⟳ 15°', lambda: self.rotate_selected(15)), ('Flip H', self.flip_selected_horizontal), ('Flip V', self.flip_selected_vertical)]:
+        for label, fn in [('⟲ 90°', lambda: self.rotate_selected(-90)), ('⟳ 90°', lambda: self.rotate_selected(90)), ('Flip H', self.flip_selected_horizontal), ('Flip V', self.flip_selected_vertical)]:
             b = QPushButton(label); b.clicked.connect(fn); tools.addWidget(b)
         tools.addWidget(QLabel('Origin:'))
         self.origin_combo = QComboBox()
@@ -1488,11 +1488,15 @@ class TemplateEditorDialog(QDialog):
         item = sel[0]; kind = item.data(0); m = item.model
         self.form.addRow(QLabel(f'<b>{kind}</b>'))
         if kind == 'BODY':
-            self.form.addRow('Width [grid]', self._dbl(m.width, lambda v: self._set(m, 'width', max(1.0, round(float(v)))), 1, 500, 1))
-            self.form.addRow('Height [grid]', self._dbl(m.height, lambda v: self._set(m, 'height', max(1.0, round(float(v)))), 1, 500, 1))
+            # BODY settings must work for imported bodies exactly like for
+            # internally generated <NONE> bodies.  Width/height are snapped to
+            # the current edit-grid and scale the complete BODY group; rotation
+            # is restricted to 90° steps from 0°.
+            self.form.addRow('Width [grid]', self._dbl(m.width, lambda v, model=m: self._set_body_width_grid(model, v), 0.01, 500, self.edit_grid_step))
+            self.form.addRow('Height [grid]', self._dbl(m.height, lambda v, model=m: self._set_body_height_grid(model, v), 0.01, 500, self.edit_grid_step))
             self.form.addRow('Line style', self._combo([x.value for x in LineStyle], getattr(m, 'line_style', LineStyle.SOLID.value), lambda v: self._set(m, 'line_style', v)))
             self.form.addRow('Line width', self._dbl(getattr(m, 'line_width', 0.03), lambda v: self._set(m, 'line_width', float(v)), .01, 1, .01))
-            self.form.addRow('Rotation [deg]', self._dbl(getattr(m, 'rotation', 0), lambda v: self._set(m, 'rotation', v), -360, 360, 15))
+            self.form.addRow('Rotation [deg]', self._dbl(getattr(m, 'rotation', 0), lambda v, model=m: self._set_body_rotation_90(model, v), 0, 270, 90))
             self.form.addRow('Color', self._color_button_row('Color RGB', getattr(m, 'color', (0, 0, 0)), lambda _checked=False, model=m: self.color_model(model)))
             self.form.addRow(QLabel('<b>Displayed Attributes</b>'))
             for k in list(m.attributes.keys()):
@@ -2976,8 +2980,8 @@ class MainWindow(QMainWindow):
         # --- Transform controls -----------------------------------------
         transform_tb = make_bar('Transform')
         for label, fn in [
-            ('⟲ 15°', lambda: self.rotate_selected(-15)),
-            ('⟳ 15°', lambda: self.rotate_selected(15)),
+            ('⟲ 90°', lambda: self.rotate_selected(-90)),
+            ('⟳ 90°', lambda: self.rotate_selected(90)),
             ('Flip H', self.flip_selected_horizontal),
             ('Flip V', self.flip_selected_vertical),
             ('Scale +', lambda: self.scale_selected(1.1)),
@@ -5508,11 +5512,12 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         for tm in (getattr(p, 'attribute_texts', {}) or {}).values():
             try:
                 tm.x, tm.y = point_fn(float(tm.x), float(tm.y))
-                if rotate_deg is not None:
+                # Pin attribute text follows the pin position but does not rotate.
+                if False and rotate_deg is not None:
                     self._add_rotation(tm, rotate_deg)
                 if scale_factor is not None:
                     tm.font_size_grid = max(0.1, float(getattr(tm, 'font_size_grid', 0.55) or 0.55) * float(scale_factor))
-                if flip_horizontal is not None:
+                if False and flip_horizontal is not None:
                     r = float(getattr(tm, 'rotation', 0.0) or 0.0)
                     tm.rotation = self._clean_float((-r) % 360.0 if flip_horizontal else (180.0 - r) % 360.0)
             except Exception:
@@ -5522,11 +5527,12 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         for tm in (getattr(body, 'attribute_texts', {}) or {}).values():
             try:
                 tm.x, tm.y = point_fn(float(tm.x), float(tm.y))
-                if rotate_deg is not None:
+                # Body attribute text follows BODY position but does not rotate.
+                if False and rotate_deg is not None:
                     self._add_rotation(tm, rotate_deg)
                 if scale_factor is not None:
                     tm.font_size_grid = max(0.1, float(getattr(tm, 'font_size_grid', 0.75) or 0.75) * float(scale_factor))
-                if flip_horizontal is not None:
+                if False and flip_horizontal is not None:
                     r = float(getattr(tm, 'rotation', 0.0) or 0.0)
                     tm.rotation = self._clean_float((-r) % 360.0 if flip_horizontal else (180.0 - r) % 360.0)
             except Exception:
@@ -5536,6 +5542,63 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         u = unit or self.current_unit
         b = u.body
         return b, list(getattr(u, 'pins', []) or []), list(getattr(u, 'texts', []) or []), list((getattr(b, 'attribute_texts', {}) or {}).values()), list(getattr(u, 'graphics', []) or [])
+
+    def _snap_to_edit_grid(self, value, minimum=0.01):
+        """Snap a model-space value to the current edit-grid multiple."""
+        try:
+            step = float(getattr(self, 'edit_grid_step', 1.0) or 1.0)
+        except Exception:
+            step = 1.0
+        try:
+            v = round(float(value) / step) * step
+        except Exception:
+            v = float(minimum)
+        return max(float(minimum), self._clean_float(v))
+
+    def _set_body_width_grid(self, body, value):
+        """Set BODY width through a group X-scale, snapped to edit-grid."""
+        new_w = self._snap_to_edit_grid(value, 0.01)
+        old_w = max(1e-9, float(getattr(body, 'width', new_w) or new_w))
+        if abs(new_w - old_w) < 1e-9:
+            return
+        self.push_undo_state()
+        self._selection_restore_ids = self._capture_selection_ids()
+        self._transform_unit_as_body_group('scale_x_to', new_w)
+        self.dirty = True
+        QTimer.singleShot(0, self.refresh_properties)
+
+    def _set_body_height_grid(self, body, value):
+        """Set BODY height through a group Y-scale, snapped to edit-grid."""
+        new_h = self._snap_to_edit_grid(value, 0.01)
+        old_h = max(1e-9, float(getattr(body, 'height', new_h) or new_h))
+        if abs(new_h - old_h) < 1e-9:
+            return
+        self.push_undo_state()
+        self._selection_restore_ids = self._capture_selection_ids()
+        self._transform_unit_as_body_group('scale_y_to', new_h)
+        self.dirty = True
+        QTimer.singleShot(0, self.refresh_properties)
+
+    def _set_body_rotation_90(self, body, value):
+        """Rotate BODY group only to absolute 0/90/180/270 degrees."""
+        try:
+            target = (round(float(value) / 90.0) * 90.0) % 360.0
+        except Exception:
+            target = 0.0
+        current = float(getattr(body, 'rotation', 0.0) or 0.0) % 360.0
+        delta = target - current
+        if delta > 180.0:
+            delta -= 360.0
+        elif delta < -180.0:
+            delta += 360.0
+        if abs(delta) < 1e-9:
+            return
+        self.push_undo_state()
+        self._selection_restore_ids = self._capture_selection_ids()
+        self._transform_unit_as_body_group('rotate', delta)
+        body.rotation = target
+        self.dirty = True
+        QTimer.singleShot(0, self.refresh_properties)
 
     def _transform_unit_as_body_group(self, op, value=None, refresh=True):
         """Transform the complete symbol part as one rigid BODY group.
@@ -5563,47 +5626,59 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
                 self._add_rotation(p, deg)
                 self._transform_pin_anchors(p, pf, rotate_deg=deg)
             for t in texts:
+                # Text is position-true only. It follows the BODY position but
+                # its orientation is not additionally rotated.
                 t.x, t.y = pf(t.x, t.y)
-                self._add_rotation(t, deg)
-            self._transform_body_attribute_texts(b, pf, rotate_deg=deg)
+            self._transform_body_attribute_texts(b, pf, rotate_deg=None)
             for gr in graphics:
                 gc = self._graphic_center_grid(gr)
                 self._set_graphic_center_grid(gr, *pf(*gc))
                 self._add_rotation(gr, deg)
 
-        elif op == 'scale':
-            factor = float(value or 1.0)
-            if abs(factor) < 1e-9:
+        elif op in ('scale', 'scale_x_to', 'scale_y_to'):
+            sx = sy = float(value or 1.0)
+            if op == 'scale_x_to':
+                sx = float(value) / max(1e-9, float(getattr(b, 'width', 1.0) or 1.0)); sy = 1.0
+            elif op == 'scale_y_to':
+                sx = 1.0; sy = float(value) / max(1e-9, float(getattr(b, 'height', 1.0) or 1.0))
+            if abs(sx) < 1e-9 or abs(sy) < 1e-9:
                 return
-            def pf(x, y): return self._scale_point(x, y, px, py, factor)
+            def pf(x, y):
+                return (self._clean_float(px + (float(x) - px) * sx),
+                        self._clean_float(py + (float(y) - py) * sy))
 
             bc = pf(*self._body_center_grid(b))
-            b.width = max(0.1, float(b.width) * factor)
-            b.height = max(0.1, float(b.height) * factor)
+            b.width = max(0.01, self._snap_to_edit_grid(float(b.width) * sx, 0.01))
+            b.height = max(0.01, self._snap_to_edit_grid(float(b.height) * sy, 0.01))
+            # Exact target after snapping, so spinboxes do not drift.
+            if op == 'scale_x_to': b.width = self._snap_to_edit_grid(value, 0.01)
+            if op == 'scale_y_to': b.height = self._snap_to_edit_grid(value, 0.01)
             self._set_body_center_grid(b, *bc)
 
+            font_factor = (abs(sx) + abs(sy)) / 2.0
             for p in pins:
                 p.x, p.y = pf(p.x, p.y)
-                p.length = max(0.1, float(getattr(p, 'length', 1.0) or 1.0) * factor)
-                self._scale_font_model(p.number_font, factor)
-                self._scale_font_model(p.label_font, factor)
-                self._transform_pin_anchors(p, pf, scale_factor=factor)
+                # Pin length is geometric; scale with dominant axis to keep docking usable.
+                p.length = max(0.1, float(getattr(p, 'length', 1.0) or 1.0) * max(abs(sx), abs(sy)))
+                self._scale_font_model(p.number_font, font_factor)
+                self._scale_font_model(p.label_font, font_factor)
+                self._transform_pin_anchors(p, pf, scale_factor=font_factor)
             for t in texts:
                 t.x, t.y = pf(t.x, t.y)
-                t.font_size_grid = max(0.1, float(getattr(t, 'font_size_grid', 0.75) or 0.75) * factor)
-            self._scale_font_model(b.attribute_font, factor)
-            self._scale_font_model(b.refdes_font, factor)
-            self._transform_body_attribute_texts(b, pf, scale_factor=factor)
+                t.font_size_grid = max(0.1, float(getattr(t, 'font_size_grid', 0.75) or 0.75) * font_factor)
+            self._scale_font_model(b.attribute_font, font_factor)
+            self._scale_font_model(b.refdes_font, font_factor)
+            self._transform_body_attribute_texts(b, pf, scale_factor=font_factor)
             for gr in graphics:
                 gc = pf(*self._graphic_center_grid(gr))
-                gr.w = float(getattr(gr, 'w', 0.0) or 0.0) * factor
-                gr.h = float(getattr(gr, 'h', 0.0) or 0.0) * factor
+                gr.w = float(getattr(gr, 'w', 0.0) or 0.0) * sx
+                gr.h = float(getattr(gr, 'h', 0.0) or 0.0) * sy
                 if getattr(gr, 'ctrl_x', None) is not None:
-                    gr.ctrl_x = float(gr.ctrl_x) * factor
+                    gr.ctrl_x = float(gr.ctrl_x) * sx
                 if getattr(gr, 'ctrl_y', None) is not None:
-                    gr.ctrl_y = float(gr.ctrl_y) * factor
+                    gr.ctrl_y = float(gr.ctrl_y) * sy
                 try:
-                    gr.curve_radius = float(getattr(gr, 'curve_radius', 0.0) or 0.0) * factor
+                    gr.curve_radius = float(getattr(gr, 'curve_radius', 0.0) or 0.0) * font_factor
                 except Exception:
                     pass
                 self._set_graphic_center_grid(gr, *gc)
@@ -5621,10 +5696,9 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
                 p.rotation = self._clean_float((-pr) % 360.0 if horizontal else (180.0 - pr) % 360.0)
                 self._transform_pin_anchors(p, pf, flip_horizontal=horizontal)
             for t in texts:
+                # Text follows the mirrored position only; it must never be mirrored.
                 t.x, t.y = pf(t.x, t.y)
-                tr = float(getattr(t, 'rotation', 0.0) or 0.0)
-                t.rotation = self._clean_float((-tr) % 360.0 if horizontal else (180.0 - tr) % 360.0)
-            self._transform_body_attribute_texts(b, pf, flip_horizontal=horizontal)
+            self._transform_body_attribute_texts(b, pf, flip_horizontal=None)
             for gr in graphics:
                 self._set_graphic_center_grid(gr, *pf(*self._graphic_center_grid(gr)))
                 rr = float(getattr(gr, 'rotation', 0.0) or 0.0)
