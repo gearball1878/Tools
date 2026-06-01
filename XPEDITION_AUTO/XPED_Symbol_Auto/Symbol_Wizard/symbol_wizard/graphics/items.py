@@ -2680,3 +2680,136 @@ try:
     GraphicItem.scale_selected = lambda self, factor: _sw97_graphic_scale_by(self, factor)
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# Liebherr v99: stable BODY canvas resize preview/commit.
+# ---------------------------------------------------------------------------
+# The v85 canvas resize path already uses an immutable press-state for BODY
+# dimensions.  However graphic curve parameters (ctrl_x/ctrl_y/curve_radius)
+# were not part of that immutable snapshot, so repeated mouseMove previews could
+# still read already-mutated curve data and visually distort mixed graphics while
+# dragging.  This patch extends the BODY snapshot and forces one final full
+# workspace sync on release while keeping the BODY selected.
+try:
+    _sw99_prev_body_snapshot = _lh85_body_snapshot
+except Exception:
+    _sw99_prev_body_snapshot = None
+
+
+def _lh85_body_snapshot(self):
+    win = self.window
+    unit = getattr(win, 'current_unit', None)
+    body = self.model
+    graphics = []
+    try:
+        for gr in getattr(unit, 'graphics', []) or []:
+            graphics.append((
+                gr,
+                float(getattr(gr, 'x', 0.0)),
+                float(getattr(gr, 'y', 0.0)),
+                float(getattr(gr, 'w', 0.0)),
+                float(getattr(gr, 'h', 0.0)),
+                getattr(gr, 'ctrl_x', None),
+                getattr(gr, 'ctrl_y', None),
+                getattr(gr, 'curve_radius', None),
+                float(getattr(gr, 'rotation', 0.0) or 0.0),
+                float(getattr(gr, 'scale_x', 1.0) or 1.0),
+                float(getattr(gr, 'scale_y', 1.0) or 1.0),
+            ))
+    except Exception:
+        pass
+    return {
+        'x': _lh68_float(getattr(body, 'x', 0.0), 0.0),
+        'y': _lh68_float(getattr(body, 'y', 0.0), 0.0),
+        'w': _lh68_float(getattr(body, 'width', 0.0), 0.0),
+        'h': _lh68_float(getattr(body, 'height', 0.0), 0.0),
+        'sx': _lh68_float(getattr(body, 'scale_x', 1.0), 1.0),
+        'sy': _lh68_float(getattr(body, 'scale_y', 1.0), 1.0),
+        'rot': _lh68_float(getattr(body, 'rotation', 0.0), 0.0),
+        'pos': QPointF(self.pos()),
+        'pins': [(p, float(getattr(p, 'x', 0.0)), float(getattr(p, 'y', 0.0)), float(getattr(p, 'length', 0.0))) for p in getattr(unit, 'pins', []) or []],
+        'texts': [(t, float(getattr(t, 'x', 0.0)), float(getattr(t, 'y', 0.0))) for t in getattr(unit, 'texts', []) or []],
+        'attributes': [(t, float(getattr(t, 'x', 0.0)), float(getattr(t, 'y', 0.0))) for t in getattr(getattr(unit, 'body', None), 'attribute_texts', {}).values()],
+        'graphics': graphics,
+    }
+
+try:
+    _sw99_prev_body_mouse_move = BodyItem.mouseMoveEvent
+except Exception:
+    _sw99_prev_body_mouse_move = None
+
+
+def _sw99_body_mouse_move(self, event):
+    # Use the v85 implementation, but suppress expensive attribute regeneration
+    # during mouseMove.  Attribute text models are still transformed by the
+    # immutable snapshot in scale_current_unit_children_from_body_resize(); the
+    # full scene is rebuilt on release.  This avoids transient canvas distortion
+    # and stale half-updated items while dragging a BODY handle.
+    if getattr(self, '_lh85_body_resizing', None) and getattr(self, '_lh85_body_start', None) is not None:
+        win = getattr(self, 'window', None)
+        old_update_attrs = getattr(win, 'update_attribute_items_for_unit', None) if win is not None else None
+        if old_update_attrs is not None:
+            try:
+                setattr(win, 'update_attribute_items_for_unit', lambda *a, **k: None)
+                return _lh85_body_mouse_move(self, event)
+            finally:
+                try:
+                    setattr(win, 'update_attribute_items_for_unit', old_update_attrs)
+                except Exception:
+                    pass
+    if _sw99_prev_body_mouse_move is not None:
+        return _sw99_prev_body_mouse_move(self, event)
+    return QGraphicsRectItem.mouseMoveEvent(self, event)
+
+try:
+    _sw99_prev_body_mouse_release = BodyItem.mouseReleaseEvent
+except Exception:
+    _sw99_prev_body_mouse_release = None
+
+
+def _sw99_body_mouse_release(self, event):
+    win = getattr(self, 'window', None)
+    body = getattr(self, 'model', None)
+    was_body_resize = bool(getattr(self, '_lh85_body_resizing', None))
+    selected_id = id(body) if body is not None else None
+    result = None
+    if _sw99_prev_body_mouse_release is not None:
+        result = _sw99_prev_body_mouse_release(self, event)
+    else:
+        result = QGraphicsRectItem.mouseReleaseEvent(self, event)
+    if was_body_resize and win is not None:
+        try:
+            if selected_id is not None:
+                win._selection_restore_ids = {selected_id}
+            # Final authoritative sync: rebuild all canvas items from the model,
+            # then refresh tables/properties. This is intentionally deferred until
+            # after Qt has finished the mouse-release event.
+            def _final_sync():
+                try:
+                    if selected_id is not None:
+                        win._selection_restore_ids = {selected_id}
+                    win.rebuild_scene()
+                    win.rebuild_tree()
+                    win.rebuild_pin_table()
+                    win.refresh_properties()
+                    if hasattr(win, 'view'):
+                        win.view.viewport().update()
+                except Exception:
+                    try:
+                        win.update_current_unit_canvas_positions()
+                    except Exception:
+                        pass
+            try:
+                from PySide6.QtCore import QTimer as _QTimer
+                _QTimer.singleShot(0, _final_sync)
+            except Exception:
+                _final_sync()
+        except Exception:
+            pass
+    return result
+
+try:
+    BodyItem.mouseMoveEvent = _sw99_body_mouse_move
+    BodyItem.mouseReleaseEvent = _sw99_body_mouse_release
+except Exception:
+    pass

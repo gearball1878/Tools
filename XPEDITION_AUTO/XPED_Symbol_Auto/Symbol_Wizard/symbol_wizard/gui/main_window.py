@@ -18359,3 +18359,218 @@ try:
     MainWindow.scale_current_unit_children_from_body_resize = _sw98_scale_current_unit_children_from_body_resize
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# Liebherr v99: authoritative canvas BODY resize mapping and pin redock sync.
+# ---------------------------------------------------------------------------
+# Canvas BODY resize now uses the same immutable-start-state mapping as the
+# toolbar Scale +/- path, including curve control points and radii captured at
+# mouse press.  Pins are redocked to the new BODY edge but keep their original
+# authored slot coordinate.  Loose pins stay untouched.
+try:
+    _sw99_prev_scale_current_unit_children_from_body_resize = MainWindow.scale_current_unit_children_from_body_resize
+except Exception:
+    _sw99_prev_scale_current_unit_children_from_body_resize = None
+
+
+def _sw99_float(v, default=0.0):
+    try:
+        return float(v)
+    except Exception:
+        return float(default)
+
+
+def _sw99_clean(self, v):
+    try:
+        return self._clean_float(v)
+    except Exception:
+        try:
+            v = round(float(v), 9)
+            return 0.0 if abs(v) < 1e-9 else v
+        except Exception:
+            return v
+
+
+def _sw99_step(self):
+    try:
+        return max(0.001, float(self._edit_grid_step()))
+    except Exception:
+        return 1.0
+
+
+def _sw99_snap(self, v):
+    try:
+        step = _sw99_step(self)
+        return round(float(v) / step) * step
+    except Exception:
+        return float(v)
+
+
+def _sw99_map_point(self, x, y, old_box, new_box):
+    ox, oy, ow, oh = old_box
+    nx, ny, nw, nh = new_box
+    ow = max(abs(float(ow)), 1e-12)
+    oh = max(abs(float(oh)), 1e-12)
+    sx = float(nw) / ow
+    sy = float(nh) / oh
+    return (
+        _sw99_clean(self, float(nx) + (float(x) - float(ox)) * sx),
+        _sw99_clean(self, float(ny) - (float(oy) - float(y)) * sy),
+    )
+
+
+def _sw99_pin_is_loose(pin):
+    try:
+        return not bool(getattr(pin, 'auto_dock', True))
+    except Exception:
+        return False
+
+
+def _sw99_move_pin_owned_texts_abs(self, pin, old_x, old_y, new_x, new_y):
+    dx = float(new_x) - float(old_x)
+    dy = float(new_y) - float(old_y)
+    if abs(dx) < 1e-12 and abs(dy) < 1e-12:
+        return
+    try:
+        self._move_pin_owned_texts(pin, dx, dy)
+    except Exception:
+        for ax_name, ay_name in (('label_x', 'label_y'), ('number_x', 'number_y')):
+            try:
+                if getattr(pin, ax_name, None) is not None:
+                    setattr(pin, ax_name, _sw99_clean(self, float(getattr(pin, ax_name)) + dx))
+                if getattr(pin, ay_name, None) is not None:
+                    setattr(pin, ay_name, _sw99_clean(self, float(getattr(pin, ay_name)) + dy))
+            except Exception:
+                pass
+
+
+def _sw99_redock_pin(self, pin, px, py, plen, body):
+    old_px = float(getattr(pin, 'x', px) or px)
+    old_py = float(getattr(pin, 'y', py) or py)
+    if _sw99_pin_is_loose(pin):
+        nx, ny = _sw99_clean(self, px), _sw99_clean(self, py)
+    else:
+        side = str(getattr(pin, 'side', '') or '').lower()
+        if side == PinSide.LEFT.value:
+            nx, ny = float(body.x), py
+        elif side == PinSide.RIGHT.value:
+            nx, ny = float(body.x) + float(body.width), py
+        elif side == PinSide.TOP.value:
+            nx, ny = px, float(body.y)
+        elif side == PinSide.BOTTOM.value:
+            nx, ny = px, float(body.y) - float(body.height)
+        else:
+            nx, ny = px, py
+        nx, ny = _sw99_clean(self, nx), _sw99_clean(self, ny)
+    pin.x = nx
+    pin.y = ny
+    pin.length = max(0.1, _sw99_clean(self, plen))
+    _sw99_move_pin_owned_texts_abs(self, pin, old_px, old_py, nx, ny)
+
+
+def _sw99_graphic_from_start(self, entry, old_box, new_box):
+    gr = entry[0]
+    gx, gy, gw, gh = map(float, entry[1:5])
+    ctrl_x = entry[5] if len(entry) > 5 else getattr(gr, 'ctrl_x', None)
+    ctrl_y = entry[6] if len(entry) > 6 else getattr(gr, 'ctrl_y', None)
+    curve_radius = entry[7] if len(entry) > 7 else getattr(gr, 'curve_radius', None)
+    rotation = entry[8] if len(entry) > 8 else getattr(gr, 'rotation', 0.0)
+    scale_x = entry[9] if len(entry) > 9 else getattr(gr, 'scale_x', 1.0)
+    scale_y = entry[10] if len(entry) > 10 else getattr(gr, 'scale_y', 1.0)
+
+    ax, ay = _sw99_map_point(self, gx, gy, old_box, new_box)
+    ex, ey = _sw99_map_point(self, gx + gw, gy - gh, old_box, new_box)
+    gr.x = _sw99_clean(self, _sw99_snap(self, ax))
+    gr.y = _sw99_clean(self, _sw99_snap(self, ay))
+    gr.w = _sw99_clean(self, _sw99_snap(self, ex - ax))
+    gr.h = _sw99_clean(self, _sw99_snap(self, ay - ey))
+    try:
+        gr.rotation = rotation
+        gr.scale_x = scale_x
+        gr.scale_y = scale_y
+    except Exception:
+        pass
+
+    try:
+        if ctrl_x is not None and ctrl_y is not None:
+            cx_abs = gx + float(ctrl_x)
+            cy_abs = gy - float(ctrl_y)
+            ncx, ncy = _sw99_map_point(self, cx_abs, cy_abs, old_box, new_box)
+            gr.ctrl_x = _sw99_clean(self, _sw99_snap(self, ncx - gr.x))
+            gr.ctrl_y = _sw99_clean(self, _sw99_snap(self, gr.y - ncy))
+    except Exception:
+        pass
+
+    try:
+        if curve_radius is not None:
+            sx = abs(float(new_box[2]) / max(abs(float(old_box[2])), 1e-12))
+            sy = abs(float(new_box[3]) / max(abs(float(old_box[3])), 1e-12))
+            gr.curve_radius = _sw99_clean(self, float(curve_radius or 0.0) * max(sx, sy))
+    except Exception:
+        pass
+
+
+def _sw99_scale_current_unit_children_from_body_resize(self, start_state: dict, body: SymbolBodyModel):
+    try:
+        old_x = _sw99_float(start_state.get('x', getattr(body, 'x', 0.0)), 0.0)
+        old_y = _sw99_float(start_state.get('y', getattr(body, 'y', 0.0)), 0.0)
+        old_w = max(1e-12, abs(_sw99_float(start_state.get('w', getattr(body, 'width', 1.0)), 1.0)))
+        old_h = max(1e-12, abs(_sw99_float(start_state.get('h', getattr(body, 'height', 1.0)), 1.0)))
+
+        step = _sw99_step(self)
+        body.x = _sw99_clean(self, _sw99_snap(self, getattr(body, 'x', old_x)))
+        body.y = _sw99_clean(self, _sw99_snap(self, getattr(body, 'y', old_y)))
+        body.width = max(step, _sw99_clean(self, _sw99_snap(self, getattr(body, 'width', old_w))))
+        body.height = max(step, _sw99_clean(self, _sw99_snap(self, getattr(body, 'height', old_h))))
+
+        old_box = (old_x, old_y, old_w, old_h)
+        new_box = (float(body.x), float(body.y), float(body.width), float(body.height))
+
+        for entry in list(start_state.get('graphics', []) or []):
+            try:
+                if len(entry) >= 5:
+                    _sw99_graphic_from_start(self, entry, old_box, new_box)
+            except Exception:
+                pass
+
+        for entry in list(start_state.get('texts', []) or []):
+            try:
+                t, tx, ty = entry[:3]
+                t.x, t.y = _sw99_map_point(self, tx, ty, old_box, new_box)
+                t.x = _sw99_clean(self, _sw99_snap(self, t.x))
+                t.y = _sw99_clean(self, _sw99_snap(self, t.y))
+            except Exception:
+                pass
+
+        for entry in list(start_state.get('attributes', []) or []):
+            try:
+                t, tx, ty = entry[:3]
+                t.x, t.y = _sw99_map_point(self, tx, ty, old_box, new_box)
+                t.x = _sw99_clean(self, _sw99_snap(self, t.x))
+                t.y = _sw99_clean(self, _sw99_snap(self, t.y))
+            except Exception:
+                pass
+
+        for entry in list(start_state.get('pins', []) or []):
+            try:
+                p, px, py, plen = entry[:4]
+                _sw99_redock_pin(self, p, float(px), float(py), float(plen), body)
+            except Exception:
+                pass
+
+        self._selection_restore_ids = {id(body)}
+        self.dirty = True
+        return None
+    except Exception:
+        if _sw99_prev_scale_current_unit_children_from_body_resize is not None:
+            return _sw99_prev_scale_current_unit_children_from_body_resize(self, start_state, body)
+        return None
+
+try:
+    MainWindow.scale_current_unit_children_from_body_resize = _sw99_scale_current_unit_children_from_body_resize
+except Exception:
+    pass
+try:
+    TemplateEditorDialog.scale_current_unit_children_from_body_resize = _sw99_scale_current_unit_children_from_body_resize
+except Exception:
+    pass
