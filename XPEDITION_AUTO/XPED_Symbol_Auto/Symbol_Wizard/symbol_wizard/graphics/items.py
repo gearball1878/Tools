@@ -1482,42 +1482,238 @@ except Exception:
     pass
 
 # ---------------------------------------------------------------------------
-# Liebherr v62: grouped graphics paint only their own geometry. The one true
-# group outline is a non-selectable scene overlay in MainWindow, computed from
-# transformed model geometry. This avoids stale/wrong per-child painted outlines.
+# Liebherr v68: natural single-graphic transforms.
+# - Rotate / Flip use one stable local transform point: selected object's lower-left.
+# - Canvas resize handles work in scene direction after rotation/flip: the opposite
+#   handle becomes the temporary resize origin and the dragged handle follows the
+#   mouse direction on the edit grid.
+# - Geometry dimensions are snapped to the edit grid with a minimum of one edit grid.
 # ---------------------------------------------------------------------------
 try:
-    def _lh62_item_gid(model):
+    _lh68_prev_graphic_mouse_press = GraphicItem.mousePressEvent
+    _lh68_prev_graphic_mouse_move = GraphicItem.mouseMoveEvent
+except Exception:
+    _lh68_prev_graphic_mouse_press = None
+    _lh68_prev_graphic_mouse_move = None
+
+
+def _lh68_float(v, default=0.0):
+    try:
+        return float(v)
+    except Exception:
+        return float(default)
+
+
+def _lh68_edit_grid_px(win):
+    try:
+        return max(1e-9, float(getattr(win, 'edit_grid_px', 0.0) or 0.0))
+    except Exception:
+        return 1.0
+
+
+def _lh68_snap_px(win, value):
+    step = _lh68_edit_grid_px(win)
+    try:
+        return snap(float(value), step)
+    except Exception:
+        return round(float(value) / step) * step
+
+
+def _lh68_snap_scene_point(win, p):
+    return QPointF(_lh68_snap_px(win, p.x()), _lh68_snap_px(win, p.y()))
+
+
+def _lh68_local_rect(item):
+    # Use raw model geometry, not boundingRect(), because boundingRect contains
+    # selection/handle margins.  The transform origin must be geometric lower-left.
+    g = item.window.grid_px
+    w = _lh68_float(getattr(item.model, 'w', 0.0), 0.0) * g
+    h = _lh68_float(getattr(item.model, 'h', 0.0), 0.0) * g
+    return QRectF(0.0, 0.0, w, h).normalized()
+
+
+def _lh68_graphic_apply_transform_from_model(self):
+    def f(name, default):
         try:
-            gid=str(getattr(model,'group_id','') or '')
-            if gid: return gid
-            role=str(getattr(model,'graphic_role','') or '')
-            if role.startswith('user_graphic_group:'): return role.split(':',1)[1]
-        except Exception: pass
-        return ''
-    def _lh62_item_draw_geometry(self,painter):
-        g,m=self.window.grid_px,self.model
-        painter.setPen(pen_for(m.style.stroke,m.style.line_width,m.style.line_style,g))
-        painter.setBrush(QBrush(rgb(m.style.fill)) if m.style.fill else QBrush(Qt.NoBrush))
-        if m.shape in ('line','arc'):
-            ctrl_x=getattr(m,'ctrl_x',None); ctrl_y=getattr(m,'ctrl_y',None)
-            if ctrl_x is not None and ctrl_y is not None:
-                path=QPainterPath(QPointF(0,0)); path.quadTo(QPointF(float(ctrl_x)*g,-float(ctrl_y)*g),QPointF(m.w*g,-m.h*g)); painter.drawPath(path)
+            return float(getattr(self.model, name, default) or default)
+        except Exception:
+            return default
+    sx, sy, rot = f('scale_x', 1.0), f('scale_y', 1.0), f('rotation', 0.0)
+    self.model.scale_x, self.model.scale_y, self.model.rotation = sx, sy, rot
+    try:
+        r = _lh68_local_rect(self)
+        # Stable object origin for rotate/flip: lower-left of the actual object.
+        self.setTransformOriginPoint(r.bottomLeft())
+    except Exception:
+        pass
+    self.setTransform(QTransform().scale(sx, sy))
+    self.setRotation(rot)
+
+
+def _lh68_handle_points(item):
+    r = _lh68_local_rect(item)
+    return {
+        'tl': QPointF(r.left(), r.top()),
+        'tr': QPointF(r.right(), r.top()),
+        'bl': QPointF(r.left(), r.bottom()),
+        'br': QPointF(r.right(), r.bottom()),
+        'l': QPointF(r.left(), r.center().y()),
+        'r': QPointF(r.right(), r.center().y()),
+        't': QPointF(r.center().x(), r.top()),
+        'b': QPointF(r.center().x(), r.bottom()),
+    }
+
+
+def _lh68_opposite_handle(handle):
+    return {
+        'tl': 'br', 'tr': 'bl', 'bl': 'tr', 'br': 'tl',
+        'l': 'r', 'r': 'l', 't': 'b', 'b': 't',
+    }.get(handle, '')
+
+
+def _lh68_graphic_mouse_press(self, event):
+    if event.button() == Qt.LeftButton and self.isSelected():
+        try:
+            # Rotation remains original behaviour, but with lower-left transform origin.
+            if _rotation_handle(self._rect(), self.window.grid_px * self.rotate_handle_factor).contains(event.pos()):
+                return _lh68_prev_graphic_mouse_press(self, event)
+            h = _hit_handle(self._handles(), event.pos())
+            if h and str(getattr(self.model, 'shape', '') or '') not in ('line', 'arc'):
+                pts = _lh68_handle_points(self)
+                anchor_name = _lh68_opposite_handle(h)
+                anchor_local = pts.get(anchor_name, QPointF(0, 0))
+                self._lh68_resizing = h
+                self._lh68_resize_anchor_name = anchor_name
+                self._lh68_resize_anchor_local = QPointF(anchor_local)
+                self._lh68_resize_anchor_scene = self.mapToScene(anchor_local)
+                self._lh68_resize_start = {
+                    'x': _lh68_float(getattr(self.model, 'x', 0.0), 0.0),
+                    'y': _lh68_float(getattr(self.model, 'y', 0.0), 0.0),
+                    'w': _lh68_float(getattr(self.model, 'w', 0.0), 0.0),
+                    'h': _lh68_float(getattr(self.model, 'h', 0.0), 0.0),
+                    'sx': _lh68_float(getattr(self.model, 'scale_x', 1.0), 1.0),
+                    'sy': _lh68_float(getattr(self.model, 'scale_y', 1.0), 1.0),
+                    'rot': _lh68_float(getattr(self.model, 'rotation', 0.0), 0.0),
+                }
+                event.accept(); return
+        except Exception:
+            pass
+    return _lh68_prev_graphic_mouse_press(self, event)
+
+
+def _lh68_graphic_mouse_move(self, event):
+    if getattr(self, '_lh68_resizing', None) and getattr(self, '_lh68_resize_start', None) is not None:
+        try:
+            win = self.window
+            g = float(win.grid_px)
+            min_px = max(_lh68_edit_grid_px(win), 1e-9)
+            hname = str(self._lh68_resizing)
+            anchor_local = QPointF(self._lh68_resize_anchor_local)
+            anchor_scene = QPointF(self._lh68_resize_anchor_scene)
+            mouse_scene = _lh68_snap_scene_point(win, event.scenePos())
+            mouse_local = self.mapFromScene(mouse_scene)
+
+            # Build the new local rectangle from a fixed opposite handle/edge and
+            # the dragged mouse point.  Because mouse_local is obtained through the
+            # current item transform, dragging in scene direction remains natural
+            # even after rotation or axis mirroring.
+            l = 0.0; t = 0.0
+            r = _lh68_float(getattr(self.model, 'w', 0.0), 0.0) * g
+            b = _lh68_float(getattr(self.model, 'h', 0.0), 0.0) * g
+
+            # Use the anchor coordinate for the fixed side(s).
+            if hname in ('l', 'tl', 'bl'):
+                r = anchor_local.x(); l = mouse_local.x()
+            elif hname in ('r', 'tr', 'br'):
+                l = anchor_local.x(); r = mouse_local.x()
             else:
-                r=float(getattr(m,'curve_radius',0.0) or 0.0)
-                if abs(r)>1e-9:
-                    path=QPainterPath(QPointF(0,0)); path.quadTo(QPointF(m.w*g/2,m.h*g/2-r*g),QPointF(m.w*g,m.h*g)); painter.drawPath(path)
-                else:
-                    painter.drawLine(QPointF(0,0),QPointF(m.w*g,m.h*g))
-        elif m.shape=='rect': painter.drawRect(QRectF(0,0,m.w*g,m.h*g))
-        elif m.shape in ('ellipse','circle'): painter.drawEllipse(QRectF(0,0,m.w*g,m.h*g))
-    def _lh62_graphic_paint(self,painter,option,widget=None):
-        if _lh62_item_gid(getattr(self,'model',None)):
-            return _lh62_item_draw_geometry(self,painter)
-        # For non-group graphics use the original/base painter if available.
-        if '_lh58_graphic_prev_paint' in globals():
-            return _lh58_graphic_prev_paint(self,painter,option,widget)
-        return _lh59_graphic_paint(self,painter,option,widget) if '_lh59_graphic_paint' in globals() else None
-    GraphicItem.paint=_lh62_graphic_paint
+                l = 0.0; r = _lh68_float(getattr(self.model, 'w', 0.0), 0.0) * g
+
+            if hname in ('t', 'tl', 'tr'):
+                b = anchor_local.y(); t = mouse_local.y()
+            elif hname in ('b', 'bl', 'br'):
+                t = anchor_local.y(); b = mouse_local.y()
+            else:
+                t = 0.0; b = _lh68_float(getattr(self.model, 'h', 0.0), 0.0) * g
+
+            # Snap size to edit grid and enforce one edit-grid minimum.  Edge
+            # handles resize exactly one axis; corner handles resize both axes.
+            left = min(l, r); right = max(l, r)
+            top = min(t, b); bottom = max(t, b)
+            new_w = max(min_px, _lh68_snap_px(win, right - left))
+            new_h = max(min_px, _lh68_snap_px(win, bottom - top))
+
+            # Preserve the side under the fixed anchor after size snapping.
+            if hname in ('l', 'tl', 'bl'):
+                right = anchor_local.x(); left = right - new_w
+            elif hname in ('r', 'tr', 'br'):
+                left = anchor_local.x(); right = left + new_w
+            else:
+                # Center untouched dimension around the old local rect.
+                old = _lh68_local_rect(self)
+                left = old.left(); right = old.right()
+                new_w = max(min_px, abs(right - left))
+
+            if hname in ('t', 'tl', 'tr'):
+                bottom = anchor_local.y(); top = bottom - new_h
+            elif hname in ('b', 'bl', 'br'):
+                top = anchor_local.y(); bottom = top + new_h
+            else:
+                old = _lh68_local_rect(self)
+                top = old.top(); bottom = old.bottom()
+                new_h = max(min_px, abs(bottom - top))
+
+            # Shift local origin to the new upper-left, then compensate scene pos
+            # so the temporary resize origin stays exactly where it was.
+            new_origin_scene = self.mapToScene(QPointF(left, top))
+            self.prepareGeometryChange()
+            self.model.w = new_w / g
+            self.model.h = new_h / g
+            self.model.x = new_origin_scene.x() / g
+            self.model.y = -new_origin_scene.y() / g
+            self.setPos(new_origin_scene)
+            self.apply_transform_from_model()
+
+            new_anchor_local = QPointF(anchor_local.x() - left, anchor_local.y() - top)
+            new_anchor_scene = self.mapToScene(new_anchor_local)
+            delta = anchor_scene - new_anchor_scene
+            final_pos = self.pos() + delta
+            # Final item origin is snapped as well; this keeps model geometry on
+            # the edit grid while the dragged size is already edit-grid aligned.
+            final_pos = _lh68_snap_scene_point(win, final_pos)
+            self.setPos(final_pos)
+            self.model.x = final_pos.x() / g
+            self.model.y = -final_pos.y() / g
+
+            try:
+                win.notify_canvas_model_changed()
+            except Exception:
+                win.live_refresh()
+            self.update(); event.accept(); return
+        except Exception:
+            # Never crash during resize; fall back to previous implementation.
+            try:
+                self._lh68_resizing = None
+            except Exception:
+                pass
+    return _lh68_prev_graphic_mouse_move(self, event)
+
+
+def _lh68_graphic_mouse_release(self, event):
+    try:
+        self._lh68_resizing = None
+        self._lh68_resize_start = None
+        self._lh68_resize_anchor_local = None
+        self._lh68_resize_anchor_scene = None
+    except Exception:
+        pass
+    return _lh68_prev_graphic_mouse_release(self, event)
+
+try:
+    _lh68_prev_graphic_mouse_release = GraphicItem.mouseReleaseEvent
+    GraphicItem.apply_transform_from_model = _lh68_graphic_apply_transform_from_model
+    GraphicItem.mousePressEvent = _lh68_graphic_mouse_press
+    GraphicItem.mouseMoveEvent = _lh68_graphic_mouse_move
+    GraphicItem.mouseReleaseEvent = _lh68_graphic_mouse_release
 except Exception:
     pass
