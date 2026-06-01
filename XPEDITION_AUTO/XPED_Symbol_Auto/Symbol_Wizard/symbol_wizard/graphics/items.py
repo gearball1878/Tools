@@ -1717,3 +1717,221 @@ try:
     GraphicItem.mouseReleaseEvent = _lh68_graphic_mouse_release
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# Liebherr v69: smoother / natural single-graphic canvas scaling.
+# v68 already fixed rotate/flip pivot. This patch replaces only handle-resize:
+# - all resize maths are evaluated in the frozen local coordinate system from
+#   mouse press, not in the continuously changing item transform -> no jitter.
+# - the dragged size is snapped to the edit grid; the fixed opposite handle is
+#   preserved exactly (no secondary snapping that fights the mouse).
+# - resize cursors are chosen from the transformed handle direction, so after
+#   rotate/flip the cursor/arrow direction remains visually natural.
+# ---------------------------------------------------------------------------
+try:
+    _lh69_prev_graphic_mouse_press = GraphicItem.mousePressEvent
+    _lh69_prev_graphic_mouse_move = GraphicItem.mouseMoveEvent
+    _lh69_prev_graphic_mouse_release = GraphicItem.mouseReleaseEvent
+    _lh69_prev_graphic_hover_move = GraphicItem.hoverMoveEvent
+except Exception:
+    _lh69_prev_graphic_mouse_press = None
+    _lh69_prev_graphic_mouse_move = None
+    _lh69_prev_graphic_mouse_release = None
+    _lh69_prev_graphic_hover_move = None
+
+
+def _lh69_snap_len_px(win, value):
+    step = _lh68_edit_grid_px(win)
+    try:
+        v = abs(float(value))
+    except Exception:
+        v = 0.0
+    return max(step, _lh68_snap_px(win, v))
+
+
+def _lh69_cursor_for_handle(item, h):
+    """Return a cursor that matches the handle's visual scene direction."""
+    if not h:
+        return Qt.ArrowCursor
+    if h == 'rot':
+        return Qt.CrossCursor
+    try:
+        r = _lh68_local_rect(item)
+        c = r.center()
+        pts = _lh68_handle_points(item)
+        p = pts.get(h, c)
+        # For corner handles use the center->corner diagonal; for edge handles
+        # use the center->edge normal. Map through the full item transform so
+        # rotation and negative scale/flips are represented visually.
+        sc = item.mapToScene(c)
+        sp = item.mapToScene(p)
+        dx = sp.x() - sc.x(); dy = sp.y() - sc.y()
+        if abs(dx) < 1e-9 and abs(dy) < 1e-9:
+            return _cursor_for_handle(h)
+        import math
+        ang = (math.degrees(math.atan2(dy, dx)) + 180.0) % 180.0
+        # 0/180 horizontal, 90 vertical, 45 and 135 diagonals.
+        if ang < 22.5 or ang >= 157.5:
+            return Qt.SizeHorCursor
+        if 67.5 <= ang < 112.5:
+            return Qt.SizeVerCursor
+        if 22.5 <= ang < 67.5:
+            return Qt.SizeFDiagCursor
+        return Qt.SizeBDiagCursor
+    except Exception:
+        return _cursor_for_handle(h)
+
+
+def _lh69_graphic_hover_move(self, event):
+    try:
+        if self.isSelected():
+            h = 'rot' if _rotation_handle(self._rect(), self.window.grid_px * self.rotate_handle_factor).contains(event.pos()) else _hit_handle(self._handles(), event.pos())
+            self.setCursor(QCursor(_lh69_cursor_for_handle(self, h)) if h else QCursor(Qt.ArrowCursor))
+            return QGraphicsItem.hoverMoveEvent(self, event)
+    except Exception:
+        pass
+    return _lh69_prev_graphic_hover_move(self, event)
+
+
+def _lh69_graphic_mouse_press(self, event):
+    if event.button() == Qt.LeftButton and self.isSelected():
+        try:
+            if _rotation_handle(self._rect(), self.window.grid_px * self.rotate_handle_factor).contains(event.pos()):
+                return _lh69_prev_graphic_mouse_press(self, event)
+            h = _hit_handle(self._handles(), event.pos())
+            if h and str(getattr(self.model, 'shape', '') or '') not in ('line', 'arc'):
+                pts = _lh68_handle_points(self)
+                anchor_name = _lh68_opposite_handle(h)
+                anchor_local = QPointF(pts.get(anchor_name, QPointF(0, 0)))
+                st = self.sceneTransform()
+                inv, ok = st.inverted()
+                if not ok:
+                    return _lh69_prev_graphic_mouse_press(self, event)
+                self._lh69_resizing = h
+                self._lh69_resize_anchor_name = anchor_name
+                self._lh69_resize_anchor_local_start = QPointF(anchor_local)
+                self._lh69_resize_anchor_scene = self.mapToScene(anchor_local)
+                self._lh69_resize_scene_to_start_local = inv
+                self._lh69_resize_start_transform = st
+                self._lh69_resize_start = {
+                    'x': _lh68_float(getattr(self.model, 'x', 0.0), 0.0),
+                    'y': _lh68_float(getattr(self.model, 'y', 0.0), 0.0),
+                    'w': _lh68_float(getattr(self.model, 'w', 0.0), 0.0),
+                    'h': _lh68_float(getattr(self.model, 'h', 0.0), 0.0),
+                    'sx': _lh68_float(getattr(self.model, 'scale_x', 1.0), 1.0),
+                    'sy': _lh68_float(getattr(self.model, 'scale_y', 1.0), 1.0),
+                    'rot': _lh68_float(getattr(self.model, 'rotation', 0.0), 0.0),
+                    'pos': QPointF(self.pos()),
+                }
+                event.accept(); return
+        except Exception:
+            pass
+    return _lh69_prev_graphic_mouse_press(self, event)
+
+
+def _lh69_graphic_mouse_move(self, event):
+    if getattr(self, '_lh69_resizing', None) and getattr(self, '_lh69_resize_start', None) is not None:
+        try:
+            win = self.window
+            g = float(win.grid_px)
+            hname = str(self._lh69_resizing)
+            start = dict(self._lh69_resize_start)
+            anchor_local = QPointF(self._lh69_resize_anchor_local_start)
+            anchor_scene = QPointF(self._lh69_resize_anchor_scene)
+            inv = self._lh69_resize_scene_to_start_local
+
+            # Mouse in the unchanged local coordinate system from press time.
+            # Do not scene-snap the mouse: only snap the resulting size.  This
+            # avoids the two competing quantizers that caused the visible shake.
+            mouse_local = inv.map(event.scenePos())
+            old_w = max(1e-9, _lh68_float(start.get('w'), 0.0) * g)
+            old_h = max(1e-9, _lh68_float(start.get('h'), 0.0) * g)
+            old_left, old_top, old_right, old_bottom = 0.0, 0.0, old_w, old_h
+
+            # Start with the old rect and only replace the axes controlled by
+            # the active handle.
+            left, right = old_left, old_right
+            top, bottom = old_top, old_bottom
+            if hname in ('l', 'tl', 'bl'):
+                right = anchor_local.x()
+                new_w = _lh69_snap_len_px(win, right - mouse_local.x())
+                left = right - new_w
+            elif hname in ('r', 'tr', 'br'):
+                left = anchor_local.x()
+                new_w = _lh69_snap_len_px(win, mouse_local.x() - left)
+                right = left + new_w
+            else:
+                new_w = old_w
+
+            if hname in ('t', 'tl', 'tr'):
+                bottom = anchor_local.y()
+                new_h = _lh69_snap_len_px(win, bottom - mouse_local.y())
+                top = bottom - new_h
+            elif hname in ('b', 'bl', 'br'):
+                top = anchor_local.y()
+                new_h = _lh69_snap_len_px(win, mouse_local.y() - top)
+                bottom = top + new_h
+            else:
+                new_h = old_h
+
+            # Restore the start transform before applying the newly computed
+            # rect. This makes every mouse move absolute from the press state,
+            # not cumulative from the previous frame.
+            self.prepareGeometryChange()
+            self.model.x = start['x']; self.model.y = start['y']
+            self.model.w = max(_lh68_edit_grid_px(win), float(new_w)) / g
+            self.model.h = max(_lh68_edit_grid_px(win), float(new_h)) / g
+            self.model.scale_x = start['sx']; self.model.scale_y = start['sy']; self.model.rotation = start['rot']
+            self.setPos(start['pos'])
+            self.apply_transform_from_model()
+
+            # Move the item origin to the transformed new upper-left and then
+            # compensate so the fixed opposite handle remains exactly in place.
+            start_transform = self._lh69_resize_start_transform
+            new_origin_scene = start_transform.map(QPointF(left, top))
+            self.setPos(new_origin_scene)
+            self.model.x = new_origin_scene.x() / g
+            self.model.y = -new_origin_scene.y() / g
+            self.apply_transform_from_model()
+
+            new_anchor_local = QPointF(anchor_local.x() - left, anchor_local.y() - top)
+            new_anchor_scene = self.mapToScene(new_anchor_local)
+            delta = anchor_scene - new_anchor_scene
+            final_pos = self.pos() + delta
+            self.setPos(final_pos)
+            self.model.x = final_pos.x() / g
+            self.model.y = -final_pos.y() / g
+
+            try:
+                win.notify_canvas_model_changed()
+            except Exception:
+                try: win.live_refresh()
+                except Exception: pass
+            self.update(); event.accept(); return
+        except Exception:
+            try:
+                self._lh69_resizing = None
+            except Exception:
+                pass
+    return _lh69_prev_graphic_mouse_move(self, event)
+
+
+def _lh69_graphic_mouse_release(self, event):
+    try:
+        self._lh69_resizing = None
+        self._lh69_resize_start = None
+        self._lh69_resize_anchor_local_start = None
+        self._lh69_resize_anchor_scene = None
+        self._lh69_resize_scene_to_start_local = None
+        self._lh69_resize_start_transform = None
+    except Exception:
+        pass
+    return _lh69_prev_graphic_mouse_release(self, event)
+
+try:
+    GraphicItem.hoverMoveEvent = _lh69_graphic_hover_move
+    GraphicItem.mousePressEvent = _lh69_graphic_mouse_press
+    GraphicItem.mouseMoveEvent = _lh69_graphic_mouse_move
+    GraphicItem.mouseReleaseEvent = _lh69_graphic_mouse_release
+except Exception:
+    pass
