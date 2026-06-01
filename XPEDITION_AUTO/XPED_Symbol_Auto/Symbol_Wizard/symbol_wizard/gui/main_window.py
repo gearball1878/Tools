@@ -5739,16 +5739,26 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
     def _body_group_capture_base(self, unit=None):
         """Capture one immutable base state for the complete symbol part.
 
-        Every later rotate/scale/flip is evaluated from this base plus one
-        accumulated transform matrix.  We never rotate already-rotated object
-        coordinates again; that is the critical fix for non-center-origin drift.
+        Critical rule: the complete BODY group is stored as local coordinates
+        relative to the selected BODY origin anchor.  The transform destination
+        is the logical symbol origin (normally 0/0).  This makes imported
+        symbols behave like internally created <NONE> symbols: even if an
+        imported template arrived with its BODY anchor away from the crosshair,
+        the first transform normalizes the complete group as one rigid object
+        instead of rotating/scaling individual world coordinates.
         """
         u = unit or self.current_unit
         b = u.body
+        mode = getattr(self.symbol, 'origin', OriginMode.CENTER.value)
         px, py = self._symbol_group_pivot_grid()
+        try:
+            ax, ay = self.body_anchor_point_oriented(b, mode)
+        except Exception:
+            ax, ay = self.body_anchor_point(b, mode)
         base = {
             'pivot': (float(px), float(py)),
-            'origin_mode': getattr(self.symbol, 'origin', OriginMode.CENTER.value),
+            'anchor': (float(ax), float(ay)),
+            'origin_mode': mode,
             'body': {
                 'x': float(b.x), 'y': float(b.y), 'w': float(b.width), 'h': float(b.height),
                 'rot': float(getattr(b, 'rotation', 0.0) or 0.0),
@@ -5824,6 +5834,15 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
 
     def _apply_body_group_matrix_from_base(self, st, refresh=True):
         base = st['base']; M = st['M']; px, py = base['pivot']
+        ax, ay = base.get('anchor', base.get('pivot', (0.0, 0.0)))
+        def app(x, y):
+            # Apply the accumulated matrix to immutable local coordinates
+            # relative to the selected BODY anchor, not to already transformed
+            # world coordinates.  Destination anchor is the logical symbol origin.
+            a,bm,c,d = M
+            dx, dy = float(x) - float(ax), float(y) - float(ay)
+            return (self._clean_float(px + a*dx + bm*dy),
+                    self._clean_float(py + c*dx + d*dy))
         u = self.current_unit; b = u.body
         bs = base['body']
         sx_abs = self._mat_x_scale(M)
@@ -5833,7 +5852,7 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         # BODY from immutable base: center transformed, dimensions derived from matrix.
         bx, by, bw, bh = bs['x'], bs['y'], bs['w'], bs['h']
         bc_x, bc_y = bx + bw/2.0, by - bh/2.0
-        ncx, ncy = self._mat_apply(M, bc_x, bc_y, px, py)
+        ncx, ncy = app(bc_x, bc_y)
         b.width = self._clean_float(max(0.01, bw * sx_abs))
         b.height = self._clean_float(max(0.01, bh * sy_abs))
         b.rotation = self._clean_float((bs['rot'] + self._mat_col_angle(M)) % 360.0)
@@ -5847,7 +5866,7 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         for gd in base.get('graphics', []):
             gr = gd['obj']
             gcx, gcy = gd['x'] + gd['w']/2.0, gd['y'] - gd['h']/2.0
-            ngcx, ngcy = self._mat_apply(M, gcx, gcy, px, py)
+            ngcx, ngcy = app(gcx, gcy)
             gr.w = self._clean_float(gd['w'] * sx_abs)
             gr.h = self._clean_float(gd['h'] * sy_abs)
             gr.rotation = self._clean_float((gd['rot'] + self._mat_col_angle(M)) % 360.0)
@@ -5870,15 +5889,15 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         # through model.rotation, so visual pin direction stays attached to BODY.
         for pd in base.get('pins', []):
             p = pd['obj']
-            p.x, p.y = self._mat_apply(M, pd['x'], pd['y'], px, py)
+            p.x, p.y = app(pd['x'], pd['y'])
             p.rotation = self._clean_float((pd['rot'] + self._mat_col_angle(M)) % 360.0)
             p.scale_x = pd.get('scale_x', 1.0)
             p.scale_y = pd.get('scale_y', 1.0)
             p.length = self._clean_float(max(0.1, pd['length'] * font_factor))
             if pd.get('label') is not None:
-                p.label_x, p.label_y = self._mat_apply(M, pd['label'][0], pd['label'][1], px, py)
+                p.label_x, p.label_y = app(pd['label'][0], pd['label'][1])
             if pd.get('number') is not None:
-                p.number_x, p.number_y = self._mat_apply(M, pd['number'][0], pd['number'][1], px, py)
+                p.number_x, p.number_y = app(pd['number'][0], pd['number'][1])
             try:
                 p.number_font.size_grid = max(0.1, self._clean_float(pd.get('number_font_size', 0.45) * font_factor))
             except Exception:
@@ -5889,7 +5908,7 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
                 pass
             for key, tm, tx, ty, trot, tf in pd.get('attrs', []):
                 try:
-                    tm.x, tm.y = self._mat_apply(M, tx, ty, px, py)
+                    tm.x, tm.y = app(tx, ty)
                     # Text moves with the group but remains readable: no rotate/mirror.
                     tm.rotation = trot
                     tm.font_size_grid = max(0.1, self._clean_float(tf * font_factor))
@@ -5900,12 +5919,12 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         # rotated or mirrored, per requested Xpedition-like behaviour.
         for td in base.get('texts', []):
             t = td['obj']
-            t.x, t.y = self._mat_apply(M, td['x'], td['y'], px, py)
+            t.x, t.y = app(td['x'], td['y'])
             t.rotation = td['rot']
             t.font_size_grid = max(0.1, self._clean_float(td['font'] * font_factor))
         for td in base.get('body_attrs', []):
             t = td['obj']
-            t.x, t.y = self._mat_apply(M, td['x'], td['y'], px, py)
+            t.x, t.y = app(td['x'], td['y'])
             t.rotation = td['rot']
             t.font_size_grid = max(0.1, self._clean_float(td['font'] * font_factor))
 
@@ -6803,6 +6822,23 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         }
         return mapping.get(mode, mapping[OriginMode.CENTER.value])
 
+    def body_anchor_point_oriented(self, body: SymbolBodyModel, mode: str):
+        """BODY origin anchor in grid coordinates, respecting BODY rotation.
+
+        Imported/template bodies may already have a rotation.  Non-center
+        anchors must be taken from the rotated visual BODY, otherwise every
+        reset/transform uses the wrong corner and pins/attributes drift.
+        """
+        try:
+            raw_x, raw_y = self.body_anchor_point(body, mode)
+            rot = float(getattr(body, 'rotation', 0.0) or 0.0)
+            if mode == OriginMode.CENTER.value or abs(rot) < 1e-9:
+                return (raw_x, raw_y)
+            cx, cy = self._body_center_grid(body)
+            return self._rot_point(raw_x, raw_y, cx, cy, rot)
+        except Exception:
+            return self.body_anchor_point(body, mode)
+
     def shift_unit_geometry(self, unit: SymbolUnitModel, dx: float, dy: float):
         unit.body.x += dx
         unit.body.y += dy
@@ -6825,7 +6861,7 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         # The red format guide is drawn relative to that origin, depending on the
         # selected origin mode.  This keeps split-parts independent and prevents
         # global origin-reset side effects.
-        ax, ay = self.body_anchor_point(unit.body, mode)
+        ax, ay = self.body_anchor_point_oriented(unit.body, mode)
         if abs(ax) > 1e-9 or abs(ay) > 1e-9:
             self.shift_unit_geometry(unit, -ax, -ay)
         self.dock_pins_to_body(unit)
@@ -6845,7 +6881,7 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
     def reset_origin_to_selected_anchor(self, mode: str | None = None):
         mode = mode or (self.origin_combo.currentText() if hasattr(self, 'origin_combo') else OriginMode.CENTER.value)
         old_mode = getattr(self.symbol, 'origin', OriginMode.CENTER.value)
-        ax, ay = self.body_anchor_point(self.current_unit.body, mode)
+        ax, ay = self.body_anchor_point_oriented(self.current_unit.body, mode)
         # Even if the mode is unchanged, the same command is useful after the body was moved accidentally:
         # it pulls the chosen body anchor back to the canvas origin.
         if abs(ax) < 1e-9 and abs(ay) < 1e-9 and old_mode == mode:
@@ -6860,7 +6896,7 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         if getattr(self.symbol, 'kind', None) != SymbolKind.SPLIT.value:
             units = [self.current_unit]
         for unit in units:
-            uax, uay = self.body_anchor_point(unit.body, mode)
+            uax, uay = self.body_anchor_point_oriented(unit.body, mode)
             if abs(uax) > 1e-9 or abs(uay) > 1e-9:
                 self.shift_unit_geometry(unit, -uax, -uay)
             self.dock_pins_to_body(unit)
