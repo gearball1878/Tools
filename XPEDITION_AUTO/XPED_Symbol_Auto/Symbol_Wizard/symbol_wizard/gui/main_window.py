@@ -18246,3 +18246,387 @@ try:
             TemplateEditorDialog._transform_unit_as_body_group = _sw96_transform_unit_as_body_group
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# SW98 final synchronization: one Symbol-1-compatible BODY resize path for
+# native symbols and template/import BODY artwork.
+#
+# This intentionally overrides the historical patch chain at the very end of
+# the module.  The old chain remains for non-scale transforms, but all BODY
+# width/height and Scale +/- operations now enter the same code path.
+# ---------------------------------------------------------------------------
+def _sw98_float(v, default=0.0):
+    try:
+        return float(v)
+    except Exception:
+        return float(default)
+
+
+def _sw98_clean(v):
+    try:
+        v = round(float(v), 9)
+        return 0.0 if abs(v) < 1e-9 else v
+    except Exception:
+        return v
+
+
+def _sw98_step(self):
+    try:
+        return max(0.001, float(self._edit_grid_step()))
+    except Exception:
+        try:
+            return max(0.001, float(getattr(self, 'edit_grid_step', 1.0)))
+        except Exception:
+            return 1.0
+
+
+def _sw98_snap(self, value, minimum=None):
+    step = _sw98_step(self)
+    try:
+        out = round(float(value) / step) * step
+    except Exception:
+        out = float(minimum if minimum is not None else 0.0)
+    if minimum is not None:
+        out = max(float(minimum), out)
+    return _sw98_clean(out)
+
+
+def _sw98_current_unit(self):
+    try:
+        return self.current_unit
+    except Exception:
+        return getattr(self, 'unit', None)
+
+
+def _sw98_selected_model_ids(self):
+    ids = set()
+    try:
+        for it in self.scene.selectedItems():
+            m = getattr(it, 'model', None)
+            if m is not None:
+                ids.add(id(m))
+    except Exception:
+        pass
+    return ids
+
+
+def _sw98_restore_selection(self, ids):
+    if not ids:
+        return
+    try:
+        self.scene.blockSignals(True)
+        self.scene.clearSelection()
+        for it in self.scene.items():
+            m = getattr(it, 'model', None)
+            if m is not None and id(m) in ids:
+                it.setSelected(True)
+    except Exception:
+        pass
+    finally:
+        try:
+            self.scene.blockSignals(False)
+        except Exception:
+            pass
+    try:
+        self.refresh_properties()
+    except Exception:
+        pass
+
+
+def _sw98_move_pin_owned_texts(pin, dx, dy):
+    for ax, ay in (('label_x', 'label_y'), ('number_x', 'number_y')):
+        try:
+            if getattr(pin, ax, None) is not None and getattr(pin, ay, None) is not None:
+                setattr(pin, ax, _sw98_clean(_sw98_float(getattr(pin, ax)) + dx))
+                setattr(pin, ay, _sw98_clean(_sw98_float(getattr(pin, ay)) + dy))
+        except Exception:
+            pass
+    for tm in (getattr(pin, 'attribute_texts', {}) or {}).values():
+        try:
+            tm.x = _sw98_clean(_sw98_float(tm.x) + dx)
+            tm.y = _sw98_clean(_sw98_float(tm.y) + dy)
+        except Exception:
+            pass
+
+
+def _sw98_body_graphics(self, unit):
+    out = []
+    try:
+        for gr in getattr(unit, 'graphics', []) or []:
+            role = str(getattr(gr, 'graphic_role', '') or '').lower()
+            if getattr(gr, 'locked_to_body', False) or role in ('body', 'template_body', 'imported_body'):
+                out.append(gr)
+    except Exception:
+        pass
+    return out
+
+
+def _sw98_capture_body_resize_state(self, body=None, unit=None):
+    u = unit or _sw98_current_unit(self)
+    if u is None:
+        return {}
+    b = body or getattr(u, 'body', None)
+    if b is None:
+        return {}
+    return {
+        'x': _sw98_float(getattr(b, 'x', 0.0)),
+        'y': _sw98_float(getattr(b, 'y', 0.0)),
+        'w': max(1e-9, abs(_sw98_float(getattr(b, 'width', 1.0), 1.0))),
+        'h': max(1e-9, abs(_sw98_float(getattr(b, 'height', 1.0), 1.0))),
+        'pins': [(p, _sw98_float(getattr(p, 'x', 0.0)), _sw98_float(getattr(p, 'y', 0.0)),
+                  _sw98_float(getattr(p, 'length', 1.0), 1.0), str(getattr(p, 'side', PinSide.LEFT.value) or PinSide.LEFT.value),
+                  bool(getattr(p, 'auto_dock', True))) for p in getattr(u, 'pins', []) or []],
+        'texts': [(t, _sw98_float(getattr(t, 'x', 0.0)), _sw98_float(getattr(t, 'y', 0.0)),
+                   _sw98_float(getattr(t, 'font_size_grid', 0.75), 0.75)) for t in getattr(u, 'texts', []) or []],
+        'attributes': [(t, _sw98_float(getattr(t, 'x', 0.0)), _sw98_float(getattr(t, 'y', 0.0)),
+                        _sw98_float(getattr(t, 'font_size_grid', 0.75), 0.75)) for t in (getattr(b, 'attribute_texts', {}) or {}).values()],
+        'graphics': [(gr, _sw98_float(getattr(gr, 'x', 0.0)), _sw98_float(getattr(gr, 'y', 0.0)),
+                      _sw98_float(getattr(gr, 'w', 0.0)), _sw98_float(getattr(gr, 'h', 0.0)),
+                      getattr(gr, 'ctrl_x', None), getattr(gr, 'ctrl_y', None),
+                      _sw98_float(getattr(gr, 'curve_radius', 0.0), 0.0)) for gr in getattr(u, 'graphics', []) or []],
+    }
+
+
+def _sw98_apply_body_resize_state(self, start_state, body):
+    u = _sw98_current_unit(self)
+    if u is None or body is None:
+        return
+    old_x = _sw98_float(start_state.get('x', getattr(body, 'x', 0.0)))
+    old_y = _sw98_float(start_state.get('y', getattr(body, 'y', 0.0)))
+    old_w = max(1e-9, abs(_sw98_float(start_state.get('w', getattr(body, 'width', 1.0)), 1.0)))
+    old_h = max(1e-9, abs(_sw98_float(start_state.get('h', getattr(body, 'height', 1.0)), 1.0)))
+    new_x = _sw98_float(getattr(body, 'x', old_x))
+    new_y = _sw98_float(getattr(body, 'y', old_y))
+    new_w = max(_sw98_step(self), abs(_sw98_float(getattr(body, 'width', old_w), old_w)))
+    new_h = max(_sw98_step(self), abs(_sw98_float(getattr(body, 'height', old_h), old_h)))
+    sx = new_w / old_w
+    sy = new_h / old_h
+    # Font/pin length scale follows the average so non-proportional property edits
+    # do not explode labels. Scale +/- normally supplies a proportional target.
+    font_factor = max(0.1, (abs(sx) + abs(sy)) / 2.0)
+
+    def map_x(x):
+        return _sw98_snap(self, new_x + (_sw98_float(x) - old_x) * sx)
+
+    def map_y(y):
+        return _sw98_snap(self, new_y + (_sw98_float(y) - old_y) * sy)
+
+    body.x = _sw98_snap(self, new_x)
+    body.y = _sw98_snap(self, new_y)
+    body.width = _sw98_snap(self, new_w, _sw98_step(self))
+    body.height = _sw98_snap(self, new_h, _sw98_step(self))
+
+    for p, px, py, plen, side, was_docked in start_state.get('pins', []) or []:
+        try:
+            old_px = _sw98_float(getattr(p, 'x', px))
+            old_py = _sw98_float(getattr(p, 'y', py))
+            docked = bool(getattr(p, 'auto_dock', was_docked))
+            side = str(getattr(p, 'side', side) or side).lower()
+            if docked:
+                if side == PinSide.RIGHT.value:
+                    nx, ny = body.x + body.width, map_y(py)
+                elif side == PinSide.TOP.value:
+                    nx, ny = map_x(px), body.y
+                elif side == PinSide.BOTTOM.value:
+                    nx, ny = map_x(px), body.y - body.height
+                else:
+                    p.side = PinSide.LEFT.value
+                    nx, ny = body.x, map_y(py)
+            else:
+                # Loose pins are independent of hard BODY re-docking but still
+                # keep their relative location when the selected BODY is scaled
+                # as a complete Symbol-1 group.
+                nx, ny = map_x(px), map_y(py)
+            p.x = _sw98_snap(self, nx)
+            p.y = _sw98_snap(self, ny)
+            p.length = max(_sw98_step(self), _sw98_clean(_sw98_float(plen, 1.0) * font_factor))
+            _sw98_move_pin_owned_texts(p, p.x - old_px, p.y - old_py)
+        except Exception:
+            pass
+
+    for t, tx, ty, fs in start_state.get('texts', []) or []:
+        try:
+            t.x = map_x(tx)
+            t.y = map_y(ty)
+            t.font_size_grid = max(0.1, _sw98_clean(_sw98_float(fs, 0.75) * font_factor))
+        except Exception:
+            pass
+    for t, tx, ty, fs in start_state.get('attributes', []) or []:
+        try:
+            t.x = map_x(tx)
+            t.y = map_y(ty)
+            t.font_size_grid = max(0.1, _sw98_clean(_sw98_float(fs, 0.75) * font_factor))
+        except Exception:
+            pass
+    for gr, gx, gy, gw, gh, cx, cy, cr in start_state.get('graphics', []) or []:
+        try:
+            gr.x = map_x(gx)
+            gr.y = map_y(gy)
+            # Do not normalize signs. Mentor/template line vectors may be negative;
+            # preserving the sign prevents counter-running imported artwork.
+            gr.w = _sw98_clean(_sw98_float(gw) * sx)
+            gr.h = _sw98_clean(_sw98_float(gh) * sy)
+            if cx is not None:
+                gr.ctrl_x = _sw98_clean(_sw98_float(cx) * sx)
+            if cy is not None:
+                gr.ctrl_y = _sw98_clean(_sw98_float(cy) * sy)
+            gr.curve_radius = _sw98_clean(_sw98_float(cr, 0.0) * font_factor)
+        except Exception:
+            pass
+
+    try:
+        self._invalidate_body_group_transform_cache(u)
+    except Exception:
+        pass
+
+
+def _sw98_resize_body_like_symbol1(self, body, new_w=None, new_h=None, *, keep_aspect=False, push_undo=True, refresh=True):
+    if body is None:
+        return
+    old_w = max(1e-9, abs(_sw98_float(getattr(body, 'width', 1.0), 1.0)))
+    old_h = max(1e-9, abs(_sw98_float(getattr(body, 'height', 1.0), 1.0)))
+    if keep_aspect:
+        if new_w is not None:
+            factor = _sw98_float(new_w, old_w) / old_w
+        elif new_h is not None:
+            factor = _sw98_float(new_h, old_h) / old_h
+        else:
+            factor = 1.0
+        new_w = old_w * factor
+        new_h = old_h * factor
+    else:
+        new_w = old_w if new_w is None else _sw98_float(new_w, old_w)
+        new_h = old_h if new_h is None else _sw98_float(new_h, old_h)
+    new_w = _sw98_snap(self, new_w, _sw98_step(self))
+    new_h = _sw98_snap(self, new_h, _sw98_step(self))
+    if abs(new_w - old_w) < 1e-9 and abs(new_h - old_h) < 1e-9:
+        return
+    if push_undo:
+        try:
+            self.push_undo_state()
+        except Exception:
+            pass
+    selected_ids = _sw98_selected_model_ids(self)
+    try:
+        self._selection_restore_ids = set(selected_ids)
+    except Exception:
+        pass
+    st = _sw98_capture_body_resize_state(self, body)
+    body.width = new_w
+    body.height = new_h
+    _sw98_apply_body_resize_state(self, st, body)
+    try:
+        self.dirty = True
+    except Exception:
+        pass
+    if refresh:
+        try:
+            self.update_current_unit_canvas_positions()
+        except Exception:
+            pass
+        try:
+            self.update_attribute_items_for_unit()
+        except Exception:
+            pass
+        try:
+            self.rebuild_tree(); self.rebuild_pin_table()
+        except Exception:
+            pass
+        _sw98_restore_selection(self, selected_ids)
+        try:
+            QTimer.singleShot(0, self.refresh_properties)
+        except Exception:
+            pass
+
+
+def _sw98_set_body_width_grid(self, body, value):
+    return _sw98_resize_body_like_symbol1(self, body, new_w=value, new_h=getattr(body, 'height', None), keep_aspect=False)
+
+
+def _sw98_set_body_height_grid(self, body, value):
+    return _sw98_resize_body_like_symbol1(self, body, new_w=getattr(body, 'width', None), new_h=value, keep_aspect=False)
+
+
+def _sw98_scale_selected_grid(self, direction:int):
+    try:
+        self.set_tool(DrawTool.SELECT.value)
+    except Exception:
+        pass
+    try:
+        body_selected = bool(self._selected_body_active())
+    except Exception:
+        body_selected = False
+    if body_selected:
+        body = _sw98_current_unit(self).body
+        step = _sw98_step(self)
+        old_w = max(step, abs(_sw98_float(getattr(body, 'width', 1.0), 1.0)))
+        # Scale +/- keeps the Symbol-1 aspect ratio and then snaps both axes to
+        # the edit grid. This is the same visible behaviour for native and
+        # imported/template bodies.
+        target_w = max(step, old_w + (step if int(direction) > 0 else -step))
+        return _sw98_resize_body_like_symbol1(self, body, new_w=target_w, keep_aspect=True)
+    # Non-body objects keep their item-level transform behaviour.
+    try:
+        return _sw98_prev_scale_selected_grid(self, direction)
+    except Exception:
+        try:
+            return self.scale_selected(1.0 + (0.1 if int(direction) > 0 else -0.1))
+        except Exception:
+            return None
+
+
+def _sw98_scale_selected(self, factor):
+    try:
+        self.set_tool(DrawTool.SELECT.value)
+    except Exception:
+        pass
+    try:
+        body_selected = bool(self._selected_body_active())
+    except Exception:
+        body_selected = False
+    if body_selected:
+        body = _sw98_current_unit(self).body
+        old_w = max(_sw98_step(self), abs(_sw98_float(getattr(body, 'width', 1.0), 1.0)))
+        return _sw98_resize_body_like_symbol1(self, body, new_w=old_w * _sw98_float(factor, 1.0), keep_aspect=True)
+    try:
+        return _sw98_prev_scale_selected(self, factor)
+    except Exception:
+        selected_ids = _sw98_selected_model_ids(self)
+        try:
+            self.push_undo_state()
+        except Exception:
+            pass
+        for it in list(getattr(self, 'scene', None).selectedItems() if hasattr(self, 'scene') else []):
+            try:
+                if hasattr(it, 'scale_by'):
+                    it.scale_by(float(factor))
+            except Exception:
+                pass
+        try:
+            self.schedule_scene_refresh(visual_only=True)
+        except Exception:
+            pass
+        _sw98_restore_selection(self, selected_ids)
+        return None
+
+
+try:
+    _sw98_prev_scale_selected_grid = getattr(MainWindow, 'scale_selected_grid', None)
+    _sw98_prev_scale_selected = getattr(MainWindow, 'scale_selected', None)
+    MainWindow._snapshot_body_resize_state = _sw98_capture_body_resize_state
+    MainWindow._resize_body_like_symbol1 = _sw98_resize_body_like_symbol1
+    MainWindow.scale_current_unit_children_from_body_resize = _sw98_apply_body_resize_state
+    MainWindow._set_body_width_grid = _sw98_set_body_width_grid
+    MainWindow._set_body_height_grid = _sw98_set_body_height_grid
+    MainWindow.scale_selected_grid = _sw98_scale_selected_grid
+    MainWindow.scale_selected = _sw98_scale_selected
+    if 'TemplateEditorDialog' in globals():
+        TemplateEditorDialog._snapshot_body_resize_state = _sw98_capture_body_resize_state
+        TemplateEditorDialog._resize_body_like_symbol1 = _sw98_resize_body_like_symbol1
+        TemplateEditorDialog.scale_current_unit_children_from_body_resize = _sw98_apply_body_resize_state
+        TemplateEditorDialog._set_body_width_grid = _sw98_set_body_width_grid
+        TemplateEditorDialog._set_body_height_grid = _sw98_set_body_height_grid
+        TemplateEditorDialog.scale_selected_grid = _sw98_scale_selected_grid
+        TemplateEditorDialog.scale_selected = _sw98_scale_selected
+except Exception:
+    pass
