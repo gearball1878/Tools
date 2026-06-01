@@ -4620,12 +4620,22 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
             k = it.data(0)
             if k == 'GRAPHIC':
                 m.style.stroke = color
-            elif k in ('BODY', 'PIN', 'TEXT', 'ATTR_REF_DES', 'ATTR_BODY'):
+            elif k == 'BODY':
+                # BODY style is visible through body-owned graphics for imported/template bodies.
+                # Keep the logical BODY style and all locked BODY primitives in sync.
+                m.color = tuple(color)
+                for gr in self._body_owned_graphics(m):
+                    st = getattr(gr, 'style', None)
+                    if st is not None:
+                        st.stroke = tuple(color)
+            elif k in ('PIN', 'TEXT', 'ATTR_REF_DES', 'ATTR_BODY'):
                 m.color = color
                 if hasattr(it, 'apply_text_from_model'):
                     it.apply_text_from_model()
                 if k in ('ATTR_REF_DES', 'ATTR_BODY'):
                     self._sync_body_font_from_attribute_text(it)
+        self.dirty = True
+        self.update_current_unit_canvas_positions()
         self.schedule_scene_refresh(visual_only=True)
 
     def _sync_body_font_from_attribute_text(self, item):
@@ -5450,15 +5460,38 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
             self.apply_color_to_selected((c.red(), c.green(), c.blue()))
 
     def apply_line_defaults(self):
+        selected = list(self.scene.selectedItems()) if hasattr(self, 'scene') else []
+        if not selected:
+            return
         self.push_undo_state()
-        for it in self.scene.selectedItems():
+        style = self.line_style.currentText()
+        width = float(self.line_width.value())
+        for it in selected:
             if it.data(0) == 'PIN':
-                it.model.line_style = self.line_style.currentText(); it.model.line_width = self.line_width.value(); it.model.color = self.default_color
+                it.model.line_style = style
+                it.model.line_width = width
+                it.model.color = self.default_color
             elif it.data(0) == 'GRAPHIC':
-                it.model.style.line_style = self.line_style.currentText(); it.model.style.line_width = self.line_width.value(); it.model.style.stroke = self.default_color
+                it.model.style.line_style = style
+                it.model.style.line_width = width
+                it.model.style.stroke = self.default_color
             elif it.data(0) == 'BODY':
-                it.model.line_style = self.line_style.currentText(); it.model.line_width = self.line_width.value(); it.model.color = self.default_color
-        self.schedule_scene_refresh()
+                body = it.model
+                body.line_style = style
+                body.line_width = width
+                body.color = self.default_color
+                # Imported/template bodies are rendered by locked GraphicModel primitives.
+                # Applying the toolbar style must update those primitives as well, otherwise
+                # the toolbar appears non-functional while the BODY is selected.
+                for gr in self._body_owned_graphics(body):
+                    st = getattr(gr, 'style', None)
+                    if st is not None:
+                        st.line_style = style
+                        st.line_width = width
+                        st.stroke = self.default_color
+        self.dirty = True
+        self.update_current_unit_canvas_positions()
+        self.schedule_scene_refresh(visual_only=True)
 
     def add_pin(self, side, x=None, y=None):
         self.push_undo_state()
