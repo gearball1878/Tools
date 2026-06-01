@@ -5917,8 +5917,13 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
                     try: setattr(obj, attr, self._clean_float(getattr(obj, attr)))
                     except Exception: pass
         if refresh:
+            # Do NOT regenerate BODY attribute text items during a group transform.
+            # Regeneration recalculates default positions from BODY bounds for
+            # imported/templates and breaks the local BODY-group transform.
+            # The TextItem instances already reference the transformed TextModel
+            # objects, so updating their canvas positions is sufficient and keeps
+            # attributes rigidly attached to the group.
             self.update_current_unit_canvas_positions()
-            self.update_attribute_items_for_unit()
             self.rebuild_tree(); self.rebuild_pin_table()
 
     def _transform_unit_as_body_group(self, op, value=None, refresh=True):
