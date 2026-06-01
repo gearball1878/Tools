@@ -12029,3 +12029,226 @@ try:
         _cls._set = _lh45_set_safe
 except Exception:
     pass
+
+# --- LH46 robustness patch -------------------------------------------------
+# Fixes:
+# - Property panel spinbox arrow buttons / combo / checkbox callbacks are guarded
+#   against stale Qt widgets and do not synchronously rebuild the panel.
+# - Toolbar Scale +/- and property edits restore the exact current selection view
+#   instead of switching to a multi-selection message.
+# - BODY scaling restores only the BODY selection and never selects pins/body-owned
+#   helper graphics as a side effect.
+
+def _lh46_selected_signature(self):
+    sig = []
+    try:
+        for it in self.scene.selectedItems():
+            kind = it.data(0)
+            model = getattr(it, 'model', None)
+            body_model = getattr(it, '_body_model', None)
+            sig.append((str(kind), id(model) if model is not None else None, id(body_model) if body_model is not None else None))
+    except Exception:
+        pass
+    return sig
+
+
+def _lh46_restore_selection_signature(self, sig=None):
+    sig = list(sig or getattr(self, '_lh46_selection_signature', []) or [])
+    model_ids = {s[1] for s in sig if s[1] is not None}
+    body_ids = {s[2] for s in sig if s[2] is not None}
+    body_was_selected = any(s[0] in ('BODY', 'BODY_GRAPHIC') for s in sig)
+    selected_one_body = False
+    try:
+        self.scene.blockSignals(True)
+        for it in self.scene.items():
+            try: it.setSelected(False)
+            except Exception: pass
+        # BODY can be represented by a generated BODY item or by one body-owned
+        # graphic item. Select exactly one visual BODY representative so the
+        # property panel stays on "Selected: BODY" and never flips to multi-edit.
+        if body_was_selected:
+            preferred = None
+            for it in self.scene.items():
+                try:
+                    kind = it.data(0)
+                    m = getattr(it, 'model', None)
+                    bm = getattr(it, '_body_model', None)
+                    if kind == 'BODY' and (id(m) in model_ids or m is getattr(self.current_unit, 'body', None)):
+                        preferred = it; break
+                    if kind == 'BODY_GRAPHIC' and (id(bm) in body_ids or bm is getattr(self.current_unit, 'body', None)) and preferred is None:
+                        preferred = it
+                except Exception:
+                    pass
+            if preferred is not None:
+                try: preferred.setSelected(True); selected_one_body = True
+                except Exception: pass
+        if not selected_one_body:
+            for it in self.scene.items():
+                try:
+                    m = getattr(it, 'model', None)
+                    if m is not None and id(m) in model_ids:
+                        it.setSelected(True)
+                except Exception:
+                    pass
+    finally:
+        try: self.scene.blockSignals(False)
+        except Exception: pass
+    try: self.view.viewport().update()
+    except Exception: pass
+
+
+def _lh46_deferred_restore_only(self, sig=None):
+    sig = list(sig or _lh46_selected_signature(self) or getattr(self, '_lh46_selection_signature', []) or [])
+    self._lh46_selection_signature = sig
+    def run():
+        try: _lh46_restore_selection_signature(self, sig)
+        except Exception: pass
+    try: QTimer.singleShot(0, run)
+    except Exception: run()
+
+
+def _lh46_dbl(self, value, fn, lo=-999, hi=999, step=.1):
+    w = QDoubleSpinBox()
+    w.setRange(lo, hi)
+    w.setSingleStep(step)
+    w.setDecimals(3)
+    w.setKeyboardTracking(False)
+    try: w.setValue(float(value))
+    except Exception: w.setValue(0.0)
+    def safe(v):
+        try:
+            sig = _lh46_selected_signature(self)
+            self._lh46_selection_signature = sig
+            fn(float(v))
+            _lh46_deferred_restore_only(self, sig)
+        except RuntimeError:
+            pass
+        except Exception as e:
+            try: self.statusBar().showMessage(f'Property update failed: {e}', 4000)
+            except Exception: pass
+    w.valueChanged.connect(safe)
+    return w
+
+
+def _lh46_combo(self, items, val, fn):
+    w = QComboBox(); w.addItems(items); w.setCurrentText(str(val))
+    def safe(v):
+        try:
+            sig = _lh46_selected_signature(self); self._lh46_selection_signature = sig
+            fn(v)
+            _lh46_deferred_restore_only(self, sig)
+        except RuntimeError:
+            pass
+        except Exception as e:
+            try: self.statusBar().showMessage(f'Property update failed: {e}', 4000)
+            except Exception: pass
+    w.currentTextChanged.connect(safe)
+    return w
+
+
+def _lh46_check(self, value, fn):
+    w = QCheckBox(); w.setChecked(bool(value))
+    def safe(v):
+        try:
+            sig = _lh46_selected_signature(self); self._lh46_selection_signature = sig
+            fn(bool(v))
+            _lh46_deferred_restore_only(self, sig)
+        except RuntimeError:
+            pass
+        except Exception as e:
+            try: self.statusBar().showMessage(f'Property update failed: {e}', 4000)
+            except Exception: pass
+    w.toggled.connect(safe)
+    return w
+
+
+def _lh46_set_safe(self, m, a, v):
+    sig = _lh46_selected_signature(self) or getattr(self, '_lh46_selection_signature', [])
+    try: self.push_undo_state()
+    except Exception: pass
+    try:
+        if a == 'rotation': v = (round(float(v) / 15.0) * 15.0) % 360
+        setattr(m, a, v)
+        self.dirty = True
+        try: self.update_current_unit_canvas_positions()
+        except Exception: pass
+        try: self.schedule_scene_refresh(visual_only=True)
+        except Exception:
+            try: self.scene.update()
+            except Exception: pass
+    except Exception as e:
+        try: self.statusBar().showMessage(f'Property update failed: {e}', 4000)
+        except Exception: pass
+    _lh46_deferred_restore_only(self, sig)
+
+
+def _lh46_resize_body_geometry(self, new_w=None, new_h=None, refresh=True, anchor_bounds=None):
+    sig = _lh46_selected_signature(self) or getattr(self, '_lh46_selection_signature', [])
+    # Reuse the LH45 geometry implementation, but afterwards force exact BODY
+    # selection restore and deliberately avoid rebuilding the property panel.
+    r = _lh45_resize_body_geometry(self, new_w=new_w, new_h=new_h, refresh=refresh, anchor_bounds=anchor_bounds)
+    _lh46_deferred_restore_only(self, sig)
+    return r
+
+
+def _lh46_transform_unit_as_body_group(self, op, value=None, refresh=True):
+    sig = _lh46_selected_signature(self)
+    if op in ('scale', 'scale_x_to', 'scale_y_to'):
+        b = self.current_unit.body
+        cur_w = float(getattr(b, 'width', 1.0) or 1.0); cur_h = float(getattr(b, 'height', 1.0) or 1.0)
+        if op == 'scale_x_to': r = _lh46_resize_body_geometry(self, new_w=float(value), new_h=None, refresh=refresh)
+        elif op == 'scale_y_to': r = _lh46_resize_body_geometry(self, new_w=None, new_h=float(value), refresh=refresh)
+        else:
+            f = float(value or 1.0); r = _lh46_resize_body_geometry(self, new_w=cur_w * f, new_h=cur_h * f, refresh=refresh)
+        _lh46_deferred_restore_only(self, sig)
+        return r
+    if _lh44_prev_transform_unit_as_body_group is not None:
+        r = _lh44_prev_transform_unit_as_body_group(self, op, value, refresh)
+        _lh46_deferred_restore_only(self, sig)
+        return r
+
+
+def _lh46_scale_selected_grid(self, direction: int):
+    sig = _lh46_selected_signature(self)
+    try: self.set_tool(DrawTool.SELECT.value)
+    except Exception: pass
+    if self._selected_body_active():
+        b = self.current_unit.body; step = _lh44_edit_step(self)
+        try: self.push_undo_state()
+        except Exception: pass
+        r = _lh46_resize_body_geometry(self, float(b.width) + direction * step, float(b.height) + direction * step, refresh=True)
+        _lh46_deferred_restore_only(self, sig)
+        return r
+    try:
+        if _lh44_prev_scale_selected_grid is not None:
+            r = _lh44_prev_scale_selected_grid(self, direction)
+        else:
+            r = self.scale_selected(1.0 + (0.1 if direction > 0 else -0.1))
+    finally:
+        _lh46_deferred_restore_only(self, sig)
+    return r
+
+
+def _lh46_scale_current_unit_children_from_body_resize(self, start_state, body):
+    sig = _lh46_selected_signature(self) or getattr(self, '_lh46_selection_signature', [])
+    try:
+        old_bounds = (float(start_state.get('x', body.x)), float(start_state.get('y', body.y)),
+                      max(float(start_state.get('w', body.width)), 1e-9), max(float(start_state.get('h', body.height)), 1e-9))
+        return _lh46_resize_body_geometry(self, new_w=float(body.width), new_h=float(body.height), refresh=True, anchor_bounds=old_bounds)
+    except Exception as e:
+        try: self.statusBar().showMessage(f'Canvas BODY scale failed: {e}', 4000)
+        except Exception: pass
+    finally:
+        _lh46_deferred_restore_only(self, sig)
+
+try:
+    for _cls in (MainWindow, TemplateEditorDialog):
+        _cls._dbl = _lh46_dbl
+        _cls._combo = _lh46_combo
+        _cls._check = _lh46_check
+        _cls._set = _lh46_set_safe
+        _cls._transform_unit_as_body_group = _lh46_transform_unit_as_body_group
+        _cls.scale_selected_grid = _lh46_scale_selected_grid
+        _cls.scale_current_unit_children_from_body_resize = _lh46_scale_current_unit_children_from_body_resize
+except Exception:
+    pass
