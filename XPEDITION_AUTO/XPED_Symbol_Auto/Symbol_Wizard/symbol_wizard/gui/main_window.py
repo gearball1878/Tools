@@ -13618,7 +13618,28 @@ def _lh55_scale_selected(self, factor):
 
 
 def _lh55_group_selected_graphics(self):
-    return
+    models = []
+    for it in _lh55_selected_real_items(self):
+        try:
+            if it.data(0) == 'GRAPHIC' and getattr(it, 'model', None) is not None and _lh55_is_user_graphic(self, it.model):
+                if it.model not in models:
+                    models.append(it.model)
+        except Exception:
+            pass
+    if len(models) < 2:
+        try: self.statusBar().showMessage('Bitte mindestens zwei Grafikobjekte zum Gruppieren auswählen.', 3500)
+        except Exception: pass
+        return
+    try: self.push_undo_state()
+    except Exception: pass
+    import uuid as _lh55_uuid
+    gid = 'G' + _lh55_uuid.uuid4().hex[:8]
+    for gr in models:
+        _lh55_set_graphic_group_id(gr, gid)
+    try: self.dirty = True; self.refresh_properties(); self.rebuild_tree()
+    except Exception: pass
+    try: self.statusBar().showMessage(f'Grafikgruppe erstellt ({len(models)} Objekte).', 3500)
+    except Exception: pass
 
 
 def _lh55_ungroup_selected_graphics(self):
@@ -13965,7 +13986,7 @@ def _lh56_group_selected_graphics(self):
     except Exception:
         pass
     try:
-        self.statusBar().showMessage(f'Gruppierung deaktiviert: {len(models)} Objekte.', 3500)
+        self.statusBar().showMessage(f'Grafikgruppe erstellt: {len(models)} Objekte.', 3500)
     except Exception:
         pass
 
@@ -14288,7 +14309,7 @@ def _lh57_group_selected_graphics(self):
         self.rebuild_tree()
         self.refresh_properties()
         self.update_current_unit_canvas_positions()
-        self.statusBar().showMessage(f'Gruppierung deaktiviert: {len(models)} Objekte.', 4000)
+        self.statusBar().showMessage(f'Grafikgruppe erstellt: {len(models)} Objekte.', 4000)
     except Exception:
         pass
 
@@ -14691,7 +14712,7 @@ def _lh58_group_selected_graphics(self):
         self.update_current_unit_canvas_positions()
         self.rebuild_tree()
         self.refresh_properties()
-        self.statusBar().showMessage(f'Gruppierung deaktiviert: {len(models)} Objekte.', 4000)
+        self.statusBar().showMessage(f'Grafikgruppe erstellt: {len(models)} Objekte.', 4000)
     except Exception:
         pass
 
@@ -14968,7 +14989,7 @@ def _lh59_group_selected_graphics(self):
     except Exception: pass
     try: self.scene.update()
     except Exception: pass
-    try: self.statusBar().showMessage(f'Gruppierung deaktiviert: {len(clean)} Objekte als 1 Objekt.', 4000)
+    try: self.statusBar().showMessage(f'Grafikgruppe erstellt: {len(clean)} Objekte als 1 Objekt.', 4000)
     except Exception: pass
 
 
@@ -15416,7 +15437,7 @@ def _lh61_group_selected_graphics(self):
         try: self.scene.blockSignals(False)
         except Exception: pass
     _lh61_update_scene(self)
-    try: self.statusBar().showMessage(f'Gruppierung deaktiviert: {len(clean)} Objekte als 1 Objekt.', 4000)
+    try: self.statusBar().showMessage(f'Grafikgruppe erstellt: {len(clean)} Objekte als 1 Objekt.', 4000)
     except Exception: pass
 
 
@@ -17874,5 +17895,146 @@ try:
         try: _v82_remove_group_ui_duplicates(self)
         except Exception: pass
     MainWindow.__init__ = _v82_init
+except Exception:
+    pass
+
+# ---------------------------------------------------------------------------
+# V84: remove grouping feature completely from user-facing UI/commands.
+# Requested: no Group/Ungroup entries in Ribbon/toolbars, Edit menu, shortcuts
+# or context entry points.  Keep legacy data fields harmless, but make the
+# commands inert and remove all actions after the older monkey patches finished
+# building the window.
+# ---------------------------------------------------------------------------
+def _v84_action_is_grouping(action):
+    try:
+        text = str(action.text() or '').replace('&', '').strip().lower()
+    except Exception:
+        text = ''
+    try:
+        tip = str(action.toolTip() or '').lower()
+    except Exception:
+        tip = ''
+    try:
+        sc = action.shortcut().toString()
+    except Exception:
+        sc = ''
+    blob = ' '.join([text, tip, sc]).lower()
+    if sc in ('Ctrl+G', 'Ctrl+Shift+G'):
+        return True
+    return ('group graphics' in blob or 'ungroup graphics' in blob or
+            text in ('group', 'ungroup') or 'grafikgruppe' in blob)
+
+
+def _v84_widget_text_is_grouping(widget):
+    try:
+        txt = str(widget.text() or '').replace('&', '').strip().lower()
+    except Exception:
+        txt = ''
+    try:
+        tip = str(widget.toolTip() or '').lower()
+    except Exception:
+        tip = ''
+    blob = (txt + ' ' + tip).lower()
+    return ('group graphics' in blob or 'ungroup graphics' in blob or
+            txt in ('group', 'ungroup') or 'grafikgruppe' in blob)
+
+
+def _v84_remove_grouping_ui(self):
+    # Remove toolbar actions/buttons and complete grouping toolbars.
+    try:
+        for tb in list(self.findChildren(QToolBar)):
+            remove_toolbar = False
+            try:
+                title = str(tb.windowTitle() or '').replace('&', '').strip().lower()
+                if title in ('graphic group', 'group', 'grouping') or 'graphic group' in title:
+                    remove_toolbar = True
+            except Exception:
+                pass
+            try:
+                for action in list(tb.actions()):
+                    if _v84_action_is_grouping(action):
+                        remove_toolbar = True
+                        try: tb.removeAction(action)
+                        except Exception: pass
+                    try:
+                        w = tb.widgetForAction(action)
+                        if w is not None and _v84_widget_text_is_grouping(w):
+                            remove_toolbar = True
+                            try: tb.removeAction(action)
+                            except Exception: pass
+                            try: w.deleteLater()
+                            except Exception: pass
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+            if remove_toolbar:
+                try: self.removeToolBar(tb)
+                except Exception: pass
+                try: tb.deleteLater()
+                except Exception: pass
+    except Exception:
+        pass
+
+    # Remove menu actions everywhere, especially Edit.
+    try:
+        def clean_menu(menu):
+            try:
+                for action in list(menu.actions()):
+                    try:
+                        sub = action.menu()
+                        if sub is not None:
+                            clean_menu(sub)
+                    except Exception:
+                        pass
+                    if _v84_action_is_grouping(action):
+                        try: menu.removeAction(action)
+                        except Exception: pass
+            except Exception:
+                pass
+        mb = self.menuBar()
+        for top in list(mb.actions()):
+            try:
+                m = top.menu()
+                if m is not None:
+                    clean_menu(m)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    # Remove application/window-level shortcuts and actions.
+    try:
+        for action in list(self.actions()):
+            if _v84_action_is_grouping(action):
+                try: self.removeAction(action)
+                except Exception: pass
+    except Exception:
+        pass
+
+
+def _v84_grouping_disabled(self, *args, **kwargs):
+    try:
+        self.statusBar().showMessage('Grouping ist in dieser Version deaktiviert.', 3000)
+    except Exception:
+        pass
+    return None
+
+
+try:
+    MainWindow.group_selected_graphics = _v84_grouping_disabled
+    MainWindow.ungroup_selected_graphics = _v84_grouping_disabled
+except Exception:
+    pass
+
+try:
+    _v84_old_init = MainWindow.__init__
+    def _v84_init(self, *args, **kwargs):
+        _v84_old_init(self, *args, **kwargs)
+        try:
+            _v84_remove_grouping_ui(self)
+        except Exception:
+            pass
+    MainWindow.__init__ = _v84_init
 except Exception:
     pass
