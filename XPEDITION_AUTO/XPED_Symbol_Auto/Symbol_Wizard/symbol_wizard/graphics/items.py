@@ -2126,3 +2126,193 @@ try:
     GraphicItem.hoverMoveEvent = _lh70_line_hover_move
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# Liebherr v71: curved line scaling + robust plain text editing/selection.
+# - Curved lines keep their visible curvature ratio when an endpoint is scaled.
+# - Curve-radius handle works in frozen local coordinates and snaps to edit grid.
+# - Plain TEXT focus/commit is null-scene safe and does not trigger crashes when
+#   the view refreshes while editing or after selecting another object.
+# ---------------------------------------------------------------------------
+try:
+    _lh71_prev_mouse_press = GraphicItem.mousePressEvent
+    _lh71_prev_mouse_move = GraphicItem.mouseMoveEvent
+    _lh71_prev_mouse_release = GraphicItem.mouseReleaseEvent
+except Exception:
+    _lh71_prev_mouse_press = None
+    _lh71_prev_mouse_move = None
+    _lh71_prev_mouse_release = None
+
+
+def _lh71_line_len_px(w, h, g):
+    try:
+        return math.hypot(float(w) * float(g), float(h) * float(g))
+    except Exception:
+        return 0.0
+
+
+def _lh71_snap_grid_units(win, value):
+    try:
+        step = win._edit_grid_step() if hasattr(win, '_edit_grid_step') else 0.5
+        step = max(0.001, float(step or 0.001))
+    except Exception:
+        step = 0.5
+    try:
+        return round(float(value) / step) * step
+    except Exception:
+        return float(value or 0.0)
+
+
+def _lh71_curve_mouse_press(self, event):
+    if event.button() == Qt.LeftButton and self.isSelected():
+        try:
+            if str(getattr(self.model, 'shape', '') or '') == 'line':
+                h = _hit_handle(self._handles(), event.pos())
+                if h == 'curve':
+                    st = self.sceneTransform()
+                    inv, ok = st.inverted()
+                    if not ok:
+                        return _lh71_prev_mouse_press(self, event)
+                    self._lh71_curve_resizing = True
+                    self._lh71_curve_scene_to_start_local = inv
+                    self._lh71_curve_start = {
+                        'curve_radius': _lh68_float(getattr(self.model, 'curve_radius', 0.0), 0.0),
+                        'w': _lh68_float(getattr(self.model, 'w', 0.0), 0.0),
+                        'h': _lh68_float(getattr(self.model, 'h', 0.0), 0.0),
+                    }
+                    event.accept(); return
+        except Exception:
+            pass
+    return _lh71_prev_mouse_press(self, event)
+
+
+def _lh71_curve_mouse_move(self, event):
+    # Dedicated curve handle: use the frozen local frame from press time.  This
+    # prevents the curve apex from jumping when the line is rotated/flipped.
+    if getattr(self, '_lh71_curve_resizing', False):
+        try:
+            win = self.window
+            g = float(win.grid_px)
+            inv = self._lh71_curve_scene_to_start_local
+            p = inv.map(event.scenePos())
+            w = _lh68_float(getattr(self.model, 'w', 0.0), 0.0) * g
+            h = _lh68_float(getattr(self.model, 'h', 0.0), 0.0) * g
+            mid_y = h / 2.0
+            cr = (mid_y - p.y()) / g
+            self.model.curve_radius = _lh71_snap_grid_units(win, cr)
+            try:
+                win.notify_canvas_model_changed()
+            except Exception:
+                try: win.live_refresh()
+                except Exception: pass
+            self.update(); event.accept(); return
+        except Exception:
+            try: self._lh71_curve_resizing = False
+            except Exception: pass
+    return _lh71_prev_mouse_move(self, event)
+
+
+def _lh71_curve_mouse_release(self, event):
+    try:
+        self._lh71_curve_resizing = False
+        self._lh71_curve_scene_to_start_local = None
+        self._lh71_curve_start = None
+    except Exception:
+        pass
+    return _lh71_prev_mouse_release(self, event)
+
+try:
+    GraphicItem.mousePressEvent = _lh71_curve_mouse_press
+    GraphicItem.mouseMoveEvent = _lh71_curve_mouse_move
+    GraphicItem.mouseReleaseEvent = _lh71_curve_mouse_release
+except Exception:
+    pass
+
+# Patch v70 endpoint scaling to keep the curved-line apex proportional.  The
+# existing v70 handler already handles natural endpoint direction; this wrapper
+# records the old line length/curve before the handler, then applies the same
+# uniform endpoint scale to curve_radius afterwards.
+try:
+    _lh71_prev_line_move = GraphicItem.mouseMoveEvent
+
+    def _lh71_line_mouse_move_keep_curve(self, event):
+        if getattr(self, '_lh70_line_resizing', None) and getattr(self, '_lh70_line_start', None) is not None:
+            try:
+                g = float(self.window.grid_px)
+                old_w = _lh68_float(getattr(self, ' _unused', 0.0), 0.0)
+                start = dict(getattr(self, '_lh70_line_start', {}) or {})
+                old_len = _lh71_line_len_px(start.get('w', 0.0), start.get('h', 0.0), g)
+                old_curve = _lh68_float(getattr(self.model, 'curve_radius', 0.0), 0.0)
+                res = _lh71_prev_line_move(self, event)
+                new_len = _lh71_line_len_px(getattr(self.model, 'w', 0.0), getattr(self.model, 'h', 0.0), g)
+                if old_len > 1e-9 and abs(old_curve) > 1e-12:
+                    self.model.curve_radius = _lh71_snap_grid_units(self.window, old_curve * (new_len / old_len))
+                    try:
+                        self.window.notify_canvas_model_changed()
+                    except Exception:
+                        try: self.window.live_refresh()
+                        except Exception: pass
+                    self.update()
+                return res
+            except Exception:
+                pass
+        return _lh71_prev_line_move(self, event)
+
+    GraphicItem.mouseMoveEvent = _lh71_line_mouse_move_keep_curve
+except Exception:
+    pass
+
+# Plain text robustness: commit safely and keep canvas object mode.  The old
+# handlers assumed scene/window always exists during focus changes; after a live
+# refresh that is not always true and plain text could get stuck or crash.
+try:
+    _lh71_prev_text_focus_out = TextItem.focusOutEvent
+    _lh71_prev_text_key_press = TextItem.keyPressEvent
+
+    def _lh71_commit_plain_text(self):
+        try:
+            if not (self.data(0) in ('ATTR_REF_DES', 'ATTR_BODY') or bool(getattr(self.model, '_is_attribute_text', False))):
+                self.model.text = self.toPlainText()
+        except Exception:
+            pass
+        try:
+            self.setTextInteractionFlags(Qt.NoTextInteraction)
+            self.common_flags()
+        except Exception:
+            pass
+        try:
+            sc = self.scene()
+            if sc is not None and hasattr(sc, 'window'):
+                sc.window.notify_canvas_model_changed()
+        except Exception:
+            try:
+                sc = self.scene()
+                if sc is not None and hasattr(sc, 'window'):
+                    sc.window.live_refresh()
+            except Exception:
+                pass
+
+    def _lh71_text_key_press(self, event):
+        try:
+            if self.textInteractionFlags() != Qt.NoTextInteraction and event.key() in (Qt.Key_Return, Qt.Key_Enter) and not (event.modifiers() & Qt.ShiftModifier):
+                _lh71_commit_plain_text(self)
+                self.clearFocus()
+                event.accept(); return
+        except Exception:
+            pass
+        return _lh71_prev_text_key_press(self, event)
+
+    def _lh71_text_focus_out(self, event):
+        try:
+            _lh71_commit_plain_text(self)
+        except Exception:
+            pass
+        try:
+            return QGraphicsTextItem.focusOutEvent(self, event)
+        except Exception:
+            return None
+
+    TextItem.keyPressEvent = _lh71_text_key_press
+    TextItem.focusOutEvent = _lh71_text_focus_out
+except Exception:
+    pass
