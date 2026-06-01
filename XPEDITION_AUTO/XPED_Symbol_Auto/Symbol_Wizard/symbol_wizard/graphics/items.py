@@ -1352,3 +1352,121 @@ try:
     GraphicItem.paint = _lh58_graphic_paint
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# Liebherr v59: paint grouped graphics as one highlighted logical object.
+# Individual group members still draw their geometry, but never their own
+# selection handles; exactly one group bounding box is drawn for the selection.
+# ---------------------------------------------------------------------------
+try:
+    def _lh59_item_gid(model):
+        try:
+            gid = str(getattr(model, 'group_id', '') or '')
+            if gid:
+                return gid
+            role = str(getattr(model, 'graphic_role', '') or '')
+            if role.startswith('user_graphic_group:'):
+                return role.split(':', 1)[1]
+        except Exception:
+            pass
+        return ''
+
+    def _lh59_item_draw_geometry(self, painter):
+        g, m = self.window.grid_px, self.model
+        painter.setPen(pen_for(m.style.stroke, m.style.line_width, m.style.line_style, g))
+        painter.setBrush(QBrush(rgb(m.style.fill)) if m.style.fill else QBrush(Qt.NoBrush))
+        if m.shape in ('line', 'arc'):
+            ctrl_x = getattr(m, 'ctrl_x', None); ctrl_y = getattr(m, 'ctrl_y', None)
+            if ctrl_x is not None and ctrl_y is not None:
+                path = QPainterPath(QPointF(0, 0))
+                path.quadTo(QPointF(float(ctrl_x) * g, -float(ctrl_y) * g), QPointF(m.w * g, -m.h * g))
+                painter.drawPath(path)
+            else:
+                r = float(getattr(m, 'curve_radius', 0.0) or 0.0)
+                if abs(r) > 1e-9:
+                    path = QPainterPath(QPointF(0, 0))
+                    path.quadTo(QPointF(m.w * g / 2, m.h * g / 2 - r * g), QPointF(m.w * g, m.h * g))
+                    painter.drawPath(path)
+                else:
+                    painter.drawLine(QPointF(0, 0), QPointF(m.w * g, m.h * g))
+        elif m.shape == 'rect':
+            painter.drawRect(QRectF(0, 0, m.w * g, m.h * g))
+        elif m.shape in ('ellipse', 'circle'):
+            painter.drawEllipse(QRectF(0, 0, m.w * g, m.h * g))
+
+    def _lh59_item_group_boxes(self, gid):
+        boxes = []
+        try:
+            unit = getattr(self.window, 'current_unit', None)
+            for gr in list(getattr(unit, 'graphics', []) or []):
+                if _lh59_item_gid(gr) != gid:
+                    continue
+                x = float(getattr(gr, 'x', 0.0) or 0.0); y = float(getattr(gr, 'y', 0.0) or 0.0)
+                w = float(getattr(gr, 'w', 0.0) or 0.0); h = float(getattr(gr, 'h', 0.0) or 0.0)
+                x2 = x + w; y2 = y - h
+                boxes.append((min(x, x2), min(y, y2), max(x, x2), max(y, y2), gr))
+        except Exception:
+            pass
+        return boxes
+
+    def _lh59_item_is_group_paint_leader(self, gid):
+        try:
+            # Prefer the first selected item of the group in scene order. This
+            # avoids drawing the group bbox multiple times when all members are
+            # selected as one logical object.
+            selected = []
+            for it in self.scene().selectedItems():
+                try:
+                    if getattr(it, 'data', lambda *_: None)(0) == 'GRAPHIC' and _lh59_item_gid(getattr(it, 'model', None)) == gid:
+                        selected.append(it)
+                except Exception:
+                    pass
+            return bool(selected) and selected[0] is self
+        except Exception:
+            return True
+
+    def _lh59_item_draw_group_highlight(self, painter, gid):
+        boxes = _lh59_item_group_boxes(self, gid)
+        if not boxes:
+            return
+        minx = min(b[0] for b in boxes); miny = min(b[1] for b in boxes)
+        maxx = max(b[2] for b in boxes); maxy = max(b[3] for b in boxes)
+        g = self.window.grid_px
+        # model -> scene: scene_x = x*g, scene_y = -y*g
+        corners_scene = [QPointF(minx*g, -maxy*g), QPointF(maxx*g, -maxy*g), QPointF(maxx*g, -miny*g), QPointF(minx*g, -miny*g)]
+        corners = [self.mapFromScene(p) for p in corners_scene]
+        painter.save()
+        painter.setPen(QPen(QColor(80, 80, 80), 1, Qt.DashLine))
+        painter.setBrush(QBrush(Qt.NoBrush))
+        path = QPainterPath(corners[0])
+        for p in corners[1:]:
+            path.lineTo(p)
+        path.closeSubpath()
+        painter.drawPath(path)
+        s = g * self.handle_size_factor
+        painter.setBrush(QBrush(QColor(255, 255, 255)))
+        for p in corners:
+            painter.drawRect(QRectF(p.x()-s/2, p.y()-s/2, s, s))
+        cx = sum(p.x() for p in corners) / 4.0
+        cy = sum(p.y() for p in corners) / 4.0
+        painter.drawEllipse(QRectF(cx - s/2, cy - 2.2*s, s, s))
+        painter.restore()
+
+    def _lh59_graphic_paint(self, painter, option, widget=None):
+        gid = _lh59_item_gid(getattr(self, 'model', None))
+        if not gid:
+            return _lh58_graphic_prev_paint(self, painter, option, widget) if '_lh58_graphic_prev_paint' in globals() else None
+        _lh59_item_draw_geometry(self, painter)
+        try:
+            group_selected = any(
+                getattr(it, 'data', lambda *_: None)(0) == 'GRAPHIC' and _lh59_item_gid(getattr(it, 'model', None)) == gid and it.isSelected()
+                for it in self.scene().items()
+            )
+        except Exception:
+            group_selected = self.isSelected()
+        if group_selected and _lh59_item_is_group_paint_leader(self, gid):
+            _lh59_item_draw_group_highlight(self, painter, gid)
+
+    GraphicItem.paint = _lh59_graphic_paint
+except Exception:
+    pass

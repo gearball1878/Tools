@@ -14796,3 +14796,346 @@ try:
         _cls.__init__ = _lh58_new_init
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# Liebherr v59: real logical GRAPHIC GROUP selection + BODY-like proportional
+# scaling around the local/group origin.
+# ---------------------------------------------------------------------------
+try:
+    _lh59_prev_scale_selected_grid = MainWindow.scale_selected_grid
+    _lh59_prev_scale_selected = MainWindow.scale_selected
+    _lh59_prev_refresh_properties = MainWindow.refresh_properties
+    _lh59_prev_on_scene_selection_changed = MainWindow.on_scene_selection_changed
+except Exception:
+    _lh59_prev_scale_selected_grid = None
+    _lh59_prev_scale_selected = None
+    _lh59_prev_refresh_properties = None
+    _lh59_prev_on_scene_selection_changed = None
+
+
+def _lh59_gid(gr):
+    try:
+        gid = str(getattr(gr, 'group_id', '') or '')
+        if gid:
+            return gid
+        role = str(getattr(gr, 'graphic_role', '') or '')
+        if role.startswith('user_graphic_group:'):
+            return role.split(':', 1)[1]
+    except Exception:
+        pass
+    return ''
+
+
+def _lh59_set_gid(gr, gid):
+    gid = str(gid or '')
+    try: gr.group_id = gid
+    except Exception: pass
+    try: gr.graphic_role = ('user_graphic_group:' + gid) if gid else 'user_graphic'
+    except Exception: pass
+
+
+def _lh59_is_user_graphic(gr):
+    try:
+        role = str(getattr(gr, 'graphic_role', '') or '').lower()
+        return (not bool(getattr(gr, 'locked_to_body', False))) and role not in ('body', 'template_body', 'imported_body', 'body_graphic')
+    except Exception:
+        return False
+
+
+def _lh59_grid_step(self):
+    try: return max(1e-9, float(self._edit_grid_step()))
+    except Exception: return 0.05
+
+
+def _lh59_snap(self, value):
+    st = _lh59_grid_step(self)
+    try: return float(self._snap_to_edit_grid(float(value), st))
+    except Exception: return round(float(value) / st) * st
+
+
+def _lh59_selected_graphic_items(self):
+    out = []
+    try: items = list(self.scene.selectedItems()) if getattr(self, 'scene', None) else []
+    except Exception: items = []
+    for it in items:
+        try:
+            if it.data(0) == 'GRAPHIC' and getattr(it, 'model', None) is not None and _lh59_is_user_graphic(it.model):
+                out.append(it)
+        except Exception:
+            pass
+    return out
+
+
+def _lh59_all_graphic_items(self):
+    out = []
+    try: items = list(self.scene.items()) if getattr(self, 'scene', None) else []
+    except Exception: items = []
+    for it in items:
+        try:
+            if it.data(0) == 'GRAPHIC' and getattr(it, 'model', None) is not None and _lh59_is_user_graphic(it.model):
+                out.append(it)
+        except Exception:
+            pass
+    return out
+
+
+def _lh59_selected_graphic_models(self, expand_groups=True):
+    selected = []
+    gids = set()
+    for it in _lh59_selected_graphic_items(self):
+        gr = it.model
+        if gr not in selected:
+            selected.append(gr)
+        gid = _lh59_gid(gr)
+        if gid:
+            gids.add(gid)
+    if not selected:
+        return []
+    if not expand_groups or not gids:
+        return selected
+    out = []
+    try: graphics = list(getattr(getattr(self, 'current_unit', None), 'graphics', []) or [])
+    except Exception: graphics = []
+    for gr in graphics:
+        try:
+            gid = _lh59_gid(gr)
+            if gr in selected or (gid and gid in gids):
+                if _lh59_is_user_graphic(gr) and gr not in out:
+                    out.append(gr)
+        except Exception:
+            pass
+    return out
+
+
+def _lh59_bbox(gr):
+    x = float(getattr(gr, 'x', 0.0) or 0.0); y = float(getattr(gr, 'y', 0.0) or 0.0)
+    w = float(getattr(gr, 'w', 0.0) or 0.0); h = float(getattr(gr, 'h', 0.0) or 0.0)
+    x2 = x + w; y2 = y - h
+    return min(x, x2), min(y, y2), max(x, x2), max(y, y2)
+
+
+def _lh59_group_bbox(models):
+    boxes = [_lh59_bbox(g) for g in models]
+    if not boxes: return None
+    return min(b[0] for b in boxes), min(b[1] for b in boxes), max(b[2] for b in boxes), max(b[3] for b in boxes)
+
+
+def _lh59_sync_group_selection(self):
+    """A graphics group is one logical object: selecting one member selects all
+    members, while the property panel/paint code presents one group."""
+    if getattr(self, '_lh59_syncing_group_selection', False):
+        return
+    selected = _lh59_selected_graphic_items(self)
+    gids = {_lh59_gid(it.model) for it in selected if _lh59_gid(it.model)}
+    if not gids:
+        return
+    try:
+        self._lh59_syncing_group_selection = True
+        self.scene.blockSignals(True)
+        for it in _lh59_all_graphic_items(self):
+            try:
+                if _lh59_gid(it.model) in gids:
+                    it.setSelected(True)
+            except Exception:
+                pass
+    finally:
+        try: self.scene.blockSignals(False)
+        except Exception: pass
+        self._lh59_syncing_group_selection = False
+
+
+def _lh59_on_scene_selection_changed(self):
+    try: _lh59_sync_group_selection(self)
+    except Exception: pass
+    if _lh59_prev_on_scene_selection_changed:
+        return _lh59_prev_on_scene_selection_changed(self)
+    try: self.refresh_properties()
+    except Exception: pass
+
+
+def _lh59_group_selected_graphics(self):
+    models = _lh59_selected_graphic_models(self, expand_groups=False)
+    # de-duplicate by object identity
+    clean = []
+    for m in models:
+        if m not in clean:
+            clean.append(m)
+    if len(clean) < 2:
+        try: QMessageBox.information(self, 'Group Graphics', 'Bitte mindestens zwei eingefügte Grafikobjekte auswählen.')
+        except Exception: pass
+        return
+    try: self.push_undo_state()
+    except Exception: pass
+    import uuid as _lh59_uuid
+    gid = 'G' + _lh59_uuid.uuid4().hex[:8]
+    for gr in clean:
+        _lh59_set_gid(gr, gid)
+    try:
+        self.dirty = True
+        self.update_current_unit_canvas_positions()
+    except Exception:
+        pass
+    # Reselect the complete group so the user immediately sees one logical bbox.
+    try:
+        self.scene.blockSignals(True)
+        for it in _lh59_all_graphic_items(self):
+            it.setSelected(_lh59_gid(it.model) == gid)
+    finally:
+        try: self.scene.blockSignals(False)
+        except Exception: pass
+    try: self.rebuild_tree()
+    except Exception: pass
+    try: self.refresh_properties()
+    except Exception: pass
+    try: self.scene.update()
+    except Exception: pass
+    try: self.statusBar().showMessage(f'Grafikgruppe erstellt: {len(clean)} Objekte als 1 Objekt.', 4000)
+    except Exception: pass
+
+
+def _lh59_ungroup_selected_graphics(self):
+    models = _lh59_selected_graphic_models(self, expand_groups=True)
+    if not models:
+        try: QMessageBox.information(self, 'Ungroup Graphics', 'Keine Grafikgruppe ausgewählt.')
+        except Exception: pass
+        return
+    try: self.push_undo_state()
+    except Exception: pass
+    for gr in models:
+        _lh59_set_gid(gr, '')
+    try:
+        self.dirty = True
+        self.update_current_unit_canvas_positions()
+        self.rebuild_tree(); self.refresh_properties(); self.scene.update()
+        self.statusBar().showMessage('Grafikgruppe aufgehoben.', 4000)
+    except Exception:
+        pass
+
+
+def _lh59_apply_graphics_scale(self, direction:int):
+    models = _lh59_selected_graphic_models(self, expand_groups=True)
+    if not models:
+        return False
+    b = _lh59_group_bbox(models)
+    if not b:
+        return False
+    minx, miny, maxx, maxy = b
+    cur_w = maxx - minx; cur_h = maxy - miny
+    if cur_w <= 1e-12 and cur_h <= 1e-12:
+        return False
+    # BODY-like proportional toolbar scaling: one logical grid unit per click,
+    # but all resulting coordinates/dimensions hit the edit grid.
+    dom = max(cur_w, cur_h, _lh59_grid_step(self))
+    target_dom = dom + (1.0 if int(direction) > 0 else -1.0)
+    target_dom = max(_lh59_grid_step(self), _lh59_snap(self, target_dom))
+    factor = target_dom / dom
+    if abs(factor - 1.0) < 1e-12:
+        return True
+    cx = (minx + maxx) / 2.0
+    cy = (miny + maxy) / 2.0
+    min_dim = _lh59_grid_step(self)
+    try: self.push_undo_state()
+    except Exception: pass
+    for gr in models:
+        try:
+            x = float(getattr(gr, 'x', 0.0) or 0.0); y = float(getattr(gr, 'y', 0.0) or 0.0)
+            w = float(getattr(gr, 'w', 0.0) or 0.0); h = float(getattr(gr, 'h', 0.0) or 0.0)
+            shape = str(getattr(gr, 'shape', '') or '').lower()
+            gcx = x + w / 2.0
+            gcy = y - h / 2.0
+            ngcx = _lh59_snap(self, cx + (gcx - cx) * factor)
+            ngcy = _lh59_snap(self, cy + (gcy - cy) * factor)
+            nw = _lh59_snap(self, w * factor)
+            nh = _lh59_snap(self, h * factor)
+            if shape not in ('line', 'arc'):
+                if abs(nw) < min_dim: nw = (1.0 if nw >= 0 else -1.0) * min_dim
+                if abs(nh) < min_dim: nh = (1.0 if nh >= 0 else -1.0) * min_dim
+            else:
+                # Lines/arcs may be vertical or horizontal. Preserve true zero axes.
+                if abs(w) > 1e-12 and abs(nw) < min_dim: nw = (1.0 if w >= 0 else -1.0) * min_dim
+                if abs(h) > 1e-12 and abs(nh) < min_dim: nh = (1.0 if h >= 0 else -1.0) * min_dim
+                if getattr(gr, 'ctrl_x', None) is not None:
+                    gr.ctrl_x = _lh59_snap(self, float(gr.ctrl_x) * factor)
+                if getattr(gr, 'ctrl_y', None) is not None:
+                    gr.ctrl_y = _lh59_snap(self, float(gr.ctrl_y) * factor)
+                if getattr(gr, 'curve_radius', None) not in (None, 0, 0.0):
+                    gr.curve_radius = _lh59_snap(self, float(gr.curve_radius) * factor)
+            gr.w = nw; gr.h = nh
+            gr.x = _lh59_snap(self, ngcx - nw / 2.0)
+            gr.y = _lh59_snap(self, ngcy + nh / 2.0)
+        except Exception:
+            pass
+    try:
+        self.dirty = True
+        self.update_current_unit_canvas_positions()
+    except Exception:
+        try: self.schedule_scene_refresh()
+        except Exception: pass
+    try: _lh59_sync_group_selection(self)
+    except Exception: pass
+    try: self.refresh_properties(); self.rebuild_tree(); self.scene.update()
+    except Exception: pass
+    return True
+
+
+def _lh59_scale_selected_grid(self, direction:int):
+    try:
+        if self._selected_body_active():
+            return _lh59_prev_scale_selected_grid(self, direction) if _lh59_prev_scale_selected_grid else None
+    except Exception:
+        pass
+    if _lh59_apply_graphics_scale(self, int(direction)):
+        return None
+    if _lh59_prev_scale_selected_grid:
+        return _lh59_prev_scale_selected_grid(self, direction)
+
+
+def _lh59_scale_selected(self, factor):
+    try:
+        if self._selected_body_active():
+            return _lh59_prev_scale_selected(self, factor) if _lh59_prev_scale_selected else None
+    except Exception:
+        pass
+    try: direction = 1 if float(factor) >= 1.0 else -1
+    except Exception: direction = 1
+    return _lh59_scale_selected_grid(self, direction)
+
+
+def _lh59_refresh_properties(self):
+    # Collapse selected members of the same graphic group into a single logical
+    # property view. This prevents the old "N objects selected" panel for groups.
+    try:
+        selected = [i for i in self.scene.selectedItems()]
+        graphic_items = [i for i in selected if i.data(0) == 'GRAPHIC' and getattr(i, 'model', None) is not None]
+        gids = {_lh59_gid(i.model) for i in graphic_items if _lh59_gid(i.model)}
+        if graphic_items and len(gids) == 1 and len(graphic_items) == len(selected):
+            _lh59_sync_group_selection(self)
+            models = _lh59_selected_graphic_models(self, expand_groups=True)
+            b = _lh59_group_bbox(models)
+            if self.clear_properties():
+                self.form.addRow(QLabel('Selected: GRAPHIC GROUP'))
+                self.form.addRow(QLabel('<b>GRAPHIC GROUP</b>'))
+                if b:
+                    minx, miny, maxx, maxy = b
+                    self.form.addRow('Width [grid]', QLabel(f'{(maxx-minx):.3f}'.replace('.', ',')))
+                    self.form.addRow('Height [grid]', QLabel(f'{(maxy-miny):.3f}'.replace('.', ',')))
+                self.form.addRow(QLabel('Scale/Move/Rotate/Flip behandeln die Gruppe als 1 Objekt.'))
+                self.form.addRow(QLabel('Ungroup Graphics löst die Gruppe wieder auf.'))
+            return
+    except Exception:
+        pass
+    if _lh59_prev_refresh_properties:
+        return _lh59_prev_refresh_properties(self)
+
+
+try:
+    for _cls in (MainWindow, TemplateEditorDialog):
+        _cls.scale_selected_grid = _lh59_scale_selected_grid
+        _cls.scale_selected = _lh59_scale_selected
+        _cls.group_selected_graphics = _lh59_group_selected_graphics
+        _cls.ungroup_selected_graphics = _lh59_ungroup_selected_graphics
+        _cls.refresh_properties = _lh59_refresh_properties
+        if hasattr(_cls, 'on_scene_selection_changed'):
+            _cls.on_scene_selection_changed = _lh59_on_scene_selection_changed
+except Exception:
+    pass
