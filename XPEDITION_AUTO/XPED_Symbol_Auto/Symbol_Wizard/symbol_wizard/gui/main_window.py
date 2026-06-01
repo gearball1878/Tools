@@ -2182,6 +2182,29 @@ class TemplateEditorDialog(QDialog):
             self.schedule_scene_refresh()
         self.dirty = True
 
+    def scale_selected_grid(self, direction: int):
+        """Scale selected BODY by one edit-grid step in width and height.
+
+        The toolbar Scale +/- buttons should be deterministic and grid based,
+        not a free 1.1 factor.  When BODY is selected we resize to the next
+        edit-grid multiple; otherwise we fall back to the previous item-level
+        factor behaviour for non-body graphics.
+        """
+        self.set_tool(DrawTool.SELECT.value)
+        step = self._edit_grid_step()
+        if self._selected_body_active():
+            body = self.current_unit.body
+            new_w = max(step, self._snap_to_edit_grid(float(body.width) + direction * step, step))
+            new_h = max(step, self._snap_to_edit_grid(float(body.height) + direction * step, step))
+            self.push_undo_state()
+            self._selection_restore_ids = self._capture_selection_ids()
+            self._transform_unit_as_body_group('scale_x_to', new_w, refresh=False)
+            self._transform_unit_as_body_group('scale_y_to', new_h, refresh=True)
+            self.dirty = True
+            QTimer.singleShot(0, self.refresh_properties)
+        else:
+            self.scale_selected(1.0 + (0.1 if direction > 0 else -0.1))
+
     def scale_selected(self, factor):
         self.set_tool(DrawTool.SELECT.value)
         self.push_undo_state()
@@ -3007,8 +3030,8 @@ class MainWindow(QMainWindow):
             ('⟳ 90°', lambda: self.rotate_selected(90)),
             ('Flip H', self.flip_selected_horizontal),
             ('Flip V', self.flip_selected_vertical),
-            ('Scale +', lambda: self.scale_selected(1.1)),
-            ('Scale -', lambda: self.scale_selected(1 / 1.1)),
+            ('Scale +', lambda: self.scale_selected_grid(1)),
+            ('Scale -', lambda: self.scale_selected_grid(-1)),
         ]:
             b = QPushButton(label)
             b.clicked.connect(fn)
@@ -5460,38 +5483,54 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
             self.apply_color_to_selected((c.red(), c.green(), c.blue()))
 
     def apply_line_defaults(self):
+        """Apply toolbar line style/width to every selected graphical object.
+
+        This is intentionally selection-wide and type tolerant:
+        - BODY updates the logical body and all imported/template graphics that
+          visually form that body.
+        - GRAPHIC updates its stroke style.
+        - PIN updates its pin line style/width.
+        Text/attributes are ignored here; their color is handled by the RGB
+        button via apply_color_to_selected().
+        """
         selected = list(self.scene.selectedItems()) if hasattr(self, 'scene') else []
         if not selected:
             return
-        self.push_undo_state()
         style = self.line_style.currentText()
         width = float(self.line_width.value())
+        changed = False
+        self.push_undo_state()
+        self._selection_restore_ids = self._capture_selection_ids()
         for it in selected:
-            if it.data(0) == 'PIN':
-                it.model.line_style = style
-                it.model.line_width = width
-                it.model.color = self.default_color
-            elif it.data(0) == 'GRAPHIC':
-                it.model.style.line_style = style
-                it.model.style.line_width = width
-                it.model.style.stroke = self.default_color
-            elif it.data(0) == 'BODY':
-                body = it.model
-                body.line_style = style
-                body.line_width = width
-                body.color = self.default_color
+            k = it.data(0)
+            m = getattr(it, 'model', None)
+            if m is None:
+                continue
+            if k == 'PIN':
+                m.line_style = style
+                m.line_width = width
+                changed = True
+            elif k == 'GRAPHIC':
+                st = getattr(m, 'style', None)
+                if st is not None:
+                    st.line_style = style
+                    st.line_width = width
+                    changed = True
+            elif k == 'BODY':
+                m.line_style = style
+                m.line_width = width
                 # Imported/template bodies are rendered by locked GraphicModel primitives.
-                # Applying the toolbar style must update those primitives as well, otherwise
-                # the toolbar appears non-functional while the BODY is selected.
-                for gr in self._body_owned_graphics(body):
+                # Apply style to those real body graphics as well.
+                for gr in self._body_owned_graphics(m):
                     st = getattr(gr, 'style', None)
                     if st is not None:
                         st.line_style = style
                         st.line_width = width
-                        st.stroke = self.default_color
-        self.dirty = True
-        self.update_current_unit_canvas_positions()
-        self.schedule_scene_refresh(visual_only=True)
+                changed = True
+        if changed:
+            self.dirty = True
+            self.update_current_unit_canvas_positions()
+            self.schedule_scene_refresh(visual_only=True)
 
     def add_pin(self, side, x=None, y=None):
         self.push_undo_state()
@@ -6212,6 +6251,29 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
                     it.flip_vertical()
             self.schedule_scene_refresh()
         self.dirty = True
+
+    def scale_selected_grid(self, direction: int):
+        """Scale selected BODY by one edit-grid step in width and height.
+
+        The toolbar Scale +/- buttons should be deterministic and grid based,
+        not a free 1.1 factor.  When BODY is selected we resize to the next
+        edit-grid multiple; otherwise we fall back to the previous item-level
+        factor behaviour for non-body graphics.
+        """
+        self.set_tool(DrawTool.SELECT.value)
+        step = self._edit_grid_step()
+        if self._selected_body_active():
+            body = self.current_unit.body
+            new_w = max(step, self._snap_to_edit_grid(float(body.width) + direction * step, step))
+            new_h = max(step, self._snap_to_edit_grid(float(body.height) + direction * step, step))
+            self.push_undo_state()
+            self._selection_restore_ids = self._capture_selection_ids()
+            self._transform_unit_as_body_group('scale_x_to', new_w, refresh=False)
+            self._transform_unit_as_body_group('scale_y_to', new_h, refresh=True)
+            self.dirty = True
+            QTimer.singleShot(0, self.refresh_properties)
+        else:
+            self.scale_selected(1.0 + (0.1 if direction > 0 else -0.1))
 
     def scale_selected(self, factor):
         self.set_tool(DrawTool.SELECT.value)
