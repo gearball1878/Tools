@@ -649,7 +649,8 @@ class TemplateEditorDialog(QDialog):
         install_no_wheel_value_filter(self)
         self.main = parent
         self.is_template_editor = True
-        self.templates = parent.available_templates()
+        self.template_keys = parent.available_template_keys(False)
+        self.templates = {k: None for k in self.template_keys}
         if not self.templates and hasattr(parent, 'builtin_resistor_templates'):
             self.templates = parent.builtin_resistor_templates()
         if not self.templates:
@@ -659,7 +660,7 @@ class TemplateEditorDialog(QDialog):
                 'Es wurden keine Templates geladen. Erwarteter Katalog:\n' + str(parent.symbol_types_path()) +
                 '\n\nBitte prüfen, ob die Datei existiert und gültiges JSON enthält.'
             )
-        self.unit = copy.deepcopy(next(iter(self.templates.values()), SymbolUnitModel()))
+        self.unit = parent.load_template_unit(next(iter(self.templates.keys()), 'Passive / Resistor')) if self.templates else SymbolUnitModel()
         self.draw_tool = DrawTool.SELECT.value
         self.default_color = (0, 0, 0)
         self.symbol = SymbolModel(name='Template Editor', units=[self.unit])
@@ -1072,7 +1073,7 @@ class TemplateEditorDialog(QDialog):
         name = self.current_template_key()
         if not name: return
         self._loading_template = True
-        self.unit = copy.deepcopy(self.templates[name]); self.symbol.units=[self.unit]
+        self.unit = self.main.load_template_unit(name); self.symbol.units=[self.unit]
         # In the Template Editor all body artwork primitives are deliberately editable.
         for _g in getattr(self.unit, 'graphics', []) or []:
             try: _g.locked_to_body = False
@@ -5320,7 +5321,7 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         s = self.library.add_symbol(name or 'Symbol', SymbolKind.SINGLE.value)
         s.name = self.library.unique_import_name(name or s.name)
         s.template_name = template_name
-        s.units = [copy.deepcopy(self.available_templates().get(template_name, SymbolUnitModel()))]
+        s.units = [self.load_template_unit(template_name)]
         s.units[0].name = 'Unit A'
         self.current_unit_index = 0
         self.rebuild_all()
@@ -5334,11 +5335,11 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         s = self.library.add_symbol(name or 'Split Symbol', SymbolKind.SPLIT.value)
         s.name = self.library.unique_import_name(name or s.name)
         s.template_name = template_name
-        split_units = (getattr(self, '_external_split_templates', {}) or {}).get(template_name)
+        split_units = self.load_split_template_units(template_name)
         if split_units:
-            s.units = [copy.deepcopy(u) for u in split_units]
+            s.units = split_units
         else:
-            base = copy.deepcopy(self.available_templates(split_only=True).get(template_name, SymbolUnitModel()))
+            base = self.load_template_unit(template_name)
             s.units = [copy.deepcopy(base), copy.deepcopy(base)]
         for i, u in enumerate(s.units, start=1):
             u.name = f'{s.name}_{i}'
@@ -5979,6 +5980,189 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         """
         return self.project_root_path() / 'symbol_wizard' / 'symbol_templates'
 
+
+    def _template_manifest_path(self):
+        return self.symbol_templates_dir() / '.template_manifest.json'
+
+    def load_template_manifest(self) -> dict:
+        """Fast metadata-only template index.
+
+        This avoids unpickling/parsing thousands of SymbolUnitModel objects when
+        merely opening the New Symbol dialog or the Template Editor.  The manifest
+        contains only keys and file positions; concrete template units are loaded
+        lazily only for the selected template.
+        """
+        root = self.symbol_templates_dir()
+        mf = self._template_manifest_path()
+        try:
+            files_sig = tuple(sorted((str(fp.relative_to(root)), fp.stat().st_mtime_ns, fp.stat().st_size)
+                                     for fp in root.rglob('*.json') if not fp.name.startswith('.')))
+        except Exception:
+            files_sig = tuple()
+        cache_key = ('manifest-v1', files_sig)
+        if getattr(self, '_template_manifest_cache_key', None) == cache_key:
+            return getattr(self, '_template_manifest_cache', {}) or {'templates': {}, 'split_templates': {}}
+        try:
+            if mf.exists():
+                data = json.loads(mf.read_text(encoding='utf-8'))
+                if isinstance(data, dict) and 'templates' in data:
+                    self._template_manifest_cache_key = cache_key
+                    self._template_manifest_cache = data
+                    return data
+        except Exception:
+            pass
+        # Fallback: build a small manifest from file names only.  A full release
+        # ships .template_manifest.json, so this path should only be used in dev.
+        data = {'version': 1, 'templates': {}, 'split_templates': {}}
+        try:
+            for fp in sorted(root.rglob('*.json')):
+                if fp.name.startswith('.'):
+                    continue
+                try:
+                    payload = json.loads(fp.read_text(encoding='utf-8'))
+                except Exception:
+                    continue
+                entries = payload if isinstance(payload, list) else [payload]
+                rel = fp.relative_to(root).with_suffix('')
+                parts = list(rel.parts)
+                part = parts[-1] if parts and parts[0] == 'mentor_known' and len(parts) >= 2 else (parts[-2] if len(parts) >= 2 else rel.name)
+                for i, entry in enumerate(entries):
+                    if not isinstance(entry, dict):
+                        continue
+                    entry_name = str(entry.get('template_name') or entry.get('name') or rel.name).strip() or rel.name
+                    key = f'{part} / {entry_name}' if part and part != entry_name else entry_name
+                    data['templates'][key] = {'file': str(fp.relative_to(root)).replace('\\\\','/'), 'index': i, 'name': entry_name, 'partition': part}
+            try:
+                mf.write_text(json.dumps(data, ensure_ascii=False, separators=(',', ':')), encoding='utf-8')
+            except Exception:
+                pass
+        except Exception:
+            pass
+        self._template_manifest_cache_key = cache_key
+        self._template_manifest_cache = data
+        return data
+
+    def available_template_keys(self, split_only: bool = False) -> list[str]:
+        keys = []
+        # symbol_types.json keys are usually small; use the already parsed cache if present.
+        try:
+            data = json.loads(self.symbol_types_path().read_text(encoding='utf-8'))
+            for type_name, type_def in (data.get('types') or {}).items():
+                subs = type_def.get('subtypes') or {}
+                if subs:
+                    for subtype_name in subs.keys():
+                        keys.append(f'{type_name} / {subtype_name}')
+                else:
+                    keys.append(str(type_name))
+        except Exception:
+            pass
+        manifest = self.load_template_manifest()
+        mkeys = list((manifest.get('templates') or {}).keys())
+        if split_only:
+            split_keys = list((manifest.get('split_templates') or {}).keys())
+            keys.extend(split_keys)
+            keys.extend([k for k in mkeys if k.startswith('IC /') or k.startswith('Digital IC /')])
+        else:
+            keys.extend(mkeys)
+        if not keys:
+            keys.extend(self.builtin_resistor_templates().keys())
+        return sorted(set(keys), key=str.lower)
+
+    def _unit_from_payload_fast(self, payload: dict) -> SymbolUnitModel | None:
+        try:
+            src = payload.get('unit', payload) if isinstance(payload, dict) else payload
+            body_src = src.get('body', {}) if isinstance(src, dict) else {}
+            bd = {k: v for k, v in dict(body_src).items() if k in SymbolBodyModel.__dataclass_fields__}
+            bd['attribute_font'] = _coerce_font_model(bd.get('attribute_font'), .75)
+            bd['refdes_font'] = _coerce_font_model(bd.get('refdes_font'), .9)
+            if isinstance(bd.get('attribute_texts'), dict):
+                bd['attribute_texts'] = {str(k): _text_model_from_any(v, str(k), 0.0, 0.0, bd['attribute_font']) for k, v in bd.get('attribute_texts', {}).items()}
+            body = SymbolBodyModel(**bd)
+            pins = []
+            for pd in (src.get('pins', []) or src.get('default_pins', []) or []):
+                pd = dict(pd)
+                pd['number_font'] = _coerce_font_model(pd.get('number_font'), .45)
+                pd['label_font'] = _coerce_font_model(pd.get('label_font'), .55)
+                if isinstance(pd.get('attribute_texts'), dict):
+                    pd['attribute_texts'] = {str(k): _text_model_from_any(v, str(k), 0.0, 0.0, pd['label_font']) for k, v in pd.get('attribute_texts', {}).items()}
+                pins.append(PinModel(**{k:v for k,v in pd.items() if k in PinModel.__dataclass_fields__}))
+            texts = [TextModel(**dict(t)) for t in (src.get('texts', []) or []) if isinstance(t, dict)]
+            graphics = []
+            for gd in (src.get('graphics', []) or []):
+                if not isinstance(gd, dict):
+                    continue
+                gd = dict(gd); style = gd.pop('style', None)
+                g = GraphicModel(**{k:v for k,v in gd.items() if k in GraphicModel.__dataclass_fields__})
+                if isinstance(style, dict):
+                    g.style = StyleModel(**style)
+                graphics.append(g)
+            return SymbolUnitModel(name=str(src.get('name', payload.get('name', 'Template'))), body=body, pins=pins, texts=texts, graphics=graphics)
+        except Exception:
+            return None
+
+    def load_template_unit(self, key: str) -> SymbolUnitModel:
+        """Load one concrete template by key, lazily and with a small LRU cache."""
+        key = str(key or '').strip()
+        lru = getattr(self, '_template_unit_lru', None)
+        if lru is None:
+            lru = {}
+            self._template_unit_lru = lru
+        if key in lru:
+            return copy.deepcopy(lru[key])
+        # First try external manifest, then symbol_types, then already-added runtime templates.
+        manifest = self.load_template_manifest()
+        meta = (manifest.get('templates') or {}).get(key)
+        if meta:
+            root = self.symbol_templates_dir()
+            fp = root / meta.get('file', '')
+            try:
+                part_cache = getattr(self, '_template_file_json_cache', None)
+                if part_cache is None:
+                    part_cache = {}
+                    self._template_file_json_cache = part_cache
+                rel = str(meta.get('file',''))
+                data = part_cache.get(rel)
+                if data is None:
+                    data = json.loads(fp.read_text(encoding='utf-8'))
+                    # Keep only a few partition files in memory.
+                    if len(part_cache) > 3:
+                        part_cache.clear()
+                    part_cache[rel] = data
+                entries = data if isinstance(data, list) else [data]
+                idx = int(meta.get('index', 0) or 0)
+                if 0 <= idx < len(entries):
+                    unit = self._unit_from_payload_fast(entries[idx])
+                    if unit is not None:
+                        unit.name = str(meta.get('name') or key.split(' / ')[-1])
+                        if len(lru) > 64:
+                            lru.clear()
+                        lru[key] = copy.deepcopy(unit)
+                        return unit
+            except Exception:
+                pass
+        try:
+            if key in self.symbol_templates:
+                return copy.deepcopy(self.symbol_templates[key])
+        except Exception:
+            pass
+        try:
+            all_small = self.load_symbol_type_templates()
+            if key in all_small:
+                return copy.deepcopy(all_small[key])
+        except Exception:
+            pass
+        return SymbolUnitModel(name=key or 'Template')
+
+    def load_split_template_units(self, key: str) -> list[SymbolUnitModel]:
+        manifest = self.load_template_manifest()
+        keys = (manifest.get('split_templates') or {}).get(key) or []
+        if keys:
+            return [self.load_template_unit(k) for k in keys]
+        split_units = (getattr(self, '_external_split_templates', {}) or {}).get(key)
+        if split_units:
+            return [copy.deepcopy(u) for u in split_units]
+        return []
+
     def load_external_template_files(self) -> dict[str, SymbolUnitModel]:
         """Load optional templates from Symbol_Wizard/symbol_templates/**/*.json.
 
@@ -6000,10 +6184,12 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
             files = tuple(sorted((str(fp.relative_to(root)), fp.stat().st_mtime_ns, fp.stat().st_size) for fp in root.rglob('*.json')))
         except Exception:
             files = tuple()
-        cache_key = (str(root), files)
+        # Path independent cache key: a release ZIP can contain a ready-made
+        # index and still validate after extraction into another directory.
+        cache_key = ('template-index-v4', files)
         if getattr(self, '_external_template_cache_key', None) == cache_key:
-            self._external_split_templates = copy.deepcopy(getattr(self, '_external_split_template_cache', {}))
-            return copy.deepcopy(getattr(self, '_external_template_cache', {}))
+            self._external_split_templates = getattr(self, '_external_split_template_cache', {}) or {}
+            return getattr(self, '_external_template_cache', {}) or {}
 
         # Persistent on-disk template index.  The Mentor-derived template catalog
         # contains thousands of entries; reparsing every JSON file when opening
@@ -6016,11 +6202,11 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
                 with index_file.open('rb') as fh:
                     cached = pickle.load(fh)
                 if cached.get('cache_key') == cache_key:
-                    self._external_split_templates = copy.deepcopy(cached.get('split_templates', {}))
+                    self._external_split_templates = cached.get('split_templates', {}) or {}
                     self._external_template_cache_key = cache_key
-                    self._external_template_cache = copy.deepcopy(cached.get('templates', {}))
-                    self._external_split_template_cache = copy.deepcopy(cached.get('split_templates', {}))
-                    return copy.deepcopy(cached.get('templates', {}))
+                    self._external_template_cache = cached.get('templates', {}) or {}
+                    self._external_split_template_cache = cached.get('split_templates', {}) or {}
+                    return self._external_template_cache
         except Exception:
             # Corrupt or incompatible cache: ignore and rebuild below.
             pass
@@ -6084,6 +6270,11 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
             if len(s) < 4:
                 return None, None
 
+            # Remove only file/view suffix for display but keep enough
+            # semantic name for grouping.  Many Mentor files are part-like
+            # names ending in .1 but split views are encoded with _01/_02,
+            # _PWR/_ADC, -1/-2 or RX/TX style suffixes.
+
             # Explicit multipart suffixes / functional pages.
             suffix_words = (
                 'CONTROL', 'CTRL', 'PWR', 'POWER', 'SUPPLY', 'SUP', 'VDD', 'VSS', 'VCC', 'GND',
@@ -6109,6 +6300,19 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
             m = re.match(r'^(?P<base>[A-Za-z][A-Za-z0-9]{2,})-(?P<part>\d{1,3})$', s)
             if m:
                 return m.group('base'), m.group('part')
+
+            # Broader library heuristic for IC partitions: if the name has at
+            # least two '_' separated chunks, group by a stable leading prefix.
+            # This catches pairs such as arinc429_rxd/arinc429_txd,
+            # 14stage_bincount_01/_02 and lpa0110_adc/_pwr while staying
+            # restricted to the large-IC partitions by the caller.
+            chunks = re.split(r'[_-]+', s)
+            if len(chunks) >= 2 and len(chunks[0]) >= 3:
+                last = chunks[-1]
+                if re.match(r'^(?:\d{1,3}|[A-Z]|[A-Z]{2,6}\d*)$', last, re.IGNORECASE):
+                    return '_'.join(chunks[:-1]), last
+                if len(chunks) >= 3:
+                    return '_'.join(chunks[:-1]), last
             return None, None
 
         def unit_from_payload(payload: dict) -> SymbolUnitModel | None:
@@ -6219,8 +6423,8 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         self._external_split_templates = grouped
         try:
             self._external_template_cache_key = cache_key
-            self._external_template_cache = copy.deepcopy(result)
-            self._external_split_template_cache = copy.deepcopy(grouped)
+            self._external_template_cache = result
+            self._external_split_template_cache = grouped
             with index_file.open('wb') as fh:
                 pickle.dump({
                     'cache_key': cache_key,
@@ -6438,23 +6642,30 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         return templates
 
     def available_templates(self, split_only: bool = False) -> dict[str, SymbolUnitModel]:
-        """Return cached template catalogue.
+        """Return the template catalogue without expensive deep-copy storms.
 
-        Loading generated Mentor templates can involve thousands of JSON entries.
-        This method is used by New Symbol, New Split Symbol and the Template
-        Editor, so the merged catalogue is cached and returned as a deep copy to
-        protect the cache against GUI edits.
+        Older builds deep-copied the complete catalogue on every dialog open.
+        With several thousand Mentor templates this made both "New Symbol" and
+        the Template Editor slow.  The catalogue itself is treated as read-only;
+        selected units are deep-copied only when they are actually instantiated or
+        edited.
         """
         cache_key = (bool(split_only), id(self.symbol_templates), len(self.symbol_templates))
         cache = getattr(self, '_available_template_cache', {}) or {}
         if cache_key in cache:
-            return copy.deepcopy(cache[cache_key])
+            return cache[cache_key]
 
-        templates = self.load_symbol_type_templates()
-        templates.update(self.load_external_template_files())
-        templates.update(copy.deepcopy(self.symbol_templates))
-        if not templates:
-            templates.update(self.builtin_resistor_templates())
+        base_key = ('all', id(self.symbol_templates), len(self.symbol_templates))
+        if base_key in cache:
+            templates = cache[base_key]
+        else:
+            templates = self.load_symbol_type_templates()
+            templates.update(self.load_external_template_files())
+            templates.update(self.symbol_templates)
+            if not templates:
+                templates.update(self.builtin_resistor_templates())
+            cache[base_key] = templates
+
         if split_only:
             split_map = getattr(self, '_external_split_templates', {}) or {}
             filtered = {k: v for k, v in templates.items()
@@ -6464,12 +6675,12 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
                         or k.startswith('Split Symbols /')}
             for k, units in split_map.items():
                 if units and k not in filtered:
-                    filtered[k] = copy.deepcopy(units[0])
+                    filtered[k] = units[0]
             templates = filtered
 
-        cache[cache_key] = copy.deepcopy(templates)
+        cache[cache_key] = templates
         self._available_template_cache = cache
-        return copy.deepcopy(templates)
+        return templates
 
 
     def apply_template_style_to_matching_symbols(self, template_name: str, tmpl: SymbolUnitModel):
@@ -6520,7 +6731,7 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         return f'{partition} / {symbol}' if symbol else partition
 
     def ask_new_symbol_template(self, kind: str):
-        templates = self.available_templates(split_only=(kind == SymbolKind.SPLIT.value))
+        template_keys = self.available_template_keys(split_only=(kind == SymbolKind.SPLIT.value))
         dlg = QDialog(self)
         dlg.setWindowTitle('Neues Split-Symbol anlegen' if kind == SymbolKind.SPLIT.value else 'Neues Symbol anlegen')
         layout = QFormLayout(dlg)
@@ -6536,7 +6747,7 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
             return self._template_key_from_dialog_parts(part, sym)
 
         by_partition: dict[str, list[str]] = {}
-        for key in sorted(templates.keys()):
+        for key in sorted(template_keys):
             part, sym = parts_for(key)
             by_partition.setdefault(part, []).append(sym)
 
@@ -6575,7 +6786,7 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         layout.addRow('Filter', filter_edit)
         layout.addRow('Symbolname', name_edit)
         if kind == SymbolKind.SPLIT.value:
-            split_count = len(getattr(self, '_external_split_templates', {}) or {})
+            split_count = len((self.load_template_manifest().get('split_templates') or {}))
             hint_text = f'{split_count} erkannte Mentor-Split-Templates sind als Vorschläge verfügbar. Auswahl ist zweistufig: Partition → Symbol.'
         else:
             hint_text = 'Auswahl ist zweistufig: Partition → Symbol.'
