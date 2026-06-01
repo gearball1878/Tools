@@ -1088,9 +1088,68 @@ class GraphicItem(TransformMixin, QGraphicsItem):
         self.model.x = self.pos().x() / g
         self.model.y = -self.pos().y() / g
 
-    def scale_selected(self, factor):
-        self.model.w = round(self.model.w * factor * 2) / 2
-        self.model.h = round(self.model.h * factor * 2) / 2
+    def _snap_graphic_dimension(self, value, step):
+        """Snap a graphic dimension to the edit grid without collapsing to 0."""
+        try:
+            step = max(0.001, float(step or 0.001))
+        except Exception:
+            step = 0.5
+        sign = -1.0 if float(value or 0.0) < 0 else 1.0
+        mag = abs(float(value or 0.0))
+        snapped = round(mag / step) * step
+        if snapped < step:
+            snapped = step
+        return sign * snapped
+
+    def scale_by(self, factor):
+        """Scale this graphic in-place around its own model-space center.
+
+        Toolbar Scale +/- is intentionally object-local for user graphics: it
+        must not move the object to the origin, must not collapse width/height
+        to 0, and must not involve pins or BODY-group scaling.  The center is
+        preserved while width/height are snapped to the active edit grid.
+        """
+        try:
+            factor = float(factor)
+        except Exception:
+            factor = 1.0
+        if abs(factor) < 1e-9:
+            return
+        step = 0.5
+        try:
+            step = self.window._edit_grid_step() if hasattr(self.window, '_edit_grid_step') else 0.5
+        except Exception:
+            step = 0.5
+
+        old_w = float(getattr(self.model, 'w', 0.0) or 0.0)
+        old_h = float(getattr(self.model, 'h', 0.0) or 0.0)
+        old_x = float(getattr(self.model, 'x', 0.0) or 0.0)
+        old_y = float(getattr(self.model, 'y', 0.0) or 0.0)
+
+        # In model coordinates graphics are stored with x/y at the visual top-left;
+        # positive h extends downward on screen, i.e. toward smaller model y.
+        cx = old_x + old_w / 2.0
+        cy = old_y - old_h / 2.0
+
+        new_w = self._snap_graphic_dimension(old_w * factor, step)
+        new_h = self._snap_graphic_dimension(old_h * factor, step)
+
         self.prepareGeometryChange()
+        self.model.w = new_w
+        self.model.h = new_h
+        self.model.x = cx - new_w / 2.0
+        self.model.y = cy + new_h / 2.0
+        g = self.window.grid_px
+        self.setPos(self.model.x * g, -self.model.y * g)
+        try:
+            self.window.notify_canvas_model_changed()
+        except Exception:
+            try:
+                self.window.live_refresh()
+            except Exception:
+                pass
         self.update()
+
+    def scale_selected(self, factor):
+        self.scale_by(factor)
 
