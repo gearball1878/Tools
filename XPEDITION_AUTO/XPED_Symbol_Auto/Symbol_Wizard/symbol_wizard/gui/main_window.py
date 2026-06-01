@@ -18285,3 +18285,262 @@ try:
             TemplateEditorDialog._transform_unit_as_body_group = _sw86_transform_unit_as_body_group
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# Liebherr v87: BODY canvas scaling final docking semantics
+# ---------------------------------------------------------------------------
+# BODY resize must edit only the BODY outline. Pins are re-docked to the new
+# outline edges and text/attributes are translated by the relevant outline-edge
+# delta; they are never geometrically scaled or re-spaced.  This override is
+# intentionally shared by normal Symbol 1 symbols, imported Mentor symbols and
+# Template Editor symbols because all of them pass through the same current_unit
+# BODY resize hook.
+
+def _sw87_pin_side_for_body_scale(pin, old_bounds):
+    try:
+        ox, oy, ow, oh = old_bounds
+        px = _sw86_float(getattr(pin, 'x', 0.0))
+        py = _sw86_float(getattr(pin, 'y', 0.0))
+        left, right = ox, ox + ow
+        top, bottom = oy, oy - oh
+        side = str(getattr(pin, 'side', '') or '').lower()
+        valid = {PinSide.LEFT.value, PinSide.RIGHT.value, PinSide.TOP.value, PinSide.BOTTOM.value}
+        # Imported/native pins can carry incomplete or stale side metadata.  If
+        # the old anchor is clearly closer to another outline edge, use the real
+        # geometric side for the re-dock operation.
+        distances = [
+            (abs(px - left), PinSide.LEFT.value),
+            (abs(px - right), PinSide.RIGHT.value),
+            (abs(py - top), PinSide.TOP.value),
+            (abs(py - bottom), PinSide.BOTTOM.value),
+        ]
+        distances.sort(key=lambda x: x[0])
+        inferred = distances[0][1]
+        if side not in valid:
+            return inferred
+        # Be conservative: only override existing side if it is visibly wrong.
+        current_dist = {
+            PinSide.LEFT.value: abs(px - left),
+            PinSide.RIGHT.value: abs(px - right),
+            PinSide.TOP.value: abs(py - top),
+            PinSide.BOTTOM.value: abs(py - bottom),
+        }.get(side, 1e9)
+        if distances[0][0] + 0.25 < current_dist:
+            return inferred
+        return side
+    except Exception:
+        return str(getattr(pin, 'side', PinSide.LEFT.value) or PinSide.LEFT.value)
+
+
+def _sw87_redock_pins_to_body(self, start_state, body):
+    try:
+        pins = list(getattr(getattr(self, 'current_unit', None), 'pins', []) or [])
+    except Exception:
+        pins = []
+    if not pins:
+        return
+    old_x = _sw86_float((start_state or {}).get('x', getattr(body, 'x', 0.0)))
+    old_y = _sw86_float((start_state or {}).get('y', getattr(body, 'y', 0.0)))
+    old_w = max(_sw86_body_grid_step(self), abs(_sw86_float((start_state or {}).get('w', getattr(body, 'width', 1.0)), 1.0)))
+    old_h = max(_sw86_body_grid_step(self), abs(_sw86_float((start_state or {}).get('h', getattr(body, 'height', 1.0)), 1.0)))
+    old_bounds = (old_x, old_y, old_w, old_h)
+    old_pos = {}
+    try:
+        for entry in (start_state or {}).get('pins', []) or []:
+            if len(entry) >= 3:
+                old_pos[entry[0]] = (_sw86_float(entry[1]), _sw86_float(entry[2]))
+    except Exception:
+        pass
+
+    bx = _sw86_float(getattr(body, 'x', 0.0))
+    by = _sw86_float(getattr(body, 'y', 0.0))
+    bw = max(_sw86_body_grid_step(self), abs(_sw86_float(getattr(body, 'width', 0.0))))
+    bh = max(_sw86_body_grid_step(self), abs(_sw86_float(getattr(body, 'height', 0.0))))
+    left_x, right_x = bx, bx + bw
+    top_y, bottom_y = by, by - bh
+    cx, cy = bx + bw / 2.0, by - bh / 2.0
+
+    groups = {PinSide.LEFT.value: [], PinSide.RIGHT.value: [], PinSide.TOP.value: [], PinSide.BOTTOM.value: []}
+    for p in pins:
+        groups.setdefault(_sw87_pin_side_for_body_scale(p, old_bounds), []).append(p)
+
+    # Stable order prevents pins from crossing when the BODY is scaled.
+    groups[PinSide.LEFT.value].sort(key=lambda p: -_sw86_float(old_pos.get(p, (getattr(p, 'x', 0.0), getattr(p, 'y', 0.0)))[1]))
+    groups[PinSide.RIGHT.value].sort(key=lambda p: -_sw86_float(old_pos.get(p, (getattr(p, 'x', 0.0), getattr(p, 'y', 0.0)))[1]))
+    groups[PinSide.TOP.value].sort(key=lambda p: _sw86_float(old_pos.get(p, (getattr(p, 'x', 0.0), getattr(p, 'y', 0.0)))[0]))
+    groups[PinSide.BOTTOM.value].sort(key=lambda p: _sw86_float(old_pos.get(p, (getattr(p, 'x', 0.0), getattr(p, 'y', 0.0)))[0]))
+
+    def place_vertical(group, x, side_value):
+        n = len(group)
+        if n <= 0:
+            return
+        for i, p in enumerate(group):
+            y = cy if n == 1 else by - ((i + 1) * bh / (n + 1))
+            old_px, old_py = old_pos.get(p, (_sw86_float(getattr(p, 'x', x)), _sw86_float(getattr(p, 'y', y))))
+            nx, ny = _sw86_snap(self, x), _sw86_snap(self, y)
+            try: p.side = side_value
+            except Exception: pass
+            p.x, p.y = nx, ny
+            _sw86_move_pin_texts_keep_offsets(p, old_px, old_py, nx, ny)
+
+    def place_horizontal(group, y, side_value):
+        n = len(group)
+        if n <= 0:
+            return
+        for i, p in enumerate(group):
+            x = cx if n == 1 else bx + ((i + 1) * bw / (n + 1))
+            old_px, old_py = old_pos.get(p, (_sw86_float(getattr(p, 'x', x)), _sw86_float(getattr(p, 'y', y))))
+            nx, ny = _sw86_snap(self, x), _sw86_snap(self, y)
+            try: p.side = side_value
+            except Exception: pass
+            p.x, p.y = nx, ny
+            _sw86_move_pin_texts_keep_offsets(p, old_px, old_py, nx, ny)
+
+    place_vertical(groups.get(PinSide.LEFT.value, []), left_x, PinSide.LEFT.value)
+    place_vertical(groups.get(PinSide.RIGHT.value, []), right_x, PinSide.RIGHT.value)
+    place_horizontal(groups.get(PinSide.TOP.value, []), top_y, PinSide.TOP.value)
+    place_horizontal(groups.get(PinSide.BOTTOM.value, []), bottom_y, PinSide.BOTTOM.value)
+
+
+def _sw87_text_delta_for_body_outline(self, tx, ty, old_bounds, new_bounds):
+    ox, oy, ow, oh = old_bounds
+    nx, ny, nw, nh = new_bounds
+    old_left, old_right, old_top, old_bottom = ox, ox + ow, oy, oy - oh
+    new_left, new_right, new_top, new_bottom = nx, nx + nw, ny, ny - nh
+    old_cx, old_cy = ox + ow / 2.0, oy - oh / 2.0
+    new_cx, new_cy = nx + nw / 2.0, ny - nh / 2.0
+    tx = _sw86_float(tx); ty = _sw86_float(ty)
+    tol = _sw86_body_grid_step(self) * 0.51
+    # Horizontal text tracking: text below/above the BODY follows the BODY center;
+    # text clearly left/right of the BODY follows the corresponding edge.
+    if tx < old_left - tol:
+        dx = new_left - old_left
+    elif tx > old_right + tol:
+        dx = new_right - old_right
+    else:
+        dx = new_cx - old_cx
+    # Vertical text tracking: text below/above follows the nearest outline edge;
+    # text inside the BODY follows the center.  This keeps line spacing unchanged
+    # while moving the whole text block naturally with the outline.
+    if ty < old_bottom - tol:
+        dy = new_bottom - old_bottom
+    elif ty > old_top + tol:
+        dy = new_top - old_top
+    else:
+        dy = new_cy - old_cy
+    return dx, dy
+
+
+def _sw87_scale_current_unit_children_from_body_resize(self, start_state, body):
+    start_state = start_state if isinstance(start_state, dict) else {}
+    old_x = _sw86_float(start_state.get('x', getattr(body, 'x', 0.0)))
+    old_y = _sw86_float(start_state.get('y', getattr(body, 'y', 0.0)))
+    old_w = max(_sw86_body_grid_step(self), abs(_sw86_float(start_state.get('w', getattr(body, 'width', 1.0)), 1.0)))
+    old_h = max(_sw86_body_grid_step(self), abs(_sw86_float(start_state.get('h', getattr(body, 'height', 1.0)), 1.0)))
+    new_x = _sw86_snap(self, getattr(body, 'x', old_x))
+    new_y = _sw86_snap(self, getattr(body, 'y', old_y))
+    new_w = max(_sw86_body_grid_step(self), _sw86_snap(self, abs(_sw86_float(getattr(body, 'width', old_w), old_w))))
+    new_h = max(_sw86_body_grid_step(self), _sw86_snap(self, abs(_sw86_float(getattr(body, 'height', old_h), old_h))))
+    body.x, body.y, body.width, body.height = new_x, new_y, new_w, new_h
+    old_bounds = (old_x, old_y, old_w, old_h)
+    new_bounds = (new_x, new_y, new_w, new_h)
+    sx = new_w / max(1e-9, old_w)
+    sy = new_h / max(1e-9, old_h)
+
+    # Pins: never scale length/font.  They are attached to the new outline.
+    _sw87_redock_pins_to_body(self, start_state, body)
+
+    # Texts/attributes: never scale, never alter line spacing.  Move each text
+    # anchor by the delta of the outline region it belongs to.  This also covers
+    # imported and template symbols because their body attributes use the same
+    # TextModel anchors.
+    for key in ('texts', 'attributes'):
+        for t, tx, ty in start_state.get(key, []) or []:
+            try:
+                dx, dy = _sw87_text_delta_for_body_outline(self, tx, ty, old_bounds, new_bounds)
+                t.x = _sw86_snap(self, _sw86_float(tx) + dx)
+                t.y = _sw86_snap(self, _sw86_float(ty) + dy)
+            except Exception:
+                pass
+
+    # BODY-owned/imported graphics form the BODY shape and are scaled with it.
+    # Standalone graphics are not touched.
+    for gr, gx, gy, gw, gh in start_state.get('graphics', []) or []:
+        try:
+            if not _sw86_is_body_graphic(gr):
+                continue
+            gr.x = _sw86_snap(self, new_x + (_sw86_float(gx) - old_x) * sx)
+            gr.y = _sw86_snap(self, new_y + (_sw86_float(gy) - old_y) * sy)
+            gr.w = max(_sw86_body_grid_step(self), _sw86_snap(self, _sw86_float(gw) * sx))
+            gr.h = max(_sw86_body_grid_step(self), _sw86_snap(self, _sw86_float(gh) * sy))
+        except Exception:
+            pass
+
+
+def _sw87_snapshot_body_resize_state(self, body=None):
+    try:
+        u = self.current_unit
+        b = body or u.body
+        return {
+            'x': _sw86_float(getattr(b, 'x', 0.0)),
+            'y': _sw86_float(getattr(b, 'y', 0.0)),
+            'w': _sw86_float(getattr(b, 'width', 1.0), 1.0),
+            'h': _sw86_float(getattr(b, 'height', 1.0), 1.0),
+            'pins': [(p, _sw86_float(getattr(p, 'x', 0.0)), _sw86_float(getattr(p, 'y', 0.0)), _sw86_float(getattr(p, 'length', 1.0), 1.0)) for p in getattr(u, 'pins', []) or []],
+            'texts': [(t, _sw86_float(getattr(t, 'x', 0.0)), _sw86_float(getattr(t, 'y', 0.0))) for t in getattr(u, 'texts', []) or []],
+            'attributes': [(t, _sw86_float(getattr(t, 'x', 0.0)), _sw86_float(getattr(t, 'y', 0.0))) for t in (getattr(getattr(u, 'body', None), 'attribute_texts', {}) or {}).values()],
+            'graphics': [(gr, _sw86_float(getattr(gr, 'x', 0.0)), _sw86_float(getattr(gr, 'y', 0.0)), _sw86_float(getattr(gr, 'w', 0.0)), _sw86_float(getattr(gr, 'h', 0.0))) for gr in getattr(u, 'graphics', []) or []],
+        }
+    except Exception:
+        return {}
+
+
+def _sw87_transform_unit_as_body_group(self, op, value=None, refresh=True):
+    if op not in ('scale', 'scale_x_to', 'scale_y_to'):
+        if _sw86_prev_transform_unit_as_body_group is not None:
+            return _sw86_prev_transform_unit_as_body_group(self, op, value, refresh)
+        return None
+    try:
+        u = self.current_unit
+        body = u.body
+        st = _sw87_snapshot_body_resize_state(self, body)
+        old_w = max(_sw86_body_grid_step(self), _sw86_float(st.get('w', body.width), body.width))
+        old_h = max(_sw86_body_grid_step(self), _sw86_float(st.get('h', body.height), body.height))
+        if op == 'scale_x_to':
+            new_w, new_h = max(_sw86_body_grid_step(self), _sw86_snap(self, value)), old_h
+        elif op == 'scale_y_to':
+            new_w, new_h = old_w, max(_sw86_body_grid_step(self), _sw86_snap(self, value))
+        else:
+            f = _sw86_float(value, 1.0)
+            new_w = max(_sw86_body_grid_step(self), _sw86_snap(self, old_w * f))
+            new_h = max(_sw86_body_grid_step(self), _sw86_snap(self, old_h * f))
+        cx = _sw86_float(body.x) + old_w / 2.0
+        cy = _sw86_float(body.y) - old_h / 2.0
+        body.width = new_w; body.height = new_h
+        body.x = _sw86_snap(self, cx - new_w / 2.0)
+        body.y = _sw86_snap(self, cy + new_h / 2.0)
+        _sw87_scale_current_unit_children_from_body_resize(self, st, body)
+        if refresh:
+            try: self.update_current_unit_canvas_positions()
+            except Exception: pass
+            try: self.update_attribute_items_for_unit()
+            except Exception: pass
+            try: self.schedule_scene_refresh(visual_only=True)
+            except Exception: pass
+        return None
+    except Exception:
+        if _sw86_prev_transform_unit_as_body_group is not None:
+            return _sw86_prev_transform_unit_as_body_group(self, op, value, refresh)
+        return None
+
+try:
+    MainWindow.scale_current_unit_children_from_body_resize = _sw87_scale_current_unit_children_from_body_resize
+    MainWindow._transform_unit_as_body_group = _sw87_transform_unit_as_body_group
+    MainWindow._snapshot_body_resize_state = _sw87_snapshot_body_resize_state
+    if 'TemplateEditorDialog' in globals():
+        TemplateEditorDialog.scale_current_unit_children_from_body_resize = _sw87_scale_current_unit_children_from_body_resize
+        TemplateEditorDialog._snapshot_body_resize_state = _sw87_snapshot_body_resize_state
+        if hasattr(TemplateEditorDialog, '_transform_unit_as_body_group'):
+            TemplateEditorDialog._transform_unit_as_body_group = _sw87_transform_unit_as_body_group
+except Exception:
+    pass
