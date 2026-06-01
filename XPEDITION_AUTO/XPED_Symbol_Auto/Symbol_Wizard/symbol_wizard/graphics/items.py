@@ -903,6 +903,16 @@ class GraphicItem(TransformMixin, QGraphicsItem):
         elif m.shape in ('ellipse', 'circle'):
             painter.drawEllipse(QRectF(0, 0, m.w * g, m.h * g))
         selected_for_highlight = self.isSelected()
+        # Grouped user graphics are highlighted by one shared group outline in
+        # MainWindow. Individual child handles would make the group look like
+        # multiple objects and can also interfere with selection/pivot logic.
+        try:
+            _gid = str(getattr(self.model, 'group_id', '') or '')
+            _role = str(getattr(self.model, 'graphic_role', '') or '')
+            if (not getattr(self.model, 'locked_to_body', False)) and (_gid or _role.startswith('user_graphic_group:')):
+                selected_for_highlight = False
+        except Exception:
+            pass
         if getattr(self.model, 'locked_to_body', False) and not getattr(self.window, 'is_template_editor', False):
             try:
                 selected_for_highlight = selected_for_highlight or any(
