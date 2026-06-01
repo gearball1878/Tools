@@ -457,9 +457,6 @@ class MainWindow(QMainWindow):
         # --- Draw tools -------------------------------------------------
         draw_tb = make_bar('Draw Tools')
         draw_tb.addWidget(QLabel('Add:'))
-        info_btn = QPushButton('Info')
-        info_btn.clicked.connect(self.show_how_to)
-        draw_tb.addWidget(info_btn)
         self.tool_buttons = {}
         for tool, label in [
             (DrawTool.SELECT, 'Select/Edit'),
@@ -17738,5 +17735,207 @@ try:
     if 'TemplateEditorDialog' in globals():
         TemplateEditorDialog.add_pin = _sw94_add_pin
         TemplateEditorDialog.dock_pins_to_body = _sw94_dock_pins_to_body
+except Exception:
+    pass
+
+
+# ---------------------------------------------------------------------------
+# Liebherr v95: decouple pin-only transforms from BODY and keep selection
+# ---------------------------------------------------------------------------
+# Pin transforms must be local object transforms.  A selected PIN must never
+# trigger the BODY-group transform, even if the BODY proxy is also selected by a
+# large bounding rectangle/handle overlap.  Selection is restored after toolbar
+# transforms while Select/Edit remains active.
+
+try:
+    _sw95_prev_init = MainWindow.__init__
+except Exception:
+    _sw95_prev_init = None
+try:
+    _sw95_prev_rotate_selected = MainWindow.rotate_selected
+except Exception:
+    _sw95_prev_rotate_selected = None
+try:
+    _sw95_prev_flip_h = MainWindow.flip_selected_horizontal
+except Exception:
+    _sw95_prev_flip_h = None
+try:
+    _sw95_prev_flip_v = MainWindow.flip_selected_vertical
+except Exception:
+    _sw95_prev_flip_v = None
+try:
+    _sw95_prev_selected_body_active = MainWindow._selected_body_active
+except Exception:
+    _sw95_prev_selected_body_active = None
+
+
+def _sw95_selected_transform_items(self):
+    try:
+        items = list(self.scene.selectedItems())
+    except Exception:
+        return []
+    out = []
+    for it in items:
+        try:
+            kind = it.data(0)
+            if kind in ('PIN', 'TEXT', 'GRAPHIC', 'ATTR_REF_DES', 'ATTR_BODY') and getattr(it, 'model', None) is not None:
+                out.append(it)
+        except Exception:
+            pass
+    return out
+
+
+def _sw95_selection_contains_pin(self):
+    try:
+        return any(it.data(0) == 'PIN' for it in self.scene.selectedItems())
+    except Exception:
+        return False
+
+
+def _sw95_remove_top_info_button(self):
+    """Remove the temporary Info button from the top Draw Tools ribbon."""
+    try:
+        for tb in self.findChildren(QToolBar):
+            try:
+                if str(tb.windowTitle() or '') != 'Draw Tools':
+                    continue
+                for act in list(tb.actions()):
+                    w = tb.widgetForAction(act)
+                    text = ''
+                    try:
+                        text = str(w.text()) if w is not None and hasattr(w, 'text') else str(act.text() or '')
+                    except Exception:
+                        text = str(act.text() or '')
+                    if text.strip() == 'Info':
+                        tb.removeAction(act)
+                        try:
+                            if w is not None:
+                                w.deleteLater()
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
+def _sw95_init(self, *args, **kwargs):
+    if _sw95_prev_init is not None:
+        _sw95_prev_init(self, *args, **kwargs)
+    try:
+        _sw95_remove_top_info_button(self)
+    except Exception:
+        pass
+
+
+def _sw95_selected_body_active(self):
+    """BODY group transform is active only for a pure BODY selection.
+
+    If any PIN is selected, transforms are object-local.  This intentionally
+    protects pin-only selections from accidental BODY proxy selections caused by
+    overlapping hit areas.
+    """
+    try:
+        selected = list(self.scene.selectedItems())
+    except Exception:
+        return False
+    if not selected:
+        return False
+    kinds = []
+    for it in selected:
+        try:
+            kinds.append(it.data(0))
+        except Exception:
+            pass
+    if 'PIN' in kinds:
+        return False
+    body_kinds = {'BODY', 'BODY_GRAPHIC'}
+    relevant = [k for k in kinds if k in body_kinds or k in ('TEXT', 'GRAPHIC', 'ATTR_REF_DES', 'ATTR_BODY')]
+    return bool(relevant) and all(k in body_kinds for k in relevant)
+
+
+def _sw95_apply_local_transform(self, op, value=None):
+    items = _sw95_selected_transform_items(self)
+    if not items:
+        return False
+    # Any selected PIN forces local-object mode for all selected non-BODY items.
+    # This avoids rotating/flipping the BODY when the user intended pin edits.
+    if not any(it.data(0) == 'PIN' for it in items):
+        return False
+    try:
+        self.set_tool(DrawTool.SELECT.value)
+    except Exception:
+        pass
+    try:
+        self.push_undo_state()
+    except Exception:
+        pass
+    selected_ids = {id(getattr(it, 'model', None)) for it in items if getattr(it, 'model', None) is not None}
+    for it in items:
+        try:
+            if it.data(0) == 'PIN':
+                # A manually transformed pin is intentionally detached from
+                # automatic BODY redocking.
+                it.model.auto_dock = False
+            if op == 'rotate' and hasattr(it, 'rotate_by'):
+                it.rotate_by(float(value or 0.0))
+            elif op == 'flip_h' and hasattr(it, 'flip_horizontal'):
+                it.flip_horizontal()
+            elif op == 'flip_v' and hasattr(it, 'flip_vertical'):
+                it.flip_vertical()
+        except Exception:
+            pass
+    try:
+        self._selection_restore_ids = selected_ids
+        self.dirty = True
+    except Exception:
+        pass
+    try:
+        self.schedule_scene_refresh(visual_only=True)
+    except Exception:
+        try:
+            self.update_current_unit_canvas_positions(); self.refresh_properties()
+        except Exception:
+            pass
+    # Restore selection immediately as well; visual-only refresh may be deferred.
+    try:
+        for it in self.scene.items():
+            m = getattr(it, 'model', None)
+            if m is not None and id(m) in selected_ids:
+                it.setSelected(True)
+    except Exception:
+        pass
+    return True
+
+
+def _sw95_rotate_selected(self, deg):
+    if _sw95_apply_local_transform(self, 'rotate', deg):
+        return None
+    if _sw95_prev_rotate_selected is not None:
+        return _sw95_prev_rotate_selected(self, deg)
+    return None
+
+
+def _sw95_flip_selected_horizontal(self):
+    if _sw95_apply_local_transform(self, 'flip_h'):
+        return None
+    if _sw95_prev_flip_h is not None:
+        return _sw95_prev_flip_h(self)
+    return None
+
+
+def _sw95_flip_selected_vertical(self):
+    if _sw95_apply_local_transform(self, 'flip_v'):
+        return None
+    if _sw95_prev_flip_v is not None:
+        return _sw95_prev_flip_v(self)
+    return None
+
+try:
+    MainWindow.__init__ = _sw95_init
+    MainWindow._selected_body_active = _sw95_selected_body_active
+    MainWindow.rotate_selected = _sw95_rotate_selected
+    MainWindow.flip_selected_horizontal = _sw95_flip_selected_horizontal
+    MainWindow.flip_selected_vertical = _sw95_flip_selected_vertical
 except Exception:
     pass
