@@ -4156,15 +4156,23 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
 
         self.dock_pins_to_body(u)
 
-        # Imported/template graphics are the BODY itself. Do NOT add a
-        # logical/proxy BodyItem rectangle here; it created the visible helper
-        # frame and was transformed instead of the actual artwork.  Native
-        # <NONE>/internally-created symbols keep their normal BodyItem.
-        if not graphics_as_body:
-            body_item = BodyItem(u.body, self)
-            self.apply_item_selectability(body_item)
-            self.scene.addItem(body_item)
-            self._restore_or_select_item(body_item, selected_ids)
+        # Always add the logical BODY item.  For imported/template symbols
+        # the visible BODY is still the real imported artwork, but this item is
+        # the same interaction/handle surface used by native Symbol 1.  Its
+        # paint() method suppresses the proxy rectangle for Mentor/template
+        # bodies and draws only selection handles when selected.  This keeps
+        # canvas scaling unified without reintroducing a visible helper frame.
+        body_item = BodyItem(u.body, self)
+        if graphics_as_body:
+            body_item.setZValue(0.05)
+            body_item.setBrush(QBrush(Qt.NoBrush))
+            try:
+                body_item.setData(0, 'BODY')
+            except Exception:
+                pass
+        self.apply_item_selectability(body_item)
+        self.scene.addItem(body_item)
+        self._restore_or_select_item(body_item, selected_ids)
 
         self.add_attribute_text_items(u)
         for g in u.graphics:
