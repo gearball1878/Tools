@@ -10429,3 +10429,199 @@ try:
         _cls.flip_selected_vertical = _lh8_flip_selected_vertical
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# Liebherr v9: imported BODY artwork must always remain selectable as BODY.
+# After several rebuild/transform/filter cycles BODY_GRAPHIC items could keep an
+# old selectable state or be ignored by Ctrl+A because BODY_GRAPHIC is not part
+# of the public selection filter.  Treat BODY_GRAPHIC as BODY everywhere in the
+# Symbol Wizard selection layer while still preventing primitive editing.
+# ---------------------------------------------------------------------------
+def _lh9_is_body_graphic_item(item):
+    try:
+        return getattr(item, 'data', lambda *_: None)(0) == 'BODY_GRAPHIC'
+    except Exception:
+        return False
+
+
+def _lh9_body_item_candidates(self):
+    try:
+        items = list(self.scene.items())
+    except Exception:
+        return []
+    body_items = []
+    body_graphics = []
+    for it in items:
+        try:
+            k = it.data(0)
+        except Exception:
+            continue
+        if k == 'BODY':
+            body_items.append(it)
+        elif k == 'BODY_GRAPHIC':
+            body_graphics.append(it)
+    # Prefer a real BODY item for native Symbol 1; otherwise use one visible
+    # BODY_GRAPHIC primitive as the click/selection representative for imported
+    # artwork bodies.  All BODY_GRAPHIC primitives still paint the body, but the
+    # selection model exposes exactly one logical BODY to the user.
+    return body_items or body_graphics
+
+
+def _lh9_select_logical_body(self):
+    try:
+        candidates = _lh9_body_item_candidates(self)
+        if not candidates:
+            return False
+        self.scene.blockSignals(True)
+        self.scene.clearSelection()
+        candidates[0].setSelected(True)
+        self.scene.blockSignals(False)
+        self.refresh_properties()
+        return True
+    except Exception:
+        try: self.scene.blockSignals(False)
+        except Exception: pass
+        return False
+
+
+try:
+    _lh9_prev_apply_item_selectability = MainWindow.apply_item_selectability
+except Exception:
+    _lh9_prev_apply_item_selectability = None
+
+
+def _lh9_apply_item_selectability(self, item):
+    if _lh9_is_body_graphic_item(item):
+        selectable = bool(getattr(self, 'selection_enabled', {}).get('BODY', True))
+        try: item.setFlag(QGraphicsItem.ItemIsSelectable, selectable)
+        except Exception: pass
+        # BODY artwork is selectable as the logical BODY, but never movable as a
+        # separate primitive in the Symbol Wizard.  Transforms are routed through
+        # the BODY group backend.
+        try: item.setFlag(QGraphicsItem.ItemIsMovable, False)
+        except Exception: pass
+        try: item.setAcceptedMouseButtons(Qt.AllButtons if selectable else Qt.NoButton)
+        except Exception: pass
+        try:
+            if not selectable:
+                item.setSelected(False)
+        except Exception: pass
+        try: item.setZValue(0.2)
+        except Exception: pass
+        return
+    if _lh9_prev_apply_item_selectability is not None:
+        return _lh9_prev_apply_item_selectability(self, item)
+
+
+try:
+    _lh9_prev_apply_filter = MainWindow._apply_selection_filter_to_scene
+except Exception:
+    _lh9_prev_apply_filter = None
+
+
+def _lh9_apply_selection_filter_to_scene(self):
+    # Apply normal filtering first, then explicitly include BODY_GRAPHIC as BODY.
+    if _lh9_prev_apply_filter is not None:
+        try:
+            _lh9_prev_apply_filter(self)
+        except Exception:
+            pass
+    try:
+        for item in self.scene.items():
+            if _lh9_is_body_graphic_item(item):
+                _lh9_apply_item_selectability(self, item)
+    except Exception:
+        pass
+
+
+try:
+    _lh9_prev_select_all_canvas = MainWindow.select_all_canvas
+except Exception:
+    _lh9_prev_select_all_canvas = None
+
+
+def _lh9_select_all_canvas(self):
+    try: self.set_tool(DrawTool.SELECT.value)
+    except Exception: pass
+    # With Selectable=BODY, Ctrl+A must select the logical BODY even when the
+    # body is represented only by imported graphics and no BodyItem exists.
+    if bool(getattr(self, 'selection_enabled', {}).get('BODY', True)) and not any(
+        bool(getattr(self, 'selection_enabled', {}).get(k, False)) for k in ('PIN', 'TEXT', 'GRAPHIC')
+    ):
+        if _lh9_select_logical_body(self):
+            return
+    try:
+        self.scene.clearSelection()
+        selected_body_rep = False
+        for item in self.scene.items():
+            kind = item.data(0)
+            filter_kind = 'TEXT' if kind in ('ATTR_REF_DES', 'ATTR_BODY') else ('BODY' if kind == 'BODY_GRAPHIC' else kind)
+            if filter_kind in ('BODY', 'PIN', 'TEXT', 'GRAPHIC') and self.selection_enabled.get(filter_kind, True):
+                # Body graphics represent one logical BODY. Select just one
+                # representative to avoid multi-edit/property-panel confusion.
+                if kind == 'BODY_GRAPHIC':
+                    if selected_body_rep:
+                        item.setSelected(False)
+                        continue
+                    selected_body_rep = True
+                item.setSelected(True)
+        self.refresh_properties()
+    except Exception:
+        if _lh9_prev_select_all_canvas is not None:
+            return _lh9_prev_select_all_canvas(self)
+
+
+try:
+    _lh9_prev_refresh_properties = MainWindow.refresh_properties
+except Exception:
+    _lh9_prev_refresh_properties = None
+
+
+def _lh9_refresh_properties(self):
+    # If several BODY_GRAPHIC primitives became selected by rubber-band or stale
+    # restore ids, collapse them to one logical BODY before building the panel.
+    try:
+        selected = list(self.scene.selectedItems())
+        bg = [i for i in selected if _lh9_is_body_graphic_item(i)]
+        if len(bg) > 1 and len(bg) == len(selected):
+            self.scene.blockSignals(True)
+            self.scene.clearSelection()
+            bg[0].setSelected(True)
+            self.scene.blockSignals(False)
+    except Exception:
+        try: self.scene.blockSignals(False)
+        except Exception: pass
+    if _lh9_prev_refresh_properties is not None:
+        return _lh9_prev_refresh_properties(self)
+
+
+try:
+    _lh9_prev_selected_body_active = MainWindow._selected_body_active
+except Exception:
+    _lh9_prev_selected_body_active = None
+
+
+def _lh9_selected_body_active(self):
+    try:
+        for it in self.scene.selectedItems():
+            if getattr(it, 'data', lambda *_: None)(0) in ('BODY', 'BODY_GRAPHIC'):
+                return True
+            m = getattr(it, 'model', None)
+            if m is not None and (getattr(m, 'locked_to_body', False) or str(getattr(m, 'graphic_role', '') or '').lower() in ('body', 'template_body', 'imported_body')):
+                return True
+    except Exception:
+        pass
+    if _lh9_prev_selected_body_active is not None:
+        try: return bool(_lh9_prev_selected_body_active(self))
+        except Exception: pass
+    return False
+
+
+try:
+    MainWindow.apply_item_selectability = _lh9_apply_item_selectability
+    MainWindow._apply_selection_filter_to_scene = _lh9_apply_selection_filter_to_scene
+    MainWindow.select_all_canvas = _lh9_select_all_canvas
+    MainWindow.refresh_properties = _lh9_refresh_properties
+    MainWindow._selected_body_active = _lh9_selected_body_active
+except Exception:
+    pass
