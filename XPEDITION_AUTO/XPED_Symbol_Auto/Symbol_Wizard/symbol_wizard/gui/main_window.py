@@ -17939,3 +17939,212 @@ try:
     MainWindow.flip_selected_vertical = _sw95_flip_selected_vertical
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# Liebherr v96: selection comfort + Symbol-1 compatible template/body scaling
+# ---------------------------------------------------------------------------
+# The previous imported/template resize path used the visible graphics outline
+# as scaling reference.  That made some template primitives move in the opposite
+# direction compared with the native <NONE>/Symbol 1 body.  From here on BODY
+# resize/scale uses the same coordinate contract for every source: body.x/body.y
+# is the top-left BODY anchor, width/height define the positive BODY extent, and
+# children are transformed from the original BODY snapshot to the new BODY rect.
+
+try:
+    _sw96_prev_transform_unit_as_body_group = MainWindow._transform_unit_as_body_group
+except Exception:
+    _sw96_prev_transform_unit_as_body_group = None
+
+
+def _sw96_float(v, default=0.0):
+    try:
+        return float(v)
+    except Exception:
+        return float(default)
+
+
+def _sw96_step(self):
+    try:
+        return max(0.001, float(self._edit_grid_step()))
+    except Exception:
+        try:
+            return max(0.001, float(getattr(self, 'edit_grid_inch', 0.1)) / float(getattr(self.symbol, 'grid_inch', 0.1)))
+        except Exception:
+            return 1.0
+
+
+def _sw96_snap(self, value):
+    try:
+        step = _sw96_step(self)
+        return round(float(value) / step) * step
+    except Exception:
+        return value
+
+
+def _sw96_current_unit(self):
+    try:
+        return self.current_unit
+    except Exception:
+        return None
+
+
+def _sw96_snapshot_body_resize_state(self, body=None):
+    u = _sw96_current_unit(self)
+    if u is None:
+        return {}
+    b = body or getattr(u, 'body', None)
+    if b is None:
+        return {}
+    return {
+        'x': _sw96_float(getattr(b, 'x', 0.0)),
+        'y': _sw96_float(getattr(b, 'y', 0.0)),
+        'w': max(_sw96_step(self), abs(_sw96_float(getattr(b, 'width', 1.0), 1.0))),
+        'h': max(_sw96_step(self), abs(_sw96_float(getattr(b, 'height', 1.0), 1.0))),
+        'pins': [
+            (p, _sw96_float(getattr(p, 'x', 0.0)), _sw96_float(getattr(p, 'y', 0.0)),
+             _sw96_float(getattr(p, 'length', 1.0), 1.0), str(getattr(p, 'side', '') or ''))
+            for p in (getattr(u, 'pins', []) or [])
+        ],
+        'texts': [(t, _sw96_float(getattr(t, 'x', 0.0)), _sw96_float(getattr(t, 'y', 0.0))) for t in (getattr(u, 'texts', []) or [])],
+        'attributes': [(t, _sw96_float(getattr(t, 'x', 0.0)), _sw96_float(getattr(t, 'y', 0.0))) for t in ((getattr(getattr(u, 'body', None), 'attribute_texts', {}) or {}).values())],
+        'graphics': [(gr, _sw96_float(getattr(gr, 'x', 0.0)), _sw96_float(getattr(gr, 'y', 0.0)), _sw96_float(getattr(gr, 'w', 0.0)), _sw96_float(getattr(gr, 'h', 0.0))) for gr in (getattr(u, 'graphics', []) or [])],
+    }
+
+
+def _sw96_move_pin_owned_texts(pin, dx, dy):
+    for ax_name, ay_name in (('label_x', 'label_y'), ('number_x', 'number_y')):
+        try:
+            if getattr(pin, ax_name, None) is not None and getattr(pin, ay_name, None) is not None:
+                setattr(pin, ax_name, _sw96_float(getattr(pin, ax_name)) + dx)
+                setattr(pin, ay_name, _sw96_float(getattr(pin, ay_name)) + dy)
+        except Exception:
+            pass
+    for tm in (getattr(pin, 'attribute_texts', {}) or {}).values():
+        try:
+            tm.x = _sw96_float(tm.x) + dx
+            tm.y = _sw96_float(tm.y) + dy
+        except Exception:
+            pass
+
+
+def _sw96_scale_current_unit_children_from_body_resize(self, start_state, body):
+    if not isinstance(start_state, dict):
+        start_state = {}
+    if 'x' not in start_state or 'w' not in start_state:
+        start_state = _sw96_snapshot_body_resize_state(self, body)
+    step = _sw96_step(self)
+    old_x = _sw96_float(start_state.get('x', getattr(body, 'x', 0.0)))
+    old_y = _sw96_float(start_state.get('y', getattr(body, 'y', 0.0)))
+    old_w = max(step, abs(_sw96_float(start_state.get('w', getattr(body, 'width', 1.0)), 1.0)))
+    old_h = max(step, abs(_sw96_float(start_state.get('h', getattr(body, 'height', 1.0)), 1.0)))
+
+    new_x = _sw96_snap(self, getattr(body, 'x', old_x))
+    new_y = _sw96_snap(self, getattr(body, 'y', old_y))
+    new_w = max(step, abs(_sw96_snap(self, _sw96_float(getattr(body, 'width', old_w), old_w))))
+    new_h = max(step, abs(_sw96_snap(self, _sw96_float(getattr(body, 'height', old_h), old_h))))
+    body.x, body.y, body.width, body.height = new_x, new_y, new_w, new_h
+
+    sx = new_w / old_w
+    sy = new_h / old_h
+
+    def sxpos(x):
+        return _sw96_snap(self, new_x + (_sw96_float(x) - old_x) * sx)
+    def sypos(y):
+        return _sw96_snap(self, new_y + (_sw96_float(y) - old_y) * sy)
+
+    for row in start_state.get('pins', []) or []:
+        try:
+            p, px0, py0, plen = row[:4]
+            stored_side = row[4] if len(row) > 4 else str(getattr(p, 'side', '') or '')
+            old_px, old_py = _sw96_float(getattr(p, 'x', px0)), _sw96_float(getattr(p, 'y', py0))
+            if bool(getattr(p, 'auto_dock', True)):
+                side = str(getattr(p, 'side', stored_side) or stored_side).lower()
+                if side == PinSide.RIGHT.value:
+                    nx, ny = new_x + new_w, sypos(py0)
+                elif side == PinSide.TOP.value:
+                    nx, ny = sxpos(px0), new_y
+                elif side == PinSide.BOTTOM.value:
+                    nx, ny = sxpos(px0), new_y - new_h
+                else:
+                    p.side = PinSide.LEFT.value
+                    nx, ny = new_x, sypos(py0)
+            else:
+                nx, ny = sxpos(px0), sypos(py0)
+            p.x, p.y = _sw96_snap(self, nx), _sw96_snap(self, ny)
+            p.length = max(step, _sw96_snap(self, _sw96_float(plen, 1.0) * max(abs(sx), abs(sy), 0.1)))
+            _sw96_move_pin_owned_texts(p, p.x - old_px, p.y - old_py)
+        except Exception:
+            pass
+
+    for t, tx, ty in start_state.get('texts', []) or []:
+        try:
+            t.x = sxpos(tx); t.y = sypos(ty)
+        except Exception:
+            pass
+    for t, tx, ty in start_state.get('attributes', []) or []:
+        try:
+            t.x = sxpos(tx); t.y = sypos(ty)
+        except Exception:
+            pass
+    for gr, gx, gy, gw, gh in start_state.get('graphics', []) or []:
+        try:
+            gr.x = sxpos(gx)
+            gr.y = sypos(gy)
+            gr.w = _sw96_snap(self, _sw96_float(gw) * sx)
+            gr.h = _sw96_snap(self, _sw96_float(gh) * sy)
+        except Exception:
+            pass
+
+
+def _sw96_transform_unit_as_body_group(self, op, value=None, refresh=True):
+    if op not in ('scale', 'scale_x_to', 'scale_y_to'):
+        if _sw96_prev_transform_unit_as_body_group is not None:
+            return _sw96_prev_transform_unit_as_body_group(self, op, value, refresh)
+        return None
+    u = _sw96_current_unit(self)
+    if u is None or getattr(u, 'body', None) is None:
+        return None
+    body = u.body
+    st = _sw96_snapshot_body_resize_state(self, body)
+    step = _sw96_step(self)
+    old_x = _sw96_float(st.get('x', getattr(body, 'x', 0.0)))
+    old_y = _sw96_float(st.get('y', getattr(body, 'y', 0.0)))
+    old_w = max(step, _sw96_float(st.get('w', getattr(body, 'width', 1.0)), 1.0))
+    old_h = max(step, _sw96_float(st.get('h', getattr(body, 'height', 1.0)), 1.0))
+    cx = old_x + old_w / 2.0
+    cy = old_y - old_h / 2.0
+    if op == 'scale_x_to':
+        new_w, new_h = max(step, _sw96_snap(self, value)), old_h
+    elif op == 'scale_y_to':
+        new_w, new_h = old_w, max(step, _sw96_snap(self, value))
+    else:
+        f = _sw96_float(value, 1.0)
+        new_w = max(step, _sw96_snap(self, old_w * f))
+        new_h = max(step, _sw96_snap(self, old_h * f))
+    body.x = _sw96_snap(self, cx - new_w / 2.0)
+    body.y = _sw96_snap(self, cy + new_h / 2.0)
+    body.width = new_w
+    body.height = new_h
+    _sw96_scale_current_unit_children_from_body_resize(self, st, body)
+    if refresh:
+        try: self.update_current_unit_canvas_positions()
+        except Exception: pass
+        try: self.update_attribute_items_for_unit()
+        except Exception: pass
+        try: self.rebuild_tree(); self.rebuild_pin_table()
+        except Exception: pass
+        try: QTimer.singleShot(0, self.refresh_properties)
+        except Exception: pass
+    return None
+
+try:
+    MainWindow._snapshot_body_resize_state = _sw96_snapshot_body_resize_state
+    MainWindow.scale_current_unit_children_from_body_resize = _sw96_scale_current_unit_children_from_body_resize
+    MainWindow._transform_unit_as_body_group = _sw96_transform_unit_as_body_group
+    if 'TemplateEditorDialog' in globals():
+        TemplateEditorDialog._snapshot_body_resize_state = _sw96_snapshot_body_resize_state
+        TemplateEditorDialog.scale_current_unit_children_from_body_resize = _sw96_scale_current_unit_children_from_body_resize
+        if hasattr(TemplateEditorDialog, '_transform_unit_as_body_group'):
+            TemplateEditorDialog._transform_unit_as_body_group = _sw96_transform_unit_as_body_group
+except Exception:
+    pass

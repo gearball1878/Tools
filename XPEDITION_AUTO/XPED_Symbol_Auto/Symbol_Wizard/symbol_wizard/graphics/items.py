@@ -181,6 +181,18 @@ def _angle_from(center: QPointF, p: QPointF):
     return math.degrees(math.atan2(p.y() - center.y(), p.x() - center.x()))
 
 
+def _hit_tolerance_px(window, factor: float = 0.26, minimum: float = 10.0) -> float:
+    """Comfort hit width for selecting thin canvas objects.
+
+    Painting stays unchanged; only QGraphicsItem.shape() becomes slightly
+    larger so pins/lines/text are easier to click on dense grids.
+    """
+    try:
+        return max(float(minimum), float(getattr(window, 'grid_px', 40.0) or 40.0) * float(factor))
+    except Exception:
+        return float(minimum)
+
+
 class BodyItem(TransformMixin, QGraphicsRectItem):
     def __init__(self, model, window):
         self.model = model
@@ -253,6 +265,13 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
                 painter.drawRect(r)
             painter.drawEllipse(_rotation_handle(self.rect(), self.window.grid_px * self.rotate_handle_factor))
             painter.restore()
+
+    def shape(self):
+        path = QPainterPath()
+        path.addRect(self.rect())
+        stroker = QPainterPathStroker()
+        stroker.setWidth(_hit_tolerance_px(self.window, 0.22, 9.0))
+        return path.united(stroker.createStroke(path))
 
     def hoverMoveEvent(self, event):
         if self.isSelected():
@@ -470,9 +489,9 @@ class PinItem(TransformMixin, QGraphicsItem):
             p1, p2 = QPointF(0, 0), QPointF(L, 0)
         path = QPainterPath(p1)
         path.lineTo(p2)
-        # Small terminal/anchor hit boxes only.  Labels are painted by the pin
-        # but should not make the pin selection area huge.
-        s = max(5.0, 0.22 * g)
+        # Comfortable hit boxes for thin pin geometry. Labels are painted by the pin
+        # but do not make the pin selection area huge.
+        s = max(10.0, 0.34 * g)
         path.addRect(QRectF(p1.x() - s/2, p1.y() - s/2, s, s))
         path.addRect(QRectF(p2.x() - s/2, p2.y() - s/2, s, s))
         if bool(getattr(m, 'inverted', False)):
@@ -481,7 +500,7 @@ class PinItem(TransformMixin, QGraphicsItem):
             by = (0 if m.side in (PinSide.LEFT.value, PinSide.RIGHT.value) else (-r if m.side == PinSide.TOP.value else r))
             path.addEllipse(QPointF(bx, by), r, r)
         stroker = QPainterPathStroker()
-        stroker.setWidth(max(6.0, 0.16 * g))
+        stroker.setWidth(_hit_tolerance_px(self.window, 0.30, 12.0))
         return stroker.createStroke(path).united(path)
 
     def paint(self, painter, option, widget=None):
@@ -676,6 +695,17 @@ class TextItem(TransformMixin, QGraphicsTextItem):
         self.setData(0, 'TEXT')
         self._rotating = False
         self.apply_text_from_model()
+
+    def shape(self):
+        path = super().shape()
+        try:
+            pad = _hit_tolerance_px(self.window, 0.18, 8.0)
+            br = self._visual_text_rect().adjusted(-pad, -pad, pad, pad)
+            padded = QPainterPath()
+            padded.addRect(br)
+            return path.united(padded)
+        except Exception:
+            return path
 
     def itemChange(self, change, value):
         # Text/attribute objects are positioned by their selected grid anchor
@@ -893,6 +923,35 @@ class GraphicItem(TransformMixin, QGraphicsItem):
     def boundingRect(self):
         g = self.window.grid_px
         return self._rect().adjusted(-.35 * g, -.35 * g, .35 * g, .35 * g)
+
+    def shape(self):
+        g = self.window.grid_px
+        m = self.model
+        path = QPainterPath()
+        try:
+            if m.shape in ('line', 'arc'):
+                ctrl_x = getattr(m, 'ctrl_x', None)
+                ctrl_y = getattr(m, 'ctrl_y', None)
+                path.moveTo(QPointF(0, 0))
+                if ctrl_x is not None and ctrl_y is not None:
+                    path.quadTo(QPointF(float(ctrl_x) * g, -float(ctrl_y) * g), QPointF(m.w * g, -m.h * g))
+                else:
+                    r = float(getattr(m, 'curve_radius', 0.0) or 0.0)
+                    if abs(r) > 1e-9:
+                        path.quadTo(QPointF(m.w * g / 2, m.h * g / 2 - r * g), QPointF(m.w * g, m.h * g))
+                    else:
+                        path.lineTo(QPointF(m.w * g, m.h * g))
+            elif m.shape == 'rect':
+                path.addRect(QRectF(0, 0, m.w * g, m.h * g))
+            elif m.shape in ('ellipse', 'circle'):
+                path.addEllipse(QRectF(0, 0, m.w * g, m.h * g))
+            else:
+                path.addRect(self._rect())
+            stroker = QPainterPathStroker()
+            stroker.setWidth(_hit_tolerance_px(self.window, 0.24, 10.0))
+            return path.united(stroker.createStroke(path))
+        except Exception:
+            return super().shape() if hasattr(super(), 'shape') else path
 
     def _handles(self):
         g = self.window.grid_px
