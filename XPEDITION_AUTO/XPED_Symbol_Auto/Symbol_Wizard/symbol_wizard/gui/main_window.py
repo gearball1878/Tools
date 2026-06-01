@@ -18,6 +18,65 @@ from symbol_wizard.io.json_store import save_library, load_library, save_symbol,
 from symbol_wizard.io.mentor_sym import import_mentor_sym, import_mentor_symbols, export_mentor_sym
 
 
+def _font_value(font, key: str, default):
+    """Read FontModel or JSON dict font values uniformly."""
+    if isinstance(font, dict):
+        return font.get(key, default)
+    return getattr(font, key, default)
+
+
+def _coerce_font_model(font, default_size=0.75):
+    """Return a FontModel even when templates were restored from plain dicts."""
+    if isinstance(font, FontModel):
+        return font
+    if isinstance(font, dict):
+        return FontModel(
+            family=str(font.get('family', 'Arial')),
+            size_grid=float(font.get('size_grid', default_size)),
+            color=tuple(font.get('color', (0, 0, 0)))
+        )
+    return FontModel(size_grid=default_size)
+
+
+def _text_model_from_any(value, default_text: str, default_x: float, default_y: float, font, default_h='left', default_v='upper'):
+    """Return a TextModel even when template JSON restored models as dicts.
+
+    Template records are persisted via dataclasses.asdict().  After JSON load,
+    FontModel/TextModel entries are plain dicts.  The editor normalizes them
+    lazily here so the Template Editor can load old and new template files.
+    """
+    family = str(_font_value(font, 'family', 'Arial'))
+    size_grid = float(_font_value(font, 'size_grid', 0.75))
+    color = tuple(_font_value(font, 'color', (0, 0, 0)))
+    if isinstance(value, TextModel):
+        tm = value
+    elif isinstance(value, dict):
+        tm = TextModel(
+            text=str(value.get('text', default_text)),
+            x=float(value.get('x', default_x)),
+            y=float(value.get('y', default_y)),
+            font_family=str(value.get('font_family', family)),
+            font_size_grid=float(value.get('font_size_grid', size_grid)),
+            color=tuple(value.get('color', color))
+        )
+        tm.h_align = str(value.get('h_align', default_h))
+        tm.v_align = str(value.get('v_align', default_v))
+        tm.wrap_text = bool(value.get('wrap_text', False))
+        # Preserve common transform fields if present.
+        for name in ('rotation', 'scale_x', 'scale_y'):
+            if name in value:
+                try:
+                    setattr(tm, name, value[name])
+                except Exception:
+                    pass
+    else:
+        tm = TextModel(text=default_text, x=default_x, y=default_y,
+                       font_family=family, font_size_grid=size_grid, color=color)
+        tm.h_align = default_h
+        tm.v_align = default_v
+    return tm
+
+
 class NoWheelOnValueWidgets(QObject):
     """Global UI guard: mouse wheel scrolls panels/views only.
 
@@ -587,6 +646,7 @@ class TemplateEditorDialog(QDialog):
             pass
         install_no_wheel_value_filter(self)
         self.main = parent
+        self.is_template_editor = True
         self.templates = parent.available_templates()
         if not self.templates and hasattr(parent, 'builtin_resistor_templates'):
             self.templates = parent.builtin_resistor_templates()
@@ -631,11 +691,9 @@ class TemplateEditorDialog(QDialog):
         self._clean_template_snapshot = None
         self.resize(1200, 800)
         self._build_ui()
-        if hasattr(self, 'template_combo') and self.template_combo.count() == 0 and self.templates:
-            self.template_combo.addItems(sorted(self.templates.keys()))
+        self.rebuild_template_partition_combos()
         if hasattr(self, 'template_combo') and self.template_combo.count() > 0:
             self.load_selected_template()
-        self.load_selected_template()
 
     @property
     def current_unit(self):
@@ -734,11 +792,14 @@ class TemplateEditorDialog(QDialog):
     def _build_ui(self):
         layout = QVBoxLayout(self)
         top = QHBoxLayout()
-        self.template_combo = QComboBox(); self.template_combo.addItems(sorted(self.templates.keys()))
+        self.partition_combo = QComboBox(); self.partition_combo.setEditable(True)
+        self.partition_combo.currentTextChanged.connect(self.on_partition_changed)
+        self.template_combo = QComboBox()
         self.template_combo.currentTextChanged.connect(self.request_template_change)
-        self.template_combo.activated.connect(lambda _idx: self.request_template_change(self.template_combo.currentText()))
-        top.addWidget(QLabel('Template:')); top.addWidget(self.template_combo, 1)
-        self.rename_edit = QLineEdit(); top.addWidget(QLabel('Name / Save as:')); top.addWidget(self.rename_edit, 1)
+        self.template_combo.activated.connect(lambda _idx: self.request_template_change(self.current_template_key()))
+        top.addWidget(QLabel('Partition:')); top.addWidget(self.partition_combo, 1)
+        top.addWidget(QLabel('Symbol:')); top.addWidget(self.template_combo, 1)
+        self.rename_edit = QLineEdit(); top.addWidget(QLabel('Save symbol as:')); top.addWidget(self.rename_edit, 1)
         save_btn = QPushButton('Save Template'); save_btn.clicked.connect(lambda _checked=False: self.save_template())
         top.addWidget(save_btn)
         layout.addLayout(top)
@@ -811,6 +872,55 @@ class TemplateEditorDialog(QDialog):
         layout.addWidget(splitter, 1)
         buttons = QDialogButtonBox(QDialogButtonBox.Close); buttons.rejected.connect(self.reject); layout.addWidget(buttons)
         self.scene.selectionChanged.connect(self.on_scene_selection_changed)
+
+    def _split_template_key(self, key: str):
+        key = str(key or '').strip()
+        if ' / ' in key:
+            a, b = key.split(' / ', 1)
+            return a.strip() or 'General', b.strip() or key
+        return 'General', key or 'Template'
+
+    def current_template_key(self):
+        part = self.partition_combo.currentText().strip() if hasattr(self, 'partition_combo') else ''
+        sym = self.template_combo.currentText().strip() if hasattr(self, 'template_combo') else ''
+        if not part or part == 'General':
+            return sym
+        return f'{part} / {sym}' if sym else part
+
+    def rebuild_template_partition_combos(self, select_key: str | None = None):
+        select_key = select_key or getattr(self, '_current_template_name', None) or next(iter(sorted(self.templates.keys())), '')
+        partitions = sorted({self._split_template_key(k)[0] for k in self.templates.keys()}) or ['General']
+        part, sym = self._split_template_key(select_key)
+        if part not in partitions:
+            part = partitions[0]
+        self.partition_combo.blockSignals(True)
+        self.partition_combo.clear(); self.partition_combo.addItems(partitions); self.partition_combo.setCurrentText(part)
+        self.partition_combo.blockSignals(False)
+        self.rebuild_template_symbol_combo(part, sym)
+
+    def rebuild_template_symbol_combo(self, partition: str, select_symbol: str | None = None):
+        symbols = []
+        for k in sorted(self.templates.keys()):
+            p, name = self._split_template_key(k)
+            if p == partition:
+                symbols.append(name)
+        if not symbols and partition == 'General':
+            symbols = sorted(self.templates.keys())
+        self.template_combo.blockSignals(True)
+        self.template_combo.clear(); self.template_combo.addItems(symbols)
+        if select_symbol and self.template_combo.findText(select_symbol) >= 0:
+            self.template_combo.setCurrentText(select_symbol)
+        self.template_combo.blockSignals(False)
+
+    def on_partition_changed(self, partition: str):
+        if getattr(self, '_loading_template', False) or getattr(self, '_reverting_template_combo', False):
+            return
+        old = getattr(self, '_current_template_name', None)
+        if old is not None and not self._ask_save_if_dirty():
+            self.rebuild_template_partition_combos(old)
+            return
+        self.rebuild_template_symbol_combo(partition)
+        self.load_selected_template()
 
     def set_template_edit_grid(self, text):
         try:
@@ -940,6 +1050,7 @@ class TemplateEditorDialog(QDialog):
         if old is None:
             self.load_selected_template()
             return
+        name = self.current_template_key()
         if name == old:
             return
         if not self._ask_save_if_dirty():
@@ -954,15 +1065,19 @@ class TemplateEditorDialog(QDialog):
         self.load_selected_template()
 
     def load_selected_template(self):
-        name = self.template_combo.currentText()
+        name = self.current_template_key()
         if not name: return
         self._loading_template = True
         self.unit = copy.deepcopy(self.templates[name]); self.symbol.units=[self.unit]
+        # In the Template Editor all body artwork primitives are deliberately editable.
+        for _g in getattr(self.unit, 'graphics', []) or []:
+            try: _g.locked_to_body = False
+            except Exception: pass
         if hasattr(self, 'origin_combo'):
             self.origin_combo.blockSignals(True)
             self.origin_combo.setCurrentText(getattr(self.symbol, 'origin', OriginMode.CENTER.value))
             self.origin_combo.blockSignals(False)
-        self.rename_edit.setText(name)
+        self.rename_edit.setText(self._split_template_key(name)[1])
         if hasattr(self, 'template_grid_combo'):
             self._sync_template_grid_combo_to_unit()
         self._current_template_name = name
@@ -972,18 +1087,20 @@ class TemplateEditorDialog(QDialog):
         self.rebuild_scene()
 
     def save_template(self, show_message=True):
-        name = self.rename_edit.text().strip() or self.template_combo.currentText() or 'Template'
+        part = self.partition_combo.currentText().strip() if hasattr(self, 'partition_combo') else ''
+        sym_name = self.rename_edit.text().strip() or self.template_combo.currentText() or 'Template'
+        name = f'{part} / {sym_name}' if part and part != 'General' else sym_name
+        # Saved templates are editable templates, not locked Wizard body groups.
+        for _g in getattr(self.unit, 'graphics', []) or []:
+            try: _g.locked_to_body = False
+            except Exception: pass
         self.templates[name] = copy.deepcopy(self.unit)
         if hasattr(self.main, 'merge_save_template_to_file'):
             self.main.merge_save_template_to_file(name, self.unit)
             self.main.symbol_templates.clear()
         if hasattr(self.main, 'apply_template_style_to_matching_symbols'):
             self.main.apply_template_style_to_matching_symbols(name, self.unit)
-        if self.template_combo.findText(name) < 0:
-            self.template_combo.addItem(name)
-        self.template_combo.blockSignals(True)
-        self.template_combo.setCurrentText(name)
-        self.template_combo.blockSignals(False)
+        self.rebuild_template_partition_combos(name)
         self._current_template_name = name
         self._clean_template_snapshot = self._template_state()
         self.dirty = False
@@ -1473,6 +1590,10 @@ class TemplateEditorDialog(QDialog):
         kind = item.data(0)
         filter_kind = 'TEXT' if kind in ('ATTR_REF_DES', 'ATTR_BODY') else kind
         selectable = self.selection_enabled.get(filter_kind, True)
+        # Imported Mentor body graphics are a single locked body group in the Symbol Wizard.
+        # They are only editable in the Template Editor.
+        if kind == 'GRAPHIC' and getattr(getattr(item, 'model', None), 'locked_to_body', False) and not getattr(self, 'is_template_editor', False):
+            selectable = False
         item.setFlag(QGraphicsItem.ItemIsSelectable, selectable)
         # Attribute text is content-locked but can still be moved/rotated/font-aligned when TEXT is selectable.
         item.setFlag(QGraphicsItem.ItemIsMovable, selectable)
@@ -1551,20 +1672,15 @@ class TemplateEditorDialog(QDialog):
         b = u.body
 
         def attr_model(key: str, default_text: str, default_x: float, default_y: float, font, default_h='left', default_v='upper'):
-            tm = b.attribute_texts.get(key)
-            if tm is None:
-                tm = TextModel(text=default_text, x=default_x, y=default_y,
-                               font_family=font.family, font_size_grid=font.size_grid, color=font.color)
-                tm.h_align = default_h
-                tm.v_align = default_v
-                b.attribute_texts[key] = tm
+            tm = _text_model_from_any(b.attribute_texts.get(key), default_text, default_x, default_y, font, default_h, default_v)
+            b.attribute_texts[key] = tm
             tm.text = default_text
             if not getattr(tm, 'font_family', ''):
-                tm.font_family = font.family
+                tm.font_family = str(_font_value(font, 'family', 'Arial'))
             if not getattr(tm, 'font_size_grid', 0):
-                tm.font_size_grid = font.size_grid
+                tm.font_size_grid = float(_font_value(font, 'size_grid', 0.75))
             if not getattr(tm, 'color', None):
-                tm.color = font.color
+                tm.color = tuple(_font_value(font, 'color', (0, 0, 0)))
             tm._is_attribute_text = True
             tm._attribute_key = key
             return tm
@@ -1790,6 +1906,10 @@ class TemplateEditorDialog(QDialog):
         kind = item.data(0)
         filter_kind = 'TEXT' if kind in ('ATTR_REF_DES', 'ATTR_BODY') else kind
         selectable = self.selection_enabled.get(filter_kind, True)
+        # Imported Mentor body graphics are a single locked body group in the Symbol Wizard.
+        # They are only editable in the Template Editor.
+        if kind == 'GRAPHIC' and getattr(getattr(item, 'model', None), 'locked_to_body', False) and not getattr(self, 'is_template_editor', False):
+            selectable = False
         item.setFlag(QGraphicsItem.ItemIsSelectable, selectable)
         # Attribute text is content-locked but can still be moved/rotated/font-aligned when TEXT is selectable.
         item.setFlag(QGraphicsItem.ItemIsMovable, selectable)
@@ -3564,21 +3684,16 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
             b.attribute_texts = {}
 
         def attr_model(key: str, default_text: str, default_x: float, default_y: float, font, default_h='left', default_v='upper'):
-            tm = b.attribute_texts.get(key)
-            if tm is None:
-                tm = TextModel(text=default_text, x=default_x, y=default_y,
-                               font_family=font.family, font_size_grid=font.size_grid, color=font.color)
-                tm.h_align = default_h
-                tm.v_align = default_v
-                b.attribute_texts[key] = tm
+            tm = _text_model_from_any(b.attribute_texts.get(key), default_text, default_x, default_y, font, default_h, default_v)
+            b.attribute_texts[key] = tm
             # Attribute content is generated; geometry/font/alignment are persistent and user-editable.
             tm.text = default_text
             if not getattr(tm, 'font_family', ''):
-                tm.font_family = font.family
+                tm.font_family = str(_font_value(font, 'family', 'Arial'))
             if not getattr(tm, 'font_size_grid', 0):
-                tm.font_size_grid = font.size_grid
+                tm.font_size_grid = float(_font_value(font, 'size_grid', 0.75))
             if not getattr(tm, 'color', None):
-                tm.color = font.color
+                tm.color = tuple(_font_value(font, 'color', (0, 0, 0)))
             tm._is_attribute_text = True
             tm._attribute_key = key
             return tm
@@ -3607,6 +3722,10 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         kind = item.data(0)
         filter_kind = 'TEXT' if kind in ('ATTR_REF_DES', 'ATTR_BODY') else kind
         selectable = self.selection_enabled.get(filter_kind, True)
+        # Imported Mentor body graphics are a single locked body group in the Symbol Wizard.
+        # They are only editable in the Template Editor.
+        if kind == 'GRAPHIC' and getattr(getattr(item, 'model', None), 'locked_to_body', False) and not getattr(self, 'is_template_editor', False):
+            selectable = False
         item.setFlag(QGraphicsItem.ItemIsSelectable, selectable)
         # Attribute text is content-locked but can still be moved/rotated/font-aligned when TEXT is selectable.
         item.setFlag(QGraphicsItem.ItemIsMovable, selectable)
@@ -3998,9 +4117,9 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         for key in keys:
             tm = body.attribute_texts.get(key) if getattr(body, 'attribute_texts', None) else None
             if tm is not None:
-                tm.font_family = font.family
-                tm.font_size_grid = font.size_grid
-                tm.color = font.color
+                tm.font_family = str(_font_value(font, 'family', 'Arial'))
+                tm.font_size_grid = float(_font_value(font, 'size_grid', 0.75))
+                tm.color = tuple(_font_value(font, 'color', (0, 0, 0)))
 
     def _multi_pin_visibility_checkbox(self, pin_items, attr):
         pins = [getattr(i, 'model', None) for i in pin_items if getattr(i, 'model', None) is not None and i.data(0) == 'PIN']
@@ -4046,9 +4165,9 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
                 continue
             tm.text = str(body.attributes.get(k, '')) if k == 'RefDes' else f'{k}: {body.attributes.get(k, "")}'
             font = body.refdes_font if k == 'RefDes' else body.attribute_font
-            tm.font_family = font.family
-            tm.font_size_grid = font.size_grid
-            tm.color = font.color
+            tm.font_family = str(_font_value(font, 'family', 'Arial'))
+            tm.font_size_grid = float(_font_value(font, 'size_grid', 0.75))
+            tm.color = tuple(_font_value(font, 'color', (0, 0, 0)))
 
     def _copy_font_values(self, src: FontModel, dst: FontModel):
         dst.family = src.family
@@ -5852,8 +5971,28 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
             try:
                 src = payload.get('unit', payload) if isinstance(payload, dict) else payload
                 body_src = src.get('body', {}) if isinstance(src, dict) else {}
-                body = SymbolBodyModel(**{k: v for k, v in dict(body_src).items() if k in SymbolBodyModel.__dataclass_fields__})
-                pins = [PinModel(**dict(p)) for p in (src.get('pins', []) or [])]
+                bd = {k: v for k, v in dict(body_src).items() if k in SymbolBodyModel.__dataclass_fields__}
+                bd['attribute_font'] = _coerce_font_model(bd.get('attribute_font'), .75)
+                bd['refdes_font'] = _coerce_font_model(bd.get('refdes_font'), .9)
+                if isinstance(bd.get('attribute_texts'), dict):
+                    bd['attribute_texts'] = {
+                        str(k): _text_model_from_any(v, str(k), 0.0, 0.0, bd['attribute_font'])
+                        for k, v in bd.get('attribute_texts', {}).items()
+                    }
+                body = SymbolBodyModel(**bd)
+
+                pins = []
+                for pd in (src.get('pins', []) or []):
+                    pd = dict(pd)
+                    pd['number_font'] = _coerce_font_model(pd.get('number_font'), .45)
+                    pd['label_font'] = _coerce_font_model(pd.get('label_font'), .55)
+                    if isinstance(pd.get('attribute_texts'), dict):
+                        pd['attribute_texts'] = {
+                            str(k): _text_model_from_any(v, str(k), 0.0, 0.0, pd['label_font'])
+                            for k, v in pd.get('attribute_texts', {}).items()
+                        }
+                    pins.append(PinModel(**pd))
+
                 texts = [TextModel(**dict(t)) for t in (src.get('texts', []) or [])]
                 graphics = []
                 for gd in (src.get('graphics', []) or []):

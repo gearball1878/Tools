@@ -84,8 +84,13 @@ class TransformMixin:
                 self.update_model_pos()
             return super().itemChange(change, value)
         if change == QGraphicsItem.ItemPositionChange and self.scene():
-            if not bool(getattr(self.scene().window, 'template_snap_check', None) and not self.scene().window.template_snap_check.isChecked()):
-                g = self.scene().grid_px
+            win = self.scene().window
+            snap_enabled = not bool(getattr(win, 'template_snap_check', None) and not win.template_snap_check.isChecked())
+            if snap_enabled:
+                # Template Editor may use a fine edit grid while the stored symbol/pin grid
+                # stays at the coarser base grid. Normal Symbol Wizard items still snap to
+                # the main grid. Locked imported BODY primitives bypass this branch above.
+                g = float(getattr(win, 'edit_grid_px', self.scene().grid_px) if getattr(win, 'is_template_editor', False) else self.scene().grid_px)
                 return QPointF(snap(value.x(), g), snap(value.y(), g))
         if change == QGraphicsItem.ItemPositionHasChanged and self.scene():
             self.update_model_pos()
@@ -727,9 +732,10 @@ class GraphicItem(TransformMixin, QGraphicsItem):
         self.setPos(model.x * g, -model.y * g)
         self.common_flags()
         self.setData(0, 'GRAPHIC')
-        if getattr(model, 'locked_to_body', False):
-            # Imported body primitives are one geometric BODY group.
-            # They can be moved through the BodyItem but not edited separately.
+        if getattr(model, 'locked_to_body', False) and not getattr(window, 'is_template_editor', False):
+            # Imported body primitives are one geometric BODY group in the Symbol Wizard.
+            # They can be moved only through the logical BodyItem; individual edit/select
+            # is enabled exclusively in the Template Editor.
             self.setFlag(QGraphicsItem.ItemIsMovable, False)
             self.setFlag(QGraphicsItem.ItemIsSelectable, False)
             self.setAcceptedMouseButtons(Qt.NoButton)
