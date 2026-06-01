@@ -300,3 +300,9 @@ Imported snapshot from `Symbol_Wizard_75.zip`.
 
 Imported snapshot from `Symbol_Wizard_76.zip`.
 
+## v77
+
+Imported snapshot from `Symbol_Wizard_2.zip`.
+
+Archive version: `v2`; imported as: `v77`; offset: `75`.
+

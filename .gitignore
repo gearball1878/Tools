@@ -80,3 +80,5 @@ __pycache__/
 # Project data / local symbol libraries
 XPEDITION_AUTO/symbols/
 XPEDITION_AUTO/XPED_Symbol_Auto/symbols/
+XPEDITION_AUTO/XPED_Symbol_Auto/__archive__/
+*.pyo
