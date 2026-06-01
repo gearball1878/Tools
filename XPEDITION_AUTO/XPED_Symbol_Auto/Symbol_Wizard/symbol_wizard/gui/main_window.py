@@ -18038,3 +18038,250 @@ try:
     MainWindow.__init__ = _v84_init
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# SW86: BODY canvas scaling is BODY-only.
+# ---------------------------------------------------------------------------
+# A BODY resize must not behave like a generic vector-group scale. Only the
+# BODY geometry (and imported/template graphics that are explicitly part of the
+# BODY) is scaled. Pins are re-docked to the new BODY edges and vertically /
+# horizontally centered/distributed. Text/attributes keep font and spacing and
+# are only translated by the BODY's top-left movement delta.
+
+def _sw86_float(v, default=0.0):
+    try:
+        return float(v)
+    except Exception:
+        return float(default)
+
+
+def _sw86_body_grid_step(self):
+    try:
+        return max(1e-9, float(self._edit_grid_step()))
+    except Exception:
+        try:
+            return max(1e-9, float(getattr(getattr(self, 'symbol', None), 'grid_inch', 0.1) or 0.1))
+        except Exception:
+            return 0.1
+
+
+def _sw86_snap(self, v):
+    step = _sw86_body_grid_step(self)
+    try:
+        return round(float(v) / step) * step
+    except Exception:
+        return float(v)
+
+
+def _sw86_is_body_graphic(g):
+    try:
+        role = str(getattr(g, 'graphic_role', '') or '').lower()
+        return bool(getattr(g, 'locked_to_body', False)) or role in ('body', 'template_body', 'imported_body')
+    except Exception:
+        return False
+
+
+def _sw86_move_pin_texts_keep_offsets(p, old_px, old_py, new_px, new_py):
+    dx = float(new_px) - float(old_px)
+    dy = float(new_py) - float(old_py)
+    try:
+        if getattr(p, 'label_x', None) is not None:
+            p.label_x = _sw86_float(p.label_x) + dx
+        if getattr(p, 'label_y', None) is not None:
+            p.label_y = _sw86_float(p.label_y) + dy
+        if getattr(p, 'number_x', None) is not None:
+            p.number_x = _sw86_float(p.number_x) + dx
+        if getattr(p, 'number_y', None) is not None:
+            p.number_y = _sw86_float(p.number_y) + dy
+        for tm in (getattr(p, 'attribute_texts', {}) or {}).values():
+            try:
+                tm.x = _sw86_float(tm.x) + dx
+                tm.y = _sw86_float(tm.y) + dy
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
+def _sw86_redock_pins_to_body(self, start_state, body):
+    try:
+        pins = list(getattr(getattr(self, 'current_unit', None), 'pins', []) or [])
+    except Exception:
+        pins = []
+    if not pins:
+        return
+    left = [p for p in pins if str(getattr(p, 'side', 'left')) == PinSide.LEFT.value]
+    right = [p for p in pins if str(getattr(p, 'side', 'left')) == PinSide.RIGHT.value]
+    top = [p for p in pins if str(getattr(p, 'side', 'left')) == PinSide.TOP.value]
+    bottom = [p for p in pins if str(getattr(p, 'side', 'left')) == PinSide.BOTTOM.value]
+    old_pos = {}
+    try:
+        for entry in (start_state or {}).get('pins', []) or []:
+            if len(entry) >= 3:
+                old_pos[entry[0]] = (_sw86_float(entry[1]), _sw86_float(entry[2]))
+    except Exception:
+        pass
+    bx = _sw86_float(getattr(body, 'x', 0.0))
+    by = _sw86_float(getattr(body, 'y', 0.0))
+    bw = max(_sw86_body_grid_step(self), abs(_sw86_float(getattr(body, 'width', 0.0))))
+    bh = max(_sw86_body_grid_step(self), abs(_sw86_float(getattr(body, 'height', 0.0))))
+    cx = bx + bw / 2.0
+    cy = by - bh / 2.0
+
+    def place_vertical(group, x):
+        n = len(group)
+        if n <= 0:
+            return
+        # One pin is exactly centered. Multiple pins are distributed symmetrically
+        # inside the BODY height, without scaling pin length or text.
+        for i, p in enumerate(group):
+            if n == 1:
+                y = cy
+            else:
+                y = by - ((i + 1) * bh / (n + 1))
+            old_px, old_py = old_pos.get(p, (_sw86_float(getattr(p, 'x', x)), _sw86_float(getattr(p, 'y', y))))
+            nx, ny = _sw86_snap(self, x), _sw86_snap(self, y)
+            p.x, p.y = nx, ny
+            _sw86_move_pin_texts_keep_offsets(p, old_px, old_py, nx, ny)
+
+    def place_horizontal(group, y):
+        n = len(group)
+        if n <= 0:
+            return
+        for i, p in enumerate(group):
+            if n == 1:
+                x = cx
+            else:
+                x = bx + ((i + 1) * bw / (n + 1))
+            old_px, old_py = old_pos.get(p, (_sw86_float(getattr(p, 'x', x)), _sw86_float(getattr(p, 'y', y))))
+            nx, ny = _sw86_snap(self, x), _sw86_snap(self, y)
+            p.x, p.y = nx, ny
+            _sw86_move_pin_texts_keep_offsets(p, old_px, old_py, nx, ny)
+
+    place_vertical(left, bx)
+    place_vertical(right, bx + bw)
+    place_horizontal(top, by)
+    place_horizontal(bottom, by - bh)
+
+
+def _sw86_scale_current_unit_children_from_body_resize(self, start_state, body):
+    start_state = start_state if isinstance(start_state, dict) else {}
+    old_x = _sw86_float(start_state.get('x', getattr(body, 'x', 0.0)))
+    old_y = _sw86_float(start_state.get('y', getattr(body, 'y', 0.0)))
+    old_w = max(1e-9, abs(_sw86_float(start_state.get('w', getattr(body, 'width', 1.0)), 1.0)))
+    old_h = max(1e-9, abs(_sw86_float(start_state.get('h', getattr(body, 'height', 1.0)), 1.0)))
+    new_x = _sw86_snap(self, getattr(body, 'x', old_x))
+    new_y = _sw86_snap(self, getattr(body, 'y', old_y))
+    new_w = max(_sw86_body_grid_step(self), _sw86_snap(self, abs(_sw86_float(getattr(body, 'width', old_w), old_w))))
+    new_h = max(_sw86_body_grid_step(self), _sw86_snap(self, abs(_sw86_float(getattr(body, 'height', old_h), old_h))))
+    body.x, body.y, body.width, body.height = new_x, new_y, new_w, new_h
+    dx = new_x - old_x
+    dy = new_y - old_y
+    sx = new_w / old_w
+    sy = new_h / old_h
+
+    # Pins are never scaled. They are re-docked to the BODY edges and centered /
+    # distributed on those edges.
+    _sw86_redock_pins_to_body(self, start_state, body)
+
+    # Free text is not BODY-owned. BODY attributes are only translated as a block;
+    # font size, rotation and inter-line spacing remain unchanged.
+    for t, tx, ty in start_state.get('texts', []) or []:
+        try:
+            t.x = _sw86_snap(self, _sw86_float(tx) + dx)
+            t.y = _sw86_snap(self, _sw86_float(ty) + dy)
+        except Exception:
+            pass
+    for t, tx, ty in start_state.get('attributes', []) or []:
+        try:
+            t.x = _sw86_snap(self, _sw86_float(tx) + dx)
+            t.y = _sw86_snap(self, _sw86_float(ty) + dy)
+        except Exception:
+            pass
+
+    # Only graphics explicitly belonging to the imported/template BODY are scaled.
+    # User graphics remain standalone objects.
+    for gr, gx, gy, gw, gh in start_state.get('graphics', []) or []:
+        try:
+            if not _sw86_is_body_graphic(gr):
+                continue
+            gr.x = _sw86_snap(self, new_x + (_sw86_float(gx) - old_x) * sx)
+            gr.y = _sw86_snap(self, new_y + (_sw86_float(gy) - old_y) * sy)
+            gr.w = _sw86_snap(self, _sw86_float(gw) * sx)
+            gr.h = _sw86_snap(self, _sw86_float(gh) * sy)
+        except Exception:
+            pass
+
+
+def _sw86_snapshot_body_resize_state(self, body=None):
+    try:
+        u = self.current_unit
+        b = body or u.body
+        return {
+            'x': _sw86_float(getattr(b, 'x', 0.0)),
+            'y': _sw86_float(getattr(b, 'y', 0.0)),
+            'w': _sw86_float(getattr(b, 'width', 1.0), 1.0),
+            'h': _sw86_float(getattr(b, 'height', 1.0), 1.0),
+            'pins': [(p, _sw86_float(getattr(p, 'x', 0.0)), _sw86_float(getattr(p, 'y', 0.0)), _sw86_float(getattr(p, 'length', 1.0), 1.0)) for p in getattr(u, 'pins', []) or []],
+            'texts': [],
+            'attributes': [(t, _sw86_float(getattr(t, 'x', 0.0)), _sw86_float(getattr(t, 'y', 0.0))) for t in (getattr(getattr(u, 'body', None), 'attribute_texts', {}) or {}).values()],
+            'graphics': [(gr, _sw86_float(getattr(gr, 'x', 0.0)), _sw86_float(getattr(gr, 'y', 0.0)), _sw86_float(getattr(gr, 'w', 0.0)), _sw86_float(getattr(gr, 'h', 0.0))) for gr in getattr(u, 'graphics', []) or []],
+        }
+    except Exception:
+        return {}
+
+try:
+    _sw86_prev_transform_unit_as_body_group = MainWindow._transform_unit_as_body_group
+except Exception:
+    _sw86_prev_transform_unit_as_body_group = None
+
+
+def _sw86_transform_unit_as_body_group(self, op, value=None, refresh=True):
+    # Scale is BODY-only. Rotate/flip keep the existing stable behaviour.
+    if op not in ('scale', 'scale_x_to', 'scale_y_to'):
+        if _sw86_prev_transform_unit_as_body_group is not None:
+            return _sw86_prev_transform_unit_as_body_group(self, op, value, refresh)
+        return None
+    try:
+        u = self.current_unit
+        body = u.body
+        st = _sw86_snapshot_body_resize_state(self, body)
+        old_w = max(_sw86_body_grid_step(self), _sw86_float(st.get('w', body.width), body.width))
+        old_h = max(_sw86_body_grid_step(self), _sw86_float(st.get('h', body.height), body.height))
+        if op == 'scale_x_to':
+            new_w, new_h = max(_sw86_body_grid_step(self), _sw86_snap(self, value)), old_h
+        elif op == 'scale_y_to':
+            new_w, new_h = old_w, max(_sw86_body_grid_step(self), _sw86_snap(self, value))
+        else:
+            f = _sw86_float(value, 1.0)
+            new_w = max(_sw86_body_grid_step(self), _sw86_snap(self, old_w * f))
+            new_h = max(_sw86_body_grid_step(self), _sw86_snap(self, old_h * f))
+        # Toolbar scale grows around BODY center to avoid directional drift.
+        cx = _sw86_float(body.x) + old_w / 2.0
+        cy = _sw86_float(body.y) - old_h / 2.0
+        body.width = new_w; body.height = new_h
+        body.x = _sw86_snap(self, cx - new_w / 2.0)
+        body.y = _sw86_snap(self, cy + new_h / 2.0)
+        _sw86_scale_current_unit_children_from_body_resize(self, st, body)
+        if refresh:
+            try: self.update_current_unit_canvas_positions()
+            except Exception: pass
+            try: self.update_attribute_items_for_unit()
+            except Exception: pass
+            try: self.schedule_scene_refresh(visual_only=True)
+            except Exception: pass
+        return None
+    except Exception:
+        if _sw86_prev_transform_unit_as_body_group is not None:
+            return _sw86_prev_transform_unit_as_body_group(self, op, value, refresh)
+        return None
+
+try:
+    MainWindow.scale_current_unit_children_from_body_resize = _sw86_scale_current_unit_children_from_body_resize
+    MainWindow._transform_unit_as_body_group = _sw86_transform_unit_as_body_group
+    if 'TemplateEditorDialog' in globals():
+        TemplateEditorDialog.scale_current_unit_children_from_body_resize = _sw86_scale_current_unit_children_from_body_resize
+        if hasattr(TemplateEditorDialog, '_transform_unit_as_body_group'):
+            TemplateEditorDialog._transform_unit_as_body_group = _sw86_transform_unit_as_body_group
+except Exception:
+    pass
