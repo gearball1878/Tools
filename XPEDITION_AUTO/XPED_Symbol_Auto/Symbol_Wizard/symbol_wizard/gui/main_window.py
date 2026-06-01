@@ -2087,6 +2087,7 @@ class TemplateEditorDialog(QDialog):
 
     def reset_origin_to_selected_anchor(self, mode: str | None = None):
         mode = mode or (self.origin_combo.currentText() if hasattr(self, 'origin_combo') else OriginMode.CENTER.value)
+        self._sync_imported_body_model_to_body_graphics(self.unit)
         body = self.unit.body
         ax, ay = self.body_anchor_point_oriented(body, mode)
         old_mode = getattr(self.symbol, 'origin', OriginMode.CENTER.value)
@@ -2110,6 +2111,7 @@ class TemplateEditorDialog(QDialog):
             self.origin_combo.blockSignals(True)
             self.origin_combo.setCurrentText(mode)
             self.origin_combo.blockSignals(False)
+        self._invalidate_body_group_transform_cache(self.unit)
         self.dock_pins_to_body(self.unit)
         self.rebuild_scene()
 
@@ -5736,6 +5738,43 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         except Exception:
             pass
 
+
+    def _sync_imported_body_model_to_body_graphics(self, unit=None):
+        """Keep imported/template BODY model congruent with its visible BODY artwork.
+
+        Mentor/template imports render the BODY through locked GraphicModel
+        primitives.  The Symbol Wizard must not transform a separate proxy
+        rectangle.  Therefore, before a BODY-group transform starts, the BODY
+        model is synchronized to the current visual bounds of the locked BODY
+        graphics.  User graphics are deliberately excluded.
+        """
+        try:
+            u = unit or self.current_unit
+            b = u.body
+            body_graphics = []
+            for gr in getattr(u, 'graphics', []) or []:
+                role = str(getattr(gr, 'graphic_role', '') or '').lower()
+                if getattr(gr, 'locked_to_body', False) or role in ('body','template_body','imported_body'):
+                    body_graphics.append(gr)
+            if not body_graphics:
+                return
+            xs=[]; ys=[]
+            for gr in body_graphics:
+                gx=float(getattr(gr,'x',0.0) or 0.0); gy=float(getattr(gr,'y',0.0) or 0.0)
+                gw=float(getattr(gr,'w',0.0) or 0.0); gh=float(getattr(gr,'h',0.0) or 0.0)
+                # For line objects w/h may describe the endpoint vector.  For
+                # boxes/ellipses it describes width and height from the top-left.
+                xs.extend([gx, gx+gw])
+                ys.extend([gy, gy-gh])
+            minx,maxx=min(xs),max(xs); miny,maxy=min(ys),max(ys)
+            if maxx-minx > 1e-9 and maxy-miny > 1e-9:
+                b.x = self._clean_float(minx)
+                b.y = self._clean_float(maxy)
+                b.width = self._clean_float(maxx-minx)
+                b.height = self._clean_float(maxy-miny)
+        except Exception:
+            pass
+
     def _body_group_capture_base(self, unit=None):
         """Capture one immutable base state for the complete symbol part.
 
@@ -5748,13 +5787,20 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         instead of rotating/scaling individual world coordinates.
         """
         u = unit or self.current_unit
+        # Imported/template BODY graphics are the real BODY.  Keep the BODY
+        # model congruent before capturing the immutable local-coordinate base.
+        self._sync_imported_body_model_to_body_graphics(u)
         b = u.body
         mode = getattr(self.symbol, 'origin', OriginMode.CENTER.value)
-        px, py = self._symbol_group_pivot_grid()
         try:
             ax, ay = self.body_anchor_point_oriented(b, mode)
         except Exception:
             ax, ay = self.body_anchor_point(b, mode)
+        # The transform pivot is the selected BODY anchor itself.  If the user
+        # has reset bottom_left/top_right/etc. to the grid origin this is 0/0;
+        # otherwise it is still stable.  Never derive a second proxy pivot from
+        # sheet coordinates, scene bounds or a generated selection frame.
+        px, py = ax, ay
         base = {
             'pivot': (float(px), float(py)),
             'anchor': (float(ax), float(ay)),
