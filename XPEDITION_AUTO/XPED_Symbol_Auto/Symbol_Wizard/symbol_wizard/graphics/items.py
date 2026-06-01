@@ -76,6 +76,13 @@ class TransformMixin:
         )
 
     def itemChange(self, change, value):
+        # Imported Mentor BODY primitives are one locked geometric BODY group.
+        # They must never be individually grid-snapped by QGraphicsItem while
+        # the logical BodyItem moves the group; otherwise lines/arcs drift apart.
+        if getattr(getattr(self, 'model', None), 'locked_to_body', False):
+            if change == QGraphicsItem.ItemPositionHasChanged and self.scene():
+                self.update_model_pos()
+            return super().itemChange(change, value)
         if change == QGraphicsItem.ItemPositionChange and self.scene():
             if not bool(getattr(self.scene().window, 'template_snap_check', None) and not self.scene().window.template_snap_check.isChecked()):
                 g = self.scene().grid_px
@@ -720,6 +727,13 @@ class GraphicItem(TransformMixin, QGraphicsItem):
         self.setPos(model.x * g, -model.y * g)
         self.common_flags()
         self.setData(0, 'GRAPHIC')
+        if getattr(model, 'locked_to_body', False):
+            # Imported body primitives are one geometric BODY group.
+            # They can be moved through the BodyItem but not edited separately.
+            self.setFlag(QGraphicsItem.ItemIsMovable, False)
+            self.setFlag(QGraphicsItem.ItemIsSelectable, False)
+            self.setAcceptedMouseButtons(Qt.NoButton)
+            self.setAcceptHoverEvents(False)
         self.apply_transform_from_model()
 
     def _raw_rect(self):
@@ -779,7 +793,7 @@ class GraphicItem(TransformMixin, QGraphicsItem):
             painter.drawRect(QRectF(0, 0, m.w * g, m.h * g))
         elif m.shape in ('ellipse', 'circle'):
             painter.drawEllipse(QRectF(0, 0, m.w * g, m.h * g))
-        if self.isSelected():
+        if self.isSelected() and not getattr(self.model, 'locked_to_body', False):
             painter.save()
             painter.setPen(QPen(QColor(80, 80, 80), 1, Qt.DashLine))
             painter.drawRect(self._rect())

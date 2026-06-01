@@ -1616,6 +1616,8 @@ class TemplateEditorDialog(QDialog):
         body.y -= ay
         for p in self.unit.pins:
             p.x -= ax; p.y -= ay
+            try: self._move_pin_owned_texts(p, -ax, -ay)
+            except Exception: pass
         for t in self.unit.texts:
             t.x -= ax; t.y -= ay
         for t in getattr(self.unit.body, 'attribute_texts', {}).values():
@@ -1645,7 +1647,7 @@ class TemplateEditorDialog(QDialog):
         for item in self.scene.items():
             kind = item.data(0)
             filter_kind = 'TEXT' if kind in ('ATTR_REF_DES', 'ATTR_BODY') else kind
-            if kind in ('BODY','PIN','TEXT','ATTR_REF_DES','ATTR_BODY','GRAPHIC') and self.selection_enabled.get(filter_kind, True): item.setSelected(True)
+            if kind in ('BODY','PIN','TEXT','ATTR_REF_DES','ATTR_BODY','GRAPHIC') and not (kind == 'GRAPHIC' and getattr(getattr(item, 'model', None), 'locked_to_body', False)) and self.selection_enabled.get(filter_kind, True): item.setSelected(True)
         self.refresh_properties()
     def copy_selected(self):
         self.set_tool(DrawTool.SELECT.value)
@@ -3531,9 +3533,14 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         self.add_attribute_text_items(u)
         for g in u.graphics:
             item = GraphicItem(g, self)
-            self.apply_item_selectability(item)
+            if not getattr(g, 'locked_to_body', False):
+                self.apply_item_selectability(item)
+                self._restore_or_select_item(item, selected_ids)
+            else:
+                # Body-owned imported graphics are visually part of the BODY group.
+                # Keep them above the grid but below pins/text and non-selectable.
+                item.setZValue(-0.1)
             self.scene.addItem(item)
-            self._restore_or_select_item(item, selected_ids)
         for p in u.pins:
             item = PinItem(p, self)
             self.apply_item_selectability(item)
@@ -4576,12 +4583,26 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         self._refresh_visual_only = False
 
     # ------------------------------------------------------------------ Grouping / constraints
+
+    def _move_pin_owned_texts(self, pin, dx: float, dy: float):
+        for ax_name, ay_name in (('label_x', 'label_y'), ('number_x', 'number_y')):
+            if getattr(pin, ax_name, None) is not None and getattr(pin, ay_name, None) is not None:
+                setattr(pin, ax_name, float(getattr(pin, ax_name)) + dx)
+                setattr(pin, ay_name, float(getattr(pin, ay_name)) + dy)
+        for tm in (getattr(pin, 'attribute_texts', {}) or {}).values():
+            try:
+                tm.x = float(tm.x) + dx
+                tm.y = float(tm.y) + dy
+            except Exception:
+                pass
+
     def move_current_unit_group(self, dx: float, dy: float, source_body=None):
         u = self.current_unit
         # Body is the anchor. When it moves, all user-owned objects in this unit follow.
         for p in u.pins:
             p.x += dx
             p.y += dy
+            self._move_pin_owned_texts(p, dx, dy)
         for t in u.texts:
             t.x += dx
             t.y += dy

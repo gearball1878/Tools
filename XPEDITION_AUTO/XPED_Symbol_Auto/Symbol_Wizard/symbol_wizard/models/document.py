@@ -53,6 +53,9 @@ class GraphicModel(TransformModel):
     ctrl_x: float|None=None
     ctrl_y: float|None=None
     mentor_raw: str=''
+    # True for imported Mentor body artwork: geometry is part of the BODY group
+    # and is intentionally not individually editable/selectable.
+    locked_to_body: bool=False
     style: StyleModel=field(default_factory=StyleModel)
 
 @dataclass

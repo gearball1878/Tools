@@ -27,6 +27,7 @@ from symbol_wizard.models.document import (
     FontModel,
     GraphicModel,
     PinModel,
+    PinSide,
     StyleModel,
     SymbolBodyModel,
     SymbolKind,
@@ -452,6 +453,7 @@ def _import_native_single(text: str, path: Path) -> SymbolModel:
                 active_pin_id = None
                 x1, y1, x2, y2 = map(float, parts[1:5])
                 rect_g = _graphic_rect_from_mentor(x1, y1, x2, y2, z, line)
+                rect_g.locked_to_body = True
                 # Mentor body artwork must remain real body artwork.  Do not
                 # consume the first box as the Wizard body rectangle because that
                 # drops it from the imported graphic set and makes complex native
@@ -471,17 +473,21 @@ def _import_native_single(text: str, path: Path) -> SymbolModel:
                     if len(nums) < 4:
                         raise ValueError("Mentor l record has too few coordinates")
                     pts = list(zip(nums[0::2], nums[1::2]))
-                    graphics.extend(_graphic_line_from_points(pts, z, line))
+                    
+                    _gs = _graphic_line_from_points(pts, z, line)
+                    for _g in _gs:
+                        _g.locked_to_body = True
+                    graphics.extend(_gs)
                 except Exception:
                     mentor_raw_unknown.append(line)
             elif tag == "c" and len(parts) >= 4:
                 active_pin_id = None
                 cx, cy, r = map(float, parts[1:4])
-                graphics.append(_graphic_circle_from_mentor(cx, cy, abs(r), z, line))
+                _g = _graphic_circle_from_mentor(cx, cy, abs(r), z, line); _g.locked_to_body = True; graphics.append(_g)
             elif tag == "a" and len(parts) >= 7:
                 active_pin_id = None
                 x1, y1, cx, cy, x2, y2 = map(float, parts[1:7])
-                graphics.append(_graphic_arc_from_mentor(x1, y1, cx, cy, x2, y2, z, line))
+                _g = _graphic_arc_from_mentor(x1, y1, cx, cy, x2, y2, z, line); _g.locked_to_body = True; graphics.append(_g)
             elif tag == "T" and len(parts) >= 7:
                 active_pin_id = None
                 text_value = " ".join(parts[6:])
@@ -603,6 +609,49 @@ def _import_native_single(text: str, path: Path) -> SymbolModel:
         body.visible_attributes.setdefault("RefDes", True)
         body.visible_attributes.setdefault("Value", True)
 
+    def _attach_imported_pin_attribute_stack(pmodel: PinModel):
+        """Normalize Mentor pin text into the native Wizard pin model.
+
+        Mentor stores visible pin labels/numbers/PINTYPE as separate L/A rows.
+        In the Symbol Wizard these must not become additional free text objects
+        and must not be duplicated as an attribute stack.  Instead the imported
+        pin behaves exactly like a manually created pin: number, name and
+        function are drawn by PinItem and stay owned by the pin.  Extra Mentor
+        pin attributes remain in the data model/property panel but are hidden
+        unless the user explicitly enables them later.
+        """
+        if getattr(pmodel, 'attributes', None) is None:
+            pmodel.attributes = {}
+        if getattr(pmodel, 'visible_attributes', None) is None:
+            pmodel.visible_attributes = {}
+
+        # Remove legacy/imported duplicate text anchors.  The canonical visual
+        # representation is the same one used for newly created Wizard pins.
+        pmodel.attribute_texts = {}
+        pmodel.label_x = None; pmodel.label_y = None
+        pmodel.number_x = None; pmodel.number_y = None
+
+        name = str(getattr(pmodel, 'name', '') or '').strip() or f"PIN{getattr(pmodel, 'number', '')}"
+        func = str(getattr(pmodel, 'function', '') or '').strip()
+        if not func or func == name:
+            # Mentor PINTYPE/ANALOG/etc. is the closest equivalent to the
+            # internally generated pin function row when no explicit function
+            # attribute exists.
+            func = str(getattr(pmodel, 'pin_type', '') or 'FUNC').strip() or 'FUNC'
+        pmodel.name = name
+        pmodel.function = func
+
+        pmodel.attributes.setdefault('PIN / FUNC', f'{name} / {func}')
+        pmodel.attributes.setdefault('PINTYPE', str(getattr(pmodel, 'pin_type', '') or 'BIDI'))
+        pmodel.attributes.setdefault('NAME', name)
+        pmodel.attributes.setdefault('#', str(getattr(pmodel, 'number', '') or ''))
+        for key in list(pmodel.attributes.keys()):
+            pmodel.visible_attributes[key] = False
+
+        pmodel.visible_name = True
+        pmodel.visible_function = True
+        pmodel.visible_number = True
+
     pins = []
     for k in sorted(pins_tmp):
         payload = pins_tmp[k]
@@ -611,6 +660,7 @@ def _import_native_single(text: str, path: Path) -> SymbolModel:
         pmodel.color = col
         pmodel.number_font.color = col
         pmodel.label_font.color = col
+        _attach_imported_pin_attribute_stack(pmodel)
         pins.append(pmodel)
     if not body_box_seen and not graphics:
         # Truly body-less symbol: keep a zero logical body.
@@ -626,7 +676,9 @@ def _import_native_single(text: str, path: Path) -> SymbolModel:
     body.attributes["MENTOR_GRAPHICS_AS_BODY"] = "1"
     body.visible_attributes["MENTOR_GRAPHICS_AS_BODY"] = False
     body.attributes["MENTOR_DISABLE_AUTO_DOCK"] = "1"
+    body.attributes["MENTOR_BODY_GRAPHICS_LOCKED"] = "1"
     body.visible_attributes["MENTOR_DISABLE_AUTO_DOCK"] = False
+    body.visible_attributes["MENTOR_BODY_GRAPHICS_LOCKED"] = False
     # Store detected import scale for diagnostics/template debugging.
     body.attributes.setdefault("MENTOR_GRID_UNIT", str(int(z) if float(z).is_integer() else z))
     body.visible_attributes.setdefault("MENTOR_GRID_UNIT", False)
