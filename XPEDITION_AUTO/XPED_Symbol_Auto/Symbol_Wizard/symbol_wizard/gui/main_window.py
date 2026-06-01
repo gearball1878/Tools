@@ -20213,3 +20213,239 @@ try:
         TemplateEditorDialog.scale_current_unit_children_from_body_resize = _sw106_scale_current_unit_children_from_body_resize
 except Exception:
     pass
+
+# -----------------------------------------------------------------------------
+# Liebherr v107: documentation update + semantic pin color sync
+# -----------------------------------------------------------------------------
+# Pins now have a dedicated electrical edit raster.  Keep the in-app HowTo and
+# class model aligned with that behavior, and keep visual pin colors synchronized
+# whenever PINTYPE changes through properties, pin tables or bulk workflows.
+
+_SW107_PIN_TYPE_COLORS = {
+    'IN': (0, 80, 220),
+    'OUT': (220, 0, 0),
+    'BIDI': (160, 0, 180),
+    'BI': (160, 0, 180),
+    'POWER': (230, 120, 0),
+    'GROUND': (0, 150, 0),
+    'ANALOG': (0, 150, 170),
+    'PASSIVE': (0, 0, 0),
+}
+
+
+def _sw107_pin_color_for_type(pin_type):
+    return _SW107_PIN_TYPE_COLORS.get(str(pin_type or '').strip().upper(), (0, 0, 0))
+
+
+def _sw107_apply_pin_type_color(pin, pin_type=None):
+    if pin is None:
+        return pin
+    try:
+        if pin_type is None:
+            pin_type = getattr(pin, 'pin_type', '')
+        color = tuple(_sw107_pin_color_for_type(pin_type))
+        pin.color = color
+        if getattr(pin, 'number_font', None) is not None:
+            pin.number_font.color = color
+        if getattr(pin, 'label_font', None) is not None:
+            pin.label_font.color = color
+        if getattr(pin, 'attributes', None) is None:
+            pin.attributes = {}
+        pin.attributes['PINTYPE'] = str(pin_type or '')
+    except Exception:
+        pass
+    return pin
+
+
+try:
+    _sw107_prev_set_pin_attr = MainWindow.set_pin_attr
+except Exception:
+    _sw107_prev_set_pin_attr = None
+
+
+def _sw107_set_pin_attr(self, m, a, v):
+    result = _sw107_prev_set_pin_attr(self, m, a, v) if _sw107_prev_set_pin_attr is not None else setattr(m, a, v)
+    if a == 'pin_type':
+        try:
+            _sw107_apply_pin_type_color(m, v)
+            self._selection_restore_ids = {id(m)}
+            self.update_current_unit_canvas_positions()
+            self.rebuild_pin_table()
+            self.rebuild_tree()
+            self.refresh_properties()
+            self.schedule_scene_refresh(visual_only=True)
+        except Exception:
+            pass
+    return result
+
+
+try:
+    _sw107_prev_commit_pin_table_value = MainWindow._commit_pin_table_value
+except Exception:
+    _sw107_prev_commit_pin_table_value = None
+
+
+def _sw107_commit_pin_table_value(self, table, r, c):
+    pin = None
+    is_type_col = False
+    try:
+        it = table.item(r, c) or table.item(r, 0)
+        if it is not None:
+            si, ui, pi, col = it.data(Qt.UserRole)
+            is_type_col = (int(col) == 3 or int(c) == 3)
+            sym = self.library.symbols[si]
+            pin = sym.units[ui].pins[pi]
+    except Exception:
+        pin = None
+    result = _sw107_prev_commit_pin_table_value(self, table, r, c) if _sw107_prev_commit_pin_table_value is not None else None
+    if is_type_col and pin is not None:
+        try:
+            _sw107_apply_pin_type_color(pin)
+            self._selection_restore_ids = {id(pin)}
+            self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table(); self.refresh_properties()
+        except Exception:
+            pass
+    return result
+
+
+try:
+    _sw107_prev_set_selected_pins_attr = MainWindow.set_selected_pins_attr
+except Exception:
+    _sw107_prev_set_selected_pins_attr = None
+
+
+def _sw107_set_selected_pins_attr(self, pin_items, attr, value):
+    if attr == 'pin_type':
+        pins = [getattr(i, 'model', None) for i in pin_items if getattr(i, 'model', None) is not None and i.data(0) == 'PIN']
+        if not pins or len(pins) != len(pin_items):
+            return
+        self.push_undo_state()
+        self._selection_restore_ids = {id(p) for p in pins}
+        for p in pins:
+            p.pin_type = value
+            _sw107_apply_pin_type_color(p, value)
+        self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table(); self.refresh_properties()
+        return
+    return _sw107_prev_set_selected_pins_attr(self, pin_items, attr, value) if _sw107_prev_set_selected_pins_attr is not None else None
+
+
+try:
+    _sw107_prev_add_pin = MainWindow.add_pin
+except Exception:
+    _sw107_prev_add_pin = None
+
+
+def _sw107_add_pin(self, side=None, x=None, y=None):
+    result = _sw107_prev_add_pin(self, side, x, y) if _sw107_prev_add_pin is not None else None
+    try:
+        # Color the newly created/selected pin semantically as well.
+        for p in getattr(self.current_unit, 'pins', []) or []:
+            if not getattr(p, '_sw107_color_initialized', False):
+                _sw107_apply_pin_type_color(p)
+                p._sw107_color_initialized = True
+        self.update_current_unit_canvas_positions()
+    except Exception:
+        pass
+    return result
+
+
+try:
+    _sw107_prev_import_pinmux_csv = MainWindow.import_pinmux_csv
+except Exception:
+    _sw107_prev_import_pinmux_csv = None
+
+
+def _sw107_import_pinmux_csv(self):
+    result = _sw107_prev_import_pinmux_csv(self) if _sw107_prev_import_pinmux_csv is not None else None
+    try:
+        for u in getattr(self.symbol, 'units', []) or []:
+            for p in getattr(u, 'pins', []) or []:
+                _sw107_apply_pin_type_color(p)
+        self.rebuild_scene(); self.rebuild_tree(); self.rebuild_pin_table()
+    except Exception:
+        pass
+    return result
+
+
+try:
+    _sw107_prev_how_to_markdown = MainWindow._how_to_markdown
+except Exception:
+    _sw107_prev_how_to_markdown = None
+
+
+def _sw107_how_to_markdown(self):
+    base = _sw107_prev_how_to_markdown(self) if _sw107_prev_how_to_markdown is not None else ''
+    addition = """
+
+## 24. Dediziertes Pin-Raster
+
+Pins sind elektrische Anschlussobjekte und werden deshalb unabhängig vom feineren Grafik-/Mentor-Raster auf einem dedizierten Pin-Raster geführt.
+
+- Standard-Pin-Raster: `0.1` Modell-Einheiten.
+- Bei `grid_inch = 0.100` entspricht das einem `0.010\"` Pin-Raster.
+- Pin-Erzeugung, Pin-Docking, Pin-Drag, BODY-Resize-Redocking und Mentor-/Template-Import schnappen Pin-Anker auf dieses Raster.
+- Grafikobjekte wie Drosseln, Bögen, Kurven und Ellipsen werden nicht zwangsweise auf das Pin-Raster gerundet, damit die grafische Grundstruktur erhalten bleibt.
+- Beim Ändern von `Pin Type` wird die Pin-Farbe automatisch gemäß Pin-Typ aktualisiert.
+
+### Pin-Farbpalette
+
+| Pin Type | Farbe |
+|---|---|
+| `IN` | Blau |
+| `OUT` | Rot |
+| `BIDI` / `BI` | Violett |
+| `POWER` | Orange |
+| `GROUND` | Grün |
+| `ANALOG` | Cyan |
+| `PASSIVE` | Schwarz |
+"""
+    if '## 24. Dediziertes Pin-Raster' in base:
+        return base
+    return base.rstrip() + addition
+
+
+try:
+    _sw107_prev_class_model_markdown = MainWindow._class_model_markdown
+except Exception:
+    _sw107_prev_class_model_markdown = None
+
+
+def _sw107_class_model_markdown(self):
+    base = _sw107_prev_class_model_markdown(self) if _sw107_prev_class_model_markdown is not None else ''
+    addition = """
+
+## 11. Dediziertes Pin-Raster und Pin-Farbmodell
+
+### Pin-Raster
+
+`PinModel` ist ein elektrisches Anschlussobjekt und nutzt ein dediziertes Raster, das feiner sein kann als das sichtbare Haupt-/Edit-Grid.
+
+| Konzept | Bedeutung |
+|---|---|
+| `pin_grid_step` | Rasterweite in Modell-Einheiten, Standard `0.1` |
+| `snap_pin_value()` | quantisiert einzelne Pin-Koordinaten |
+| `snap_pin_point()` | quantisiert Pin-Ankerpunkte |
+| `snap_pin_model()` | normalisiert Pin-Anker, Label-/Number-Anker und Pin-Attribut-Anker |
+| `snap_unit_pins()` | normalisiert alle Pins einer Unit |
+
+Der Pin-Anker ist der elektrische Bezugspunkt. Grafikobjekte dürfen dagegen ein eigenes feineres Mentor-/Grafikraster behalten.
+
+### Pin-Farbmodell
+
+Die UI-Pin-Farbe ist semantisch an `PinModel.pin_type` gekoppelt. Beim Ändern des Pin-Typs werden `pin.color`, `pin.number_font.color` und `pin.label_font.color` synchronisiert. Der native Mentor-Export bleibt davon logisch unabhängig.
+"""
+    if '## 11. Dediziertes Pin-Raster und Pin-Farbmodell' in base:
+        return base
+    return base.rstrip() + addition
+
+
+try:
+    MainWindow.set_pin_attr = _sw107_set_pin_attr
+    MainWindow._commit_pin_table_value = _sw107_commit_pin_table_value
+    MainWindow.set_selected_pins_attr = _sw107_set_selected_pins_attr
+    MainWindow.add_pin = _sw107_add_pin
+    MainWindow.import_pinmux_csv = _sw107_import_pinmux_csv
+    MainWindow._how_to_markdown = _sw107_how_to_markdown
+    MainWindow._class_model_markdown = _sw107_class_model_markdown
+except Exception:
+    pass
