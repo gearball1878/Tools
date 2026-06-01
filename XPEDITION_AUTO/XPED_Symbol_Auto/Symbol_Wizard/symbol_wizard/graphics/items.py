@@ -2316,3 +2316,239 @@ try:
     TextItem.focusOutEvent = _lh71_text_focus_out
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# Liebherr v85: use the natural graphic resize behaviour for BODY handles.
+# The BODY is still the logical owner of pins/attributes/imported body graphics,
+# but its canvas handle scaling now uses the same frozen-local-coordinate resize
+# model as GraphicItem v69:
+#   - resize direction follows the mouse after rotate/flip,
+#   - dimensions snap to the edit grid with minimum one edit grid,
+#   - the opposite handle remains fixed during the drag,
+#   - child objects are scaled once from the immutable press-state so pins do
+#     not get cumulatively scaled.
+# ---------------------------------------------------------------------------
+try:
+    _lh85_prev_body_apply_transform = BodyItem.apply_transform_from_model
+    _lh85_prev_body_hover_move = BodyItem.hoverMoveEvent
+    _lh85_prev_body_mouse_press = BodyItem.mousePressEvent
+    _lh85_prev_body_mouse_move = BodyItem.mouseMoveEvent
+    _lh85_prev_body_mouse_release = BodyItem.mouseReleaseEvent
+except Exception:
+    _lh85_prev_body_apply_transform = None
+    _lh85_prev_body_hover_move = None
+    _lh85_prev_body_mouse_press = None
+    _lh85_prev_body_mouse_move = None
+    _lh85_prev_body_mouse_release = None
+
+
+def _lh85_body_rect(item):
+    g = float(getattr(item.window, 'grid_px', 1.0) or 1.0)
+    w = _lh68_float(getattr(item.model, 'width', 0.0), 0.0) * g
+    h = _lh68_float(getattr(item.model, 'height', 0.0), 0.0) * g
+    return QRectF(0.0, 0.0, w, h).normalized()
+
+
+def _lh85_body_apply_transform_from_model(self):
+    def f(name, default):
+        try:
+            return float(getattr(self.model, name, default) or default)
+        except Exception:
+            return default
+    sx, sy, rot = f('scale_x', 1.0), f('scale_y', 1.0), f('rotation', 0.0)
+    self.model.scale_x, self.model.scale_y, self.model.rotation = sx, sy, rot
+    try:
+        # Same stable pivot convention as graphics: lower-left of the object.
+        # This keeps rotate/flip fixed at one deterministic BODY origin.
+        r = _lh85_body_rect(self)
+        self.setTransformOriginPoint(r.bottomLeft())
+    except Exception:
+        pass
+    self.setTransform(QTransform().scale(sx, sy))
+    self.setRotation(rot)
+
+
+def _lh85_body_handle_points(item):
+    r = _lh85_body_rect(item)
+    return {
+        'tl': QPointF(r.left(), r.top()),
+        'tr': QPointF(r.right(), r.top()),
+        'bl': QPointF(r.left(), r.bottom()),
+        'br': QPointF(r.right(), r.bottom()),
+        'l': QPointF(r.left(), r.center().y()),
+        'r': QPointF(r.right(), r.center().y()),
+        't': QPointF(r.center().x(), r.top()),
+        'b': QPointF(r.center().x(), r.bottom()),
+    }
+
+
+def _lh85_body_hover_move(self, event):
+    try:
+        if self.isSelected():
+            h = 'rot' if _rotation_handle(self.rect(), self.window.grid_px * self.rotate_handle_factor).contains(event.pos()) else _hit_handle(self._handles(), event.pos())
+            self.setCursor(QCursor(_lh69_cursor_for_handle(self, h)) if h else QCursor(Qt.ArrowCursor))
+            return QGraphicsRectItem.hoverMoveEvent(self, event)
+    except Exception:
+        pass
+    return _lh85_prev_body_hover_move(self, event)
+
+
+def _lh85_body_snapshot(self):
+    win = self.window
+    unit = getattr(win, 'current_unit', None)
+    body = self.model
+    return {
+        'x': _lh68_float(getattr(body, 'x', 0.0), 0.0),
+        'y': _lh68_float(getattr(body, 'y', 0.0), 0.0),
+        'w': _lh68_float(getattr(body, 'width', 0.0), 0.0),
+        'h': _lh68_float(getattr(body, 'height', 0.0), 0.0),
+        'sx': _lh68_float(getattr(body, 'scale_x', 1.0), 1.0),
+        'sy': _lh68_float(getattr(body, 'scale_y', 1.0), 1.0),
+        'rot': _lh68_float(getattr(body, 'rotation', 0.0), 0.0),
+        'pos': QPointF(self.pos()),
+        'pins': [(p, float(getattr(p, 'x', 0.0)), float(getattr(p, 'y', 0.0)), float(getattr(p, 'length', 0.0))) for p in getattr(unit, 'pins', [])],
+        'texts': [(t, float(getattr(t, 'x', 0.0)), float(getattr(t, 'y', 0.0))) for t in getattr(unit, 'texts', [])],
+        'attributes': [(t, float(getattr(t, 'x', 0.0)), float(getattr(t, 'y', 0.0))) for t in getattr(getattr(unit, 'body', None), 'attribute_texts', {}).values()],
+        'graphics': [(gr, float(getattr(gr, 'x', 0.0)), float(getattr(gr, 'y', 0.0)), float(getattr(gr, 'w', 0.0)), float(getattr(gr, 'h', 0.0))) for gr in getattr(unit, 'graphics', [])],
+    }
+
+
+def _lh85_body_mouse_press(self, event):
+    if event.button() == Qt.LeftButton and self.isSelected():
+        try:
+            if _rotation_handle(self.rect(), self.window.grid_px * self.rotate_handle_factor).contains(event.pos()):
+                return _lh85_prev_body_mouse_press(self, event)
+            h = _hit_handle(self._handles(), event.pos())
+            if h:
+                try:
+                    self.window.push_undo_state()
+                    self._undo_state_pushed_for_drag = True
+                except Exception:
+                    pass
+                st = self.sceneTransform()
+                inv, ok = st.inverted()
+                if not ok:
+                    return _lh85_prev_body_mouse_press(self, event)
+                pts = _lh85_body_handle_points(self)
+                anchor_name = _lh68_opposite_handle(h)
+                anchor_local = QPointF(pts.get(anchor_name, QPointF(0, 0)))
+                self._lh85_body_resizing = h
+                self._lh85_body_anchor_name = anchor_name
+                self._lh85_body_anchor_local_start = QPointF(anchor_local)
+                self._lh85_body_anchor_scene = self.mapToScene(anchor_local)
+                self._lh85_body_scene_to_start_local = inv
+                self._lh85_body_start_transform = st
+                self._lh85_body_start = _lh85_body_snapshot(self)
+                event.accept(); return
+        except Exception:
+            pass
+    return _lh85_prev_body_mouse_press(self, event)
+
+
+def _lh85_body_mouse_move(self, event):
+    if getattr(self, '_lh85_body_resizing', None) and getattr(self, '_lh85_body_start', None) is not None:
+        try:
+            win = self.window
+            g = float(win.grid_px)
+            hname = str(self._lh85_body_resizing)
+            start = dict(self._lh85_body_start)
+            anchor_local = QPointF(self._lh85_body_anchor_local_start)
+            anchor_scene = QPointF(self._lh85_body_anchor_scene)
+            inv = self._lh85_body_scene_to_start_local
+            mouse_local = inv.map(event.scenePos())
+
+            old_w = max(1e-9, _lh68_float(start.get('w'), 0.0) * g)
+            old_h = max(1e-9, _lh68_float(start.get('h'), 0.0) * g)
+            left, right = 0.0, old_w
+            top, bottom = 0.0, old_h
+
+            if hname in ('l', 'tl', 'bl'):
+                right = anchor_local.x()
+                new_w = _lh69_snap_len_px(win, right - mouse_local.x())
+                left = right - new_w
+            elif hname in ('r', 'tr', 'br'):
+                left = anchor_local.x()
+                new_w = _lh69_snap_len_px(win, mouse_local.x() - left)
+                right = left + new_w
+            else:
+                new_w = old_w
+
+            if hname in ('t', 'tl', 'tr'):
+                bottom = anchor_local.y()
+                new_h = _lh69_snap_len_px(win, bottom - mouse_local.y())
+                top = bottom - new_h
+            elif hname in ('b', 'bl', 'br'):
+                top = anchor_local.y()
+                new_h = _lh69_snap_len_px(win, mouse_local.y() - top)
+                bottom = top + new_h
+            else:
+                new_h = old_h
+
+            # Rebuild BODY from the immutable drag-start state, then apply the
+            # new geometry absolutely. Children are also recalculated from that
+            # same immutable snapshot, avoiding cumulative scaling drift.
+            body = self.model
+            self.prepareGeometryChange()
+            body.x = start['x']; body.y = start['y']
+            body.width = max(_lh68_edit_grid_px(win), float(new_w)) / g
+            body.height = max(_lh68_edit_grid_px(win), float(new_h)) / g
+            body.scale_x = start['sx']; body.scale_y = start['sy']; body.rotation = start['rot']
+            self.setPos(QPointF(start['pos']))
+            self.setRect(0.0, 0.0, body.width * g, body.height * g)
+            self.apply_transform_from_model()
+
+            new_origin_scene = self._lh85_body_start_transform.map(QPointF(left, top))
+            self.setPos(new_origin_scene)
+            body.x = new_origin_scene.x() / g
+            body.y = -new_origin_scene.y() / g
+            self.apply_transform_from_model()
+
+            new_anchor_local = QPointF(anchor_local.x() - left, anchor_local.y() - top)
+            new_anchor_scene = self.mapToScene(new_anchor_local)
+            delta = anchor_scene - new_anchor_scene
+            final_pos = self.pos() + delta
+            self.setPos(final_pos)
+            body.x = final_pos.x() / g
+            body.y = -final_pos.y() / g
+            self._last_model_pos = (body.x, body.y)
+
+            try:
+                win.scale_current_unit_children_from_body_resize(start, body)
+                win.update_current_unit_canvas_positions()
+                win.update_attribute_items_for_unit()
+            except Exception:
+                pass
+            try:
+                win.notify_canvas_model_changed()
+            except Exception:
+                try: win.live_refresh()
+                except Exception: pass
+            self.update(); event.accept(); return
+        except Exception:
+            try:
+                self._lh85_body_resizing = None
+            except Exception:
+                pass
+    return _lh85_prev_body_mouse_move(self, event)
+
+
+def _lh85_body_mouse_release(self, event):
+    try:
+        self._lh85_body_resizing = None
+        self._lh85_body_start = None
+        self._lh85_body_anchor_local_start = None
+        self._lh85_body_anchor_scene = None
+        self._lh85_body_scene_to_start_local = None
+        self._lh85_body_start_transform = None
+    except Exception:
+        pass
+    return _lh85_prev_body_mouse_release(self, event)
+
+try:
+    BodyItem.apply_transform_from_model = _lh85_body_apply_transform_from_model
+    BodyItem.hoverMoveEvent = _lh85_body_hover_move
+    BodyItem.mousePressEvent = _lh85_body_mouse_press
+    BodyItem.mouseMoveEvent = _lh85_body_mouse_move
+    BodyItem.mouseReleaseEvent = _lh85_body_mouse_release
+except Exception:
+    pass
