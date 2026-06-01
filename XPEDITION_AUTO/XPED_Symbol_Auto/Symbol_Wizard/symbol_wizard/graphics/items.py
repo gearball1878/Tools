@@ -226,11 +226,18 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
             pass
         if graphics_as_body:
             # Imported/template symbols behave like internally created symbols,
-            # but their visible BODY is the imported artwork itself.  The
-            # rectangular BodyModel is only the logical hit/anchor object.  Never
-            # paint it as a dashed proxy frame and never transform that frame as
-            # visible geometry.  Selection/toolbar transforms are applied to the
-            # real body graphics, pins and attributes in MainWindow.
+            # but their visible BODY is the imported artwork itself.  Do not draw
+            # a proxy rectangle.  When selected, show only lightweight corner /
+            # rotation handles so the user sees the BODY selection without
+            # mistaking a helper frame for real geometry.
+            if self.isSelected():
+                painter.save()
+                painter.setPen(QPen(QColor(0, 150, 170), 1))
+                painter.setBrush(QBrush(QColor(255, 255, 255)))
+                for r in self._handles().values():
+                    painter.drawRect(r)
+                painter.drawEllipse(_rotation_handle(self.rect(), self.window.grid_px * self.rotate_handle_factor))
+                painter.restore()
             return
         super().paint(painter, option, widget)
         if self.isSelected():
@@ -290,8 +297,17 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
     def mouseMoveEvent(self, event):
         if getattr(self, '_rotating', False):
             delta = _angle_from(self._rotate_center_scene, event.scenePos()) - self._rotate_start_angle
-            self.model.rotation = (round((self._rotate_start_model + delta) / 15.0) * 15.0) % 360
-            self.apply_transform_from_model()
+            target = (round((self._rotate_start_model + delta) / 15.0) * 15.0) % 360
+            step = target - float(getattr(self.model, 'rotation', 0.0) or 0.0)
+            if abs(step) > 180:
+                step -= 360 if step > 0 else -360
+            if abs(step) > 1e-9:
+                try:
+                    self.window._transform_unit_as_body_group('rotate', step, refresh=False)
+                    self.window.update_current_unit_canvas_positions()
+                except Exception:
+                    self.model.rotation = target
+                    self.apply_transform_from_model()
             try:
                 self.window.notify_canvas_model_changed()
             except Exception:
@@ -373,21 +389,42 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
             pass
         super().mouseReleaseEvent(event)
 
+    def rotate_by(self, deg):
+        try:
+            self.window._transform_unit_as_body_group('rotate', deg)
+        except Exception:
+            super().rotate_by(deg)
+
+    def flip_horizontal(self):
+        try:
+            self.window._transform_unit_as_body_group('flip_h')
+        except Exception:
+            super().flip_horizontal()
+
+    def flip_vertical(self):
+        try:
+            self.window._transform_unit_as_body_group('flip_v')
+        except Exception:
+            super().flip_vertical()
+
     def scale_selected(self, factor):
-        st = {
-            'x': float(self.model.x), 'y': float(self.model.y),
-            'w': float(self.model.width), 'h': float(self.model.height),
-            'pins': [(p, float(p.x), float(p.y), float(p.length)) for p in self.window.current_unit.pins],
-            'texts': [(t, float(t.x), float(t.y)) for t in self.window.current_unit.texts],
-            'attributes': [(t, float(t.x), float(t.y)) for t in getattr(self.window.current_unit.body, 'attribute_texts', {}).values()],
-            'graphics': [(gr, float(gr.x), float(gr.y), float(gr.w), float(gr.h)) for gr in self.window.current_unit.graphics],
-        }
-        self.model.width = max(1, round(self.model.width * factor))
-        self.model.height = max(1, round(self.model.height * factor))
-        g = self.window.grid_px
-        self.setRect(0, 0, self.model.width * g, self.model.height * g)
-        self.window.scale_current_unit_children_from_body_resize(st, self.model)
-        self.window.update_current_unit_canvas_positions()
+        try:
+            self.window._transform_unit_as_body_group('scale', factor)
+        except Exception:
+            st = {
+                'x': float(self.model.x), 'y': float(self.model.y),
+                'w': float(self.model.width), 'h': float(self.model.height),
+                'pins': [(p, float(p.x), float(p.y), float(p.length)) for p in self.window.current_unit.pins],
+                'texts': [(t, float(t.x), float(t.y)) for t in self.window.current_unit.texts],
+                'attributes': [(t, float(t.x), float(t.y)) for t in getattr(self.window.current_unit.body, 'attribute_texts', {}).values()],
+                'graphics': [(gr, float(gr.x), float(gr.y), float(gr.w), float(gr.h)) for gr in self.window.current_unit.graphics],
+            }
+            self.model.width = max(1, round(self.model.width * factor))
+            self.model.height = max(1, round(self.model.height * factor))
+            g = self.window.grid_px
+            self.setRect(0, 0, self.model.width * g, self.model.height * g)
+            self.window.scale_current_unit_children_from_body_resize(st, self.model)
+            self.window.update_current_unit_canvas_positions()
         self.window.update_attribute_items_for_unit()
         try:
             self.window.refresh_properties()
@@ -863,45 +900,7 @@ class GraphicItem(TransformMixin, QGraphicsItem):
             painter.drawRect(QRectF(0, 0, m.w * g, m.h * g))
         elif m.shape in ('ellipse', 'circle'):
             painter.drawEllipse(QRectF(0, 0, m.w * g, m.h * g))
-        # In the Symbol Wizard, imported/template graphics that are locked to the
-        # BODY are not individually selectable.  If the BODY is selected, highlight
-        # the *real primitive itself* (line/rect/ellipse/arc) instead of drawing a
-        # proxy bounding frame.  This makes imported symbols behave like <NONE>
-        # symbols without introducing the confusing blue transform rectangle.
-        locked_body_graphic = bool(getattr(self.model, 'locked_to_body', False)) and not getattr(self.window, 'is_template_editor', False)
-        body_selected = False
-        if locked_body_graphic:
-            try:
-                body_selected = any(it.data(0) == 'BODY' and it.isSelected() for it in self.scene().selectedItems())
-            except Exception:
-                body_selected = False
-        if body_selected:
-            painter.save()
-            hp = pen_for((0, 150, 170), max(float(getattr(m.style, 'line_width', 0.03) or 0.03) * 1.8, 0.04), m.style.line_style, g)
-            hp.setStyle(Qt.DashLine)
-            painter.setPen(hp)
-            painter.setBrush(QBrush(Qt.NoBrush))
-            if m.shape in ('line', 'arc'):
-                ctrl_x = getattr(m, 'ctrl_x', None)
-                ctrl_y = getattr(m, 'ctrl_y', None)
-                if ctrl_x is not None and ctrl_y is not None:
-                    path = QPainterPath(QPointF(0, 0))
-                    path.quadTo(QPointF(float(ctrl_x) * g, -float(ctrl_y) * g), QPointF(m.w * g, -m.h * g))
-                    painter.drawPath(path)
-                else:
-                    r = float(getattr(m, 'curve_radius', 0.0) or 0.0)
-                    if abs(r) > 1e-9:
-                        path = QPainterPath(QPointF(0, 0))
-                        path.quadTo(QPointF(m.w * g / 2, m.h * g / 2 - r * g), QPointF(m.w * g, m.h * g))
-                        painter.drawPath(path)
-                    else:
-                        painter.drawLine(QPointF(0, 0), QPointF(m.w * g, m.h * g))
-            elif m.shape == 'rect':
-                painter.drawRect(QRectF(0, 0, m.w * g, m.h * g))
-            elif m.shape in ('ellipse', 'circle'):
-                painter.drawEllipse(QRectF(0, 0, m.w * g, m.h * g))
-            painter.restore()
-        elif self.isSelected() and (not getattr(self.model, 'locked_to_body', False) or getattr(self.window, 'is_template_editor', False)):
+        if self.isSelected() and (not getattr(self.model, 'locked_to_body', False) or getattr(self.window, 'is_template_editor', False)):
             painter.save()
             painter.setPen(QPen(QColor(80, 80, 80), 1, Qt.DashLine))
             painter.drawRect(self._rect())

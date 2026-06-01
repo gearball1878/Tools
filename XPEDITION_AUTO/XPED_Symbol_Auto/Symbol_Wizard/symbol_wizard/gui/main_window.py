@@ -2109,6 +2109,66 @@ class TemplateEditorDialog(QDialog):
             filter_kind = 'TEXT' if kind in ('ATTR_REF_DES', 'ATTR_BODY') else kind
             if (kind in ('PIN','TEXT','ATTR_REF_DES','ATTR_BODY','GRAPHIC','BODY')) and not (kind == 'GRAPHIC' and getattr(getattr(item, 'model', None), 'locked_to_body', False) and not getattr(self, 'is_template_editor', False)) and self.selection_enabled.get(filter_kind, True): item.setSelected(True)
         self.refresh_properties()
+    def _selected_body_active(self):
+        try:
+            return any(getattr(i, 'data', lambda *_: None)(0) == 'BODY' for i in self.scene.selectedItems())
+        except Exception:
+            return False
+
+    def rotate_selected(self, deg):
+        """Rotate selected objects. If BODY is selected, transform the whole current
+        symbol/split part as one rigid group (BODY + pins + attributes + texts +
+        graphics). This keeps imported symbols behaving like internally created
+        <NONE> symbols and avoids proxy-frame transforms.
+        """
+        self.set_tool(DrawTool.SELECT.value)
+        self.push_undo_state()
+        if self._selected_body_active():
+            self._transform_unit_as_body_group('rotate', float(deg))
+        else:
+            for it in self.scene.selectedItems():
+                if hasattr(it, 'rotate_by'):
+                    it.rotate_by(float(deg))
+            self.schedule_scene_refresh()
+        self.dirty = True
+
+    def flip_selected_horizontal(self):
+        self.set_tool(DrawTool.SELECT.value)
+        self.push_undo_state()
+        if self._selected_body_active():
+            self._transform_unit_as_body_group('flip_h')
+        else:
+            for it in self.scene.selectedItems():
+                if hasattr(it, 'flip_horizontal'):
+                    it.flip_horizontal()
+            self.schedule_scene_refresh()
+        self.dirty = True
+
+    def flip_selected_vertical(self):
+        self.set_tool(DrawTool.SELECT.value)
+        self.push_undo_state()
+        if self._selected_body_active():
+            self._transform_unit_as_body_group('flip_v')
+        else:
+            for it in self.scene.selectedItems():
+                if hasattr(it, 'flip_vertical'):
+                    it.flip_vertical()
+            self.schedule_scene_refresh()
+        self.dirty = True
+
+    def scale_selected(self, factor):
+        self.set_tool(DrawTool.SELECT.value)
+        self.push_undo_state()
+        if self._selected_body_active():
+            self._transform_unit_as_body_group('scale', float(factor))
+        else:
+            # Fallback for non-body selections: keep existing item-level behaviour if present.
+            for it in self.scene.selectedItems():
+                if hasattr(it, 'scale_by'):
+                    it.scale_by(float(factor))
+            self.schedule_scene_refresh()
+        self.dirty = True
+
     def copy_selected(self):
         self.set_tool(DrawTool.SELECT.value)
         self.clipboard_is_cut = False
@@ -4608,10 +4668,10 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         self.form.addRow(head)
         self.form.addRow('Width [grid]', self._dbl(m.width, lambda v: self.set_body_dim(item, 'width', max(1.0, round(float(v)))), 1, 300, 1))
         self.form.addRow('Height [grid]', self._dbl(m.height, lambda v: self.set_body_dim(item, 'height', max(1.0, round(float(v)))), 1, 300, 1))
-        self.form.addRow('Line style', self._combo([x.value for x in LineStyle], m.line_style, lambda v: self.set_body_visual_attr(m, 'line_style', v)))
-        self.form.addRow('Line width', self._dbl(m.line_width, lambda v: self.set_body_visual_attr(m, 'line_width', float(v)), .01, 1, .01))
-        self.form.addRow('Rotation [deg]', self._dbl(getattr(m, 'rotation', 0), lambda v: self.set_body_rotation(v), -360, 360, 15))
-        self.form.addRow('Color', self._color_button_row('Color RGB', m.color, lambda _checked=False: self.color_body(m)))
+        self.form.addRow('Line style', self._combo([x.value for x in LineStyle], m.line_style, lambda v: self.set_and_refresh(m, 'line_style', v)))
+        self.form.addRow('Line width', self._dbl(m.line_width, lambda v: self.set_and_refresh(m, 'line_width', v), .01, 1, .01))
+        self.transform_props(m)
+        self.form.addRow('Color', self._color_button_row('Color RGB', m.color, lambda _checked=False: self.color_model(m)))
         self.form.addRow(QLabel('<b>BODY-Attribute</b>'))
         if self._is_split_body_attr_sync_active():
             sync_info = QLabel('Split sync active: BODY attribute values, visibility and fonts are applied to all split parts.')
@@ -4865,73 +4925,21 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         self.form.addRow('Font color', self._color_button_row('Font Color RGB', f.color, lambda: self.color_font(f, refresh_attrs)))
 
     def transform_props(self, m):
-        self.form.addRow('Rotation [deg]', self._dbl(getattr(m, 'rotation', 0), lambda v: self.set_and_refresh(m, 'rotation', v), -360, 360, 15))
-
-    def _body_uses_imported_graphics(self, body=None) -> bool:
-        body = body or getattr(self.current_unit, 'body', None)
-        try:
-            attrs = getattr(body, 'attributes', {}) or {}
-            if str(attrs.get('MENTOR_GRAPHICS_AS_BODY', '0')) == '1' or str(attrs.get('TEMPLATE_GRAPHICS_AS_BODY', '0')) == '1':
-                return True
-        except Exception:
-            pass
-        try:
-            return any(bool(getattr(g, 'locked_to_body', False)) for g in getattr(self.current_unit, 'graphics', []) or [])
-        except Exception:
-            return False
-
-    def _body_locked_graphics(self):
-        return [g for g in (getattr(self.current_unit, 'graphics', []) or []) if bool(getattr(g, 'locked_to_body', False))]
-
-    def set_body_visual_attr(self, body, attr, value):
-        """Edit BODY style for both native bodies and imported/template bodies.
-
-        Imported bodies are drawn by locked GraphicModel primitives.  The property
-        panel still shows BODY style, so edits must be propagated to those real
-        primitives instead of only changing the invisible logical BodyModel.
-        """
-        self.push_undo_state()
-        setattr(body, attr, value)
-        if attr in ('line_style', 'line_width') and self._body_uses_imported_graphics(body):
-            for g in self._body_locked_graphics():
-                try:
-                    setattr(g.style, attr, value)
-                except Exception:
-                    pass
-        self.update_current_unit_canvas_positions()
-        self.schedule_scene_refresh(visual_only=True)
-
-    def color_body(self, body):
-        self.push_undo_state()
-        c = QColorDialog.getColor(QColor(*getattr(body, 'color', (0,0,0))), self)
-        if c.isValid():
-            value = (c.red(), c.green(), c.blue())
-            body.color = value
-            if self._body_uses_imported_graphics(body):
-                for g in self._body_locked_graphics():
-                    try:
-                        g.style.stroke = value
-                    except Exception:
-                        pass
-            self.schedule_scene_refresh(visual_only=True)
-
-    def set_body_rotation(self, absolute_deg):
-        """Rotate the whole unit as one object around the body origin.
-
-        The spinbox contains the absolute BODY rotation.  Internally we apply only
-        the delta to the real objects (body graphics, pins, texts, body attributes),
-        preserving their relative positions exactly.
-        """
-        body = self.current_unit.body
-        old = float(getattr(body, 'rotation', 0.0) or 0.0)
-        new = (round(float(absolute_deg) / 15.0) * 15.0) % 360.0
-        delta = ((new - old + 540.0) % 360.0) - 180.0
-        if abs(delta) < 1e-9:
-            return
-        self.push_undo_state()
-        self._transform_unit_as_body_group('rotate', delta)
-        body.rotation = new
-        self.schedule_scene_refresh(visual_only=True)
+        def _set_rotation(v, model=m):
+            try:
+                if model is self.current_unit.body:
+                    target = (round(float(v) / 15.0) * 15.0) % 360.0
+                    current = float(getattr(model, 'rotation', 0.0) or 0.0) % 360.0
+                    delta = target - current
+                    if abs(delta) > 180.0:
+                        delta -= 360.0 if delta > 0 else -360.0
+                    self.push_undo_state()
+                    self._transform_unit_as_body_group('rotate', delta)
+                else:
+                    self.set_and_refresh(model, 'rotation', v)
+            except Exception:
+                self.set_and_refresh(model, 'rotation', v)
+        self.form.addRow('Rotation [deg]', self._dbl(getattr(m, 'rotation', 0), _set_rotation, -360, 360, 15))
 
     # ------------------------------------------------------------------ Model updates
     def set_font_attr(self, f, a, v, refresh_attrs=False):
@@ -4987,33 +4995,16 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
 
     def set_body_dim(self, item, a, v):
         self.push_undo_state()
-        body = item.model
-        old_w = max(float(getattr(body, 'width', 1.0) or 1.0), 1e-9)
-        old_h = max(float(getattr(body, 'height', 1.0) or 1.0), 1e-9)
-        new_v = float(v)
-        if self._body_uses_imported_graphics(body):
-            # Imported/template BODY geometry is the locked graphic group.  Scaling
-            # the BODY property must scale the real group and all attached objects
-            # as one object, not resize an invisible rectangle.
-            factor = (new_v / old_w) if a == 'width' else (new_v / old_h)
-            self._transform_unit_as_body_group('scale', factor)
-            if a == 'width':
-                body.width = new_v
-                body.height = max(0.1, float(body.height) * factor)
-            else:
-                body.height = new_v
-                body.width = max(0.1, float(body.width) * factor)
-        else:
-            st = {
-                'x': float(body.x), 'y': float(body.y),
-                'w': float(body.width), 'h': float(body.height),
-                'pins': [(p, float(p.x), float(p.y), float(p.length)) for p in self.current_unit.pins],
-                'texts': [(t, float(t.x), float(t.y)) for t in self.current_unit.texts],
-                'attributes': [(t, float(t.x), float(t.y)) for t in getattr(self.current_unit.body, 'attribute_texts', {}).values()],
-                'graphics': [(gr, float(gr.x), float(gr.y), float(gr.w), float(gr.h)) for gr in self.current_unit.graphics],
-            }
-            setattr(body, a, new_v)
-            self.scale_current_unit_children_from_body_resize(st, body)
+        st = {
+            'x': float(item.model.x), 'y': float(item.model.y),
+            'w': float(item.model.width), 'h': float(item.model.height),
+            'pins': [(p, float(p.x), float(p.y), float(p.length)) for p in self.current_unit.pins],
+            'texts': [(t, float(t.x), float(t.y)) for t in self.current_unit.texts],
+            'attributes': [(t, float(t.x), float(t.y)) for t in getattr(self.current_unit.body, 'attribute_texts', {}).values()],
+            'graphics': [(gr, float(gr.x), float(gr.y), float(gr.w), float(gr.h)) for gr in self.current_unit.graphics],
+        }
+        setattr(item.model, a, float(v))
+        self.scale_current_unit_children_from_body_resize(st, item.model)
         self.enforce_symbol_size_limit()
         self.update_current_unit_canvas_positions()
         self.schedule_scene_refresh(visual_only=True)
@@ -5450,44 +5441,56 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         self.select_model_after_rebuild(model)
         self.rebuild_scene(); self.rebuild_tree()
 
+    def _symbol_group_pivot_grid(self):
+        """Stable transform pivot for one symbol/split part.
+
+        The grid origin is the symbol origin in the Wizard.  BODY, pins,
+        attributes, texts and graphics must rotate/scale/flip as one rigid
+        object around this pivot.  Do not use an auxiliary proxy rectangle and
+        do not transform each class around its own local anchor.
+        """
+        return (0.0, 0.0)
+
     def _body_center_grid(self, body=None):
         b = body or self.current_unit.body
-        # For imported/template BODYs the visible body is the locked graphic group.
-        # Use its real geometric bounds as transformation center so pins and
-        # attributes rotate/scale exactly as if the imported symbol was one object.
-        try:
-            locked = [g for g in (getattr(self.current_unit, 'graphics', []) or []) if bool(getattr(g, 'locked_to_body', False))]
-            if locked:
-                xs=[]; ys=[]
-                for g in locked:
-                    x1=float(getattr(g,'x',0.0) or 0.0); y1=float(getattr(g,'y',0.0) or 0.0)
-                    x2=x1+float(getattr(g,'w',0.0) or 0.0); y2=y1+float(getattr(g,'h',0.0) or 0.0)
-                    xs.extend([x1,x2]); ys.extend([y1,y2])
-                    cx=getattr(g,'ctrl_x',None); cy=getattr(g,'ctrl_y',None)
-                    if cx is not None and cy is not None:
-                        xs.append(x1+float(cx)); ys.append(y1+float(cy))
-                return ((min(xs)+max(xs))/2.0, (min(ys)+max(ys))/2.0)
-        except Exception:
-            pass
         return (float(b.x) + float(b.width) / 2.0, float(b.y) - float(b.height) / 2.0)
+
+    def _set_body_center_grid(self, body, cx, cy):
+        body.x = float(cx) - float(body.width) / 2.0
+        body.y = float(cy) + float(body.height) / 2.0
+
+    def _graphic_center_grid(self, gr):
+        return (float(gr.x) + float(getattr(gr, 'w', 0.0) or 0.0) / 2.0,
+                float(gr.y) - float(getattr(gr, 'h', 0.0) or 0.0) / 2.0)
+
+    def _set_graphic_center_grid(self, gr, cx, cy):
+        gr.x = float(cx) - float(getattr(gr, 'w', 0.0) or 0.0) / 2.0
+        gr.y = float(cy) + float(getattr(gr, 'h', 0.0) or 0.0) / 2.0
+
+    def _clean_float(self, v):
+        try:
+            v = round(float(v), 9)
+            return 0.0 if abs(v) < 1e-9 else v
+        except Exception:
+            return v
 
     def _rot_point(self, x, y, cx, cy, deg):
         a = math.radians(float(deg))
         dx, dy = float(x) - cx, float(y) - cy
-        return (cx + math.cos(a) * dx - math.sin(a) * dy,
-                cy + math.sin(a) * dx + math.cos(a) * dy)
+        return (self._clean_float(cx + math.cos(a) * dx - math.sin(a) * dy),
+                self._clean_float(cy + math.sin(a) * dx + math.cos(a) * dy))
 
     def _scale_point(self, x, y, cx, cy, factor):
-        return (cx + (float(x) - cx) * float(factor),
-                cy + (float(y) - cy) * float(factor))
+        return (self._clean_float(cx + (float(x) - cx) * float(factor)),
+                self._clean_float(cy + (float(y) - cy) * float(factor)))
 
     def _flip_point(self, x, y, cx, cy, horizontal=True):
-        return ((2 * cx - float(x)) if horizontal else float(x),
-                float(y) if horizontal else (2 * cy - float(y)))
+        return (self._clean_float((2 * cx - float(x)) if horizontal else float(x)),
+                self._clean_float(float(y) if horizontal else (2 * cy - float(y))))
 
     def _add_rotation(self, obj, deg):
         try:
-            obj.rotation = (float(getattr(obj, 'rotation', 0.0) or 0.0) + float(deg)) % 360.0
+            obj.rotation = self._clean_float((float(getattr(obj, 'rotation', 0.0) or 0.0) + float(deg)) % 360.0)
         except Exception:
             pass
 
@@ -5510,7 +5513,8 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
                 if scale_factor is not None:
                     tm.font_size_grid = max(0.1, float(getattr(tm, 'font_size_grid', 0.55) or 0.55) * float(scale_factor))
                 if flip_horizontal is not None:
-                    tm.rotation = (-float(getattr(tm, 'rotation', 0.0) or 0.0)) % 360.0 if flip_horizontal else (180.0 - float(getattr(tm, 'rotation', 0.0) or 0.0)) % 360.0
+                    r = float(getattr(tm, 'rotation', 0.0) or 0.0)
+                    tm.rotation = self._clean_float((-r) % 360.0 if flip_horizontal else (180.0 - r) % 360.0)
             except Exception:
                 pass
 
@@ -5524,147 +5528,176 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
                     tm.font_size_grid = max(0.1, float(getattr(tm, 'font_size_grid', 0.75) or 0.75) * float(scale_factor))
                 if flip_horizontal is not None:
                     r = float(getattr(tm, 'rotation', 0.0) or 0.0)
-                    tm.rotation = (-r) % 360.0 if flip_horizontal else (180.0 - r) % 360.0
+                    tm.rotation = self._clean_float((-r) % 360.0 if flip_horizontal else (180.0 - r) % 360.0)
             except Exception:
                 pass
 
-    def _transform_unit_as_body_group(self, op, value=None):
-        """Transform the real symbol objects, not a temporary body frame.
+    def _body_group_objects(self, unit=None):
+        u = unit or self.current_unit
+        b = u.body
+        return b, list(getattr(u, 'pins', []) or []), list(getattr(u, 'texts', []) or []), list((getattr(b, 'attribute_texts', {}) or {}).values()), list(getattr(u, 'graphics', []) or [])
 
-        Imported Mentor/template symbols use graphics as the visible BODY.  Internally
-        created symbols use the rectangular body.  Both must behave identically here:
-        pins, pin labels/attributes, body attributes, user graphics and body graphics
-        are transformed together around the BODY center, so their relative layout does
-        not drift and no proxy rectangle becomes part of the model.
+    def _transform_unit_as_body_group(self, op, value=None, refresh=True):
+        """Transform the complete symbol part as one rigid BODY group.
+
+        The BODY is not a temporary rectangular proxy.  It is the logical root of
+        all visible/imported body graphics, user graphics, pins, pin attributes,
+        body attributes and texts.  Every member is transformed around the same
+        symbol origin, and rect-like items are moved by their center so repeated
+        rotations do not accumulate anchor drift.
         """
         u = self.current_unit
-        b = u.body
-        cx, cy = self._body_center_grid(b)
+        b, pins, texts, body_attrs, graphics = self._body_group_objects(u)
+        px, py = self._symbol_group_pivot_grid()
 
         if op == 'rotate':
             deg = float(value or 0.0)
-            def pf(x, y): return self._rot_point(x, y, cx, cy, deg)
+            def pf(x, y): return self._rot_point(x, y, px, py, deg)
+
+            bc = self._body_center_grid(b)
+            self._set_body_center_grid(b, *pf(*bc))
             self._add_rotation(b, deg)
-            for p in u.pins:
+
+            for p in pins:
                 p.x, p.y = pf(p.x, p.y)
                 self._add_rotation(p, deg)
                 self._transform_pin_anchors(p, pf, rotate_deg=deg)
-            for t in u.texts:
-                t.x, t.y = pf(t.x, t.y); self._add_rotation(t, deg)
+            for t in texts:
+                t.x, t.y = pf(t.x, t.y)
+                self._add_rotation(t, deg)
             self._transform_body_attribute_texts(b, pf, rotate_deg=deg)
-            for gr in u.graphics:
-                gr.x, gr.y = pf(gr.x, gr.y); self._add_rotation(gr, deg)
+            for gr in graphics:
+                gc = self._graphic_center_grid(gr)
+                self._set_graphic_center_grid(gr, *pf(*gc))
+                self._add_rotation(gr, deg)
 
         elif op == 'scale':
             factor = float(value or 1.0)
-            def pf(x, y): return self._scale_point(x, y, cx, cy, factor)
-            # Keep the body center fixed while resizing.
-            new_w = max(0.1, float(b.width) * factor)
-            new_h = max(0.1, float(b.height) * factor)
-            b.x = cx - new_w / 2.0; b.y = cy + new_h / 2.0
-            b.width = new_w; b.height = new_h
-            for p in u.pins:
+            if abs(factor) < 1e-9:
+                return
+            def pf(x, y): return self._scale_point(x, y, px, py, factor)
+
+            bc = pf(*self._body_center_grid(b))
+            b.width = max(0.1, float(b.width) * factor)
+            b.height = max(0.1, float(b.height) * factor)
+            self._set_body_center_grid(b, *bc)
+
+            for p in pins:
                 p.x, p.y = pf(p.x, p.y)
                 p.length = max(0.1, float(getattr(p, 'length', 1.0) or 1.0) * factor)
-                self._scale_font_model(p.number_font, factor); self._scale_font_model(p.label_font, factor)
+                self._scale_font_model(p.number_font, factor)
+                self._scale_font_model(p.label_font, factor)
                 self._transform_pin_anchors(p, pf, scale_factor=factor)
-            for t in u.texts:
+            for t in texts:
                 t.x, t.y = pf(t.x, t.y)
                 t.font_size_grid = max(0.1, float(getattr(t, 'font_size_grid', 0.75) or 0.75) * factor)
-            self._scale_font_model(b.attribute_font, factor); self._scale_font_model(b.refdes_font, factor)
+            self._scale_font_model(b.attribute_font, factor)
+            self._scale_font_model(b.refdes_font, factor)
             self._transform_body_attribute_texts(b, pf, scale_factor=factor)
-            for gr in u.graphics:
-                gr.x, gr.y = pf(gr.x, gr.y)
+            for gr in graphics:
+                gc = pf(*self._graphic_center_grid(gr))
                 gr.w = float(getattr(gr, 'w', 0.0) or 0.0) * factor
                 gr.h = float(getattr(gr, 'h', 0.0) or 0.0) * factor
-                try:
-                    gr.curve_radius = float(getattr(gr, 'curve_radius', 0.0) or 0.0) * factor
-                except Exception:
-                    pass
                 if getattr(gr, 'ctrl_x', None) is not None:
                     gr.ctrl_x = float(gr.ctrl_x) * factor
                 if getattr(gr, 'ctrl_y', None) is not None:
                     gr.ctrl_y = float(gr.ctrl_y) * factor
+                try:
+                    gr.curve_radius = float(getattr(gr, 'curve_radius', 0.0) or 0.0) * factor
+                except Exception:
+                    pass
+                self._set_graphic_center_grid(gr, *gc)
 
         elif op in ('flip_h', 'flip_v'):
             horizontal = op == 'flip_h'
-            def pf(x, y): return self._flip_point(x, y, cx, cy, horizontal)
+            def pf(x, y): return self._flip_point(x, y, px, py, horizontal)
             r = float(getattr(b, 'rotation', 0.0) or 0.0)
-            b.rotation = (-r) % 360.0 if horizontal else (180.0 - r) % 360.0
-            for p in u.pins:
+            b.rotation = self._clean_float((-r) % 360.0 if horizontal else (180.0 - r) % 360.0)
+            self._set_body_center_grid(b, *pf(*self._body_center_grid(b)))
+
+            for p in pins:
                 p.x, p.y = pf(p.x, p.y)
                 pr = float(getattr(p, 'rotation', 0.0) or 0.0)
-                p.rotation = (-pr) % 360.0 if horizontal else (180.0 - pr) % 360.0
-                if horizontal and p.side in (PinSide.LEFT.value, PinSide.RIGHT.value):
-                    p.side = PinSide.RIGHT.value if p.side == PinSide.LEFT.value else PinSide.LEFT.value
-                if (not horizontal) and p.side in (PinSide.TOP.value, PinSide.BOTTOM.value):
-                    p.side = PinSide.BOTTOM.value if p.side == PinSide.TOP.value else PinSide.TOP.value
+                p.rotation = self._clean_float((-pr) % 360.0 if horizontal else (180.0 - pr) % 360.0)
                 self._transform_pin_anchors(p, pf, flip_horizontal=horizontal)
-            for t in u.texts:
+            for t in texts:
                 t.x, t.y = pf(t.x, t.y)
                 tr = float(getattr(t, 'rotation', 0.0) or 0.0)
-                t.rotation = (-tr) % 360.0 if horizontal else (180.0 - tr) % 360.0
+                t.rotation = self._clean_float((-tr) % 360.0 if horizontal else (180.0 - tr) % 360.0)
             self._transform_body_attribute_texts(b, pf, flip_horizontal=horizontal)
-            for gr in u.graphics:
-                # Reflect both endpoints/corners so line endpoints and rect bounds remain real geometry.
-                x1, y1 = pf(float(gr.x), float(gr.y))
-                x2, y2 = pf(float(gr.x) + float(getattr(gr, 'w', 0.0) or 0.0),
-                            float(gr.y) + float(getattr(gr, 'h', 0.0) or 0.0))
-                gr.x, gr.y = x1, y1
-                gr.w, gr.h = x2 - x1, y2 - y1
+            for gr in graphics:
+                self._set_graphic_center_grid(gr, *pf(*self._graphic_center_grid(gr)))
                 rr = float(getattr(gr, 'rotation', 0.0) or 0.0)
-                gr.rotation = (-rr) % 360.0 if horizontal else (180.0 - rr) % 360.0
+                gr.rotation = self._clean_float((-rr) % 360.0 if horizontal else (180.0 - rr) % 360.0)
                 if getattr(gr, 'ctrl_x', None) is not None:
                     gr.ctrl_x = -float(gr.ctrl_x) if horizontal else float(gr.ctrl_x)
                 if getattr(gr, 'ctrl_y', None) is not None:
                     gr.ctrl_y = float(gr.ctrl_y) if horizontal else -float(gr.ctrl_y)
-        self.update_current_unit_canvas_positions()
-        self.update_attribute_items_for_unit()
-        self.rebuild_tree(); self.rebuild_pin_table()
 
-    def _selected_has_body(self):
-        return any(it.data(0) == 'BODY' for it in self.scene.selectedItems())
+        if refresh:
+            self.update_current_unit_canvas_positions()
+            self.update_attribute_items_for_unit()
+            self.rebuild_tree(); self.rebuild_pin_table()
+
+    def _selected_body_active(self):
+        try:
+            return any(getattr(i, 'data', lambda *_: None)(0) == 'BODY' for i in self.scene.selectedItems())
+        except Exception:
+            return False
 
     def rotate_selected(self, deg):
+        """Rotate selected objects. If BODY is selected, transform the whole current
+        symbol/split part as one rigid group (BODY + pins + attributes + texts +
+        graphics). This keeps imported symbols behaving like internally created
+        <NONE> symbols and avoids proxy-frame transforms.
+        """
+        self.set_tool(DrawTool.SELECT.value)
         self.push_undo_state()
-        if self._selected_has_body():
-            self._transform_unit_as_body_group('rotate', deg)
+        if self._selected_body_active():
+            self._transform_unit_as_body_group('rotate', float(deg))
         else:
             for it in self.scene.selectedItems():
                 if hasattr(it, 'rotate_by'):
-                    it.rotate_by(deg)
-        self.schedule_scene_refresh(visual_only=True)
-
-    def scale_selected(self, factor):
-        self.push_undo_state()
-        if self._selected_has_body():
-            self._transform_unit_as_body_group('scale', factor)
-        else:
-            for it in self.scene.selectedItems():
-                if hasattr(it, 'scale_selected'):
-                    it.scale_selected(factor)
-        self.enforce_symbol_size_limit(silent=True)
-        self.schedule_scene_refresh(visual_only=True)
+                    it.rotate_by(float(deg))
+            self.schedule_scene_refresh()
+        self.dirty = True
 
     def flip_selected_horizontal(self):
+        self.set_tool(DrawTool.SELECT.value)
         self.push_undo_state()
-        if self._selected_has_body():
+        if self._selected_body_active():
             self._transform_unit_as_body_group('flip_h')
         else:
             for it in self.scene.selectedItems():
                 if hasattr(it, 'flip_horizontal'):
                     it.flip_horizontal()
-        self.schedule_scene_refresh(visual_only=True)
+            self.schedule_scene_refresh()
+        self.dirty = True
 
     def flip_selected_vertical(self):
+        self.set_tool(DrawTool.SELECT.value)
         self.push_undo_state()
-        if self._selected_has_body():
+        if self._selected_body_active():
             self._transform_unit_as_body_group('flip_v')
         else:
             for it in self.scene.selectedItems():
                 if hasattr(it, 'flip_vertical'):
                     it.flip_vertical()
-        self.schedule_scene_refresh(visual_only=True)
+            self.schedule_scene_refresh()
+        self.dirty = True
+
+    def scale_selected(self, factor):
+        self.set_tool(DrawTool.SELECT.value)
+        self.push_undo_state()
+        if self._selected_body_active():
+            self._transform_unit_as_body_group('scale', float(factor))
+        else:
+            # Fallback for non-body selections: keep existing item-level behaviour if present.
+            for it in self.scene.selectedItems():
+                if hasattr(it, 'scale_by'):
+                    it.scale_by(float(factor))
+            self.schedule_scene_refresh()
+        self.dirty = True
 
     def copy_selected(self):
         self.set_tool(DrawTool.SELECT.value)
