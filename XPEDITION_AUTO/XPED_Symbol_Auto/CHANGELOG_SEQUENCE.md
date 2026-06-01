@@ -462,3 +462,9 @@ Imported snapshot from `Symbol_Wizard_29.zip`.
 
 Archive version: `v29`; imported as: `v104`; offset: `75`.
 
+## v105
+
+Imported snapshot from `Symbol_Wizard_30.zip`.
+
+Archive version: `v30`; imported as: `v105`; offset: `75`.
+
