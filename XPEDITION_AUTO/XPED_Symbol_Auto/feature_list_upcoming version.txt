@@ -1,0 +1,32 @@
+Analysiere die komplette Symbolbibliothek und passe die Symboltemplates dahingehend an. 
+Sehr wichtig sind hierbei auch die Symbolattribute.
+
+Zudem gibt es noch folgende Optimiereungen.
+
+Symbol Wizard Optimizations:
+
+Attribut-Handling:
+--> Importiere proprietäre Liebherr Symbole/Attribute um diese im/als Template abzulegen
+--> Wenn ich generisch Parts importiere, halte dich an die vorgegebenen Liebherr Attribute.
+--> Wenn ich ein Bauteil imporiere, versuche Typ und Subtyp möglichst genau zu erkennen
+
+Darstellungshandling:
+--> überprüfe beim erstellen von Funktionsblöcken und deren Pins, inwiefern diese logisch zusammenpassen:
+	
+	--> Differntielle Pärchen: untereinander 2 Gridspacings Abstand, zu anderen 3 Gridspacings
+	
+	--> Supply Pins nach Rail sortieren. Innerhalb eines Rails 1 Gridspacings Abstand, zu anderen Rails 2 Gridspacings Abstand
+	
+	--> Clock Siganale: differentiell, 4 Gridspacings Abstand zueinander, 6 Gridspacings Abstand zu anderen Pins um besser zeichnen zu können
+	
+	--> Analogsignale: 3 Gridspacings Abstand zueinander
+	
+	--> Ground Signale. wie bei Power nach Funktion sortieren. Ggf.in 2 Symbole teile, falls zu groß in Bezug auf das Fromat und den Zeichnbereich. 1 Gridspace Abstand zueinander innerhalb derselben Gruppe. Zu andere Gruppen 2 Gridspacings Abstand zueinander
+	
+	--> Logiksignale je nach Funktion zusammenfassen mit 2 Gridspacings zueinander und 3 Gridspacings zu anderen Funktionen. Sollte die Pin Funktion noch nicht bestimmt sein innerhalb einer Bank nicht definierte IOs mit 2 Gridspacings zueinander anlegen.
+	
+	--> Für dedizierte Schnittstellen gilt immer die Pin Function über den Pin Namen. Gibt es eine dedizierte Funktion, so soll auch die Pin Function angezeigt werden, ansonsten der Pin Name.
+	
+	Für Power und Ground gibt es ja oft zusammenhängende Rails und Pins. Auch hier wird die Pin Function angezeigt. Diese kann ja auch über mehrere Pins gleich sein (z.B. GND, VCCIO18, oder ähnliche), während der Pin Name ja unique ist.
+
+Es sollte zudem möglich sein Body und Pin Attribute hinzuzufügen, sowie ein komplettes Attributset für ein Template nachzuladen. Hier soll  es dann möglich sein entweder zu mergen, oder zreplacen.

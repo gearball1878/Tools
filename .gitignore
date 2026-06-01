@@ -76,3 +76,7 @@ ENV/
 __pycache__/
 .pytest_cache/
 .mypy_cache/
+
+# Project data / local symbol libraries
+XPEDITION_AUTO/symbols/
+XPEDITION_AUTO/XPED_Symbol_Auto/symbols/
