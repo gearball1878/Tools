@@ -2316,3 +2316,140 @@ try:
     TextItem.focusOutEvent = _lh71_text_focus_out
 except Exception:
     pass
+
+
+# ---------------------------------------------------------------------------
+# Liebherr v83: REAL group graphic object.
+# A grouped selection is now converted into one GraphicModel(shape='group').
+# The group item uses the exact same GraphicItem interaction pipeline as a
+# rectangle: one outline, one origin, one move/resize/rotate/flip state.  The
+# former child objects are only painted as local geometry inside this one item.
+# ---------------------------------------------------------------------------
+try:
+    _lh83_prev_raw_rect = GraphicItem._raw_rect
+    _lh83_prev_rect = GraphicItem._rect
+    _lh83_prev_handles = GraphicItem._handles
+    _lh83_prev_paint = GraphicItem.paint
+    _lh83_prev_bounding = GraphicItem.boundingRect
+    _lh83_prev_shape = getattr(GraphicItem, 'shape', None)
+
+    def _lh83_is_group_model(m):
+        try:
+            return str(getattr(m, 'shape', '') or '').lower() == 'group'
+        except Exception:
+            return False
+
+    def _lh83_child_style(d, fallback):
+        try:
+            st = d.get('style') or {}
+            return (
+                tuple(st.get('stroke', getattr(fallback, 'stroke', (0,0,0))) or (0,0,0)),
+                st.get('fill', None),
+                float(st.get('line_width', getattr(fallback, 'line_width', 0.03)) or 0.03),
+                st.get('line_style', getattr(fallback, 'line_style', LineStyle.SOLID.value)) or LineStyle.SOLID.value,
+            )
+        except Exception:
+            return ((0,0,0), None, 0.03, LineStyle.SOLID.value)
+
+    def _lh83_raw_rect(self):
+        if _lh83_is_group_model(getattr(self, 'model', None)):
+            g = self.window.grid_px
+            return QRectF(0, 0, float(getattr(self.model, 'w', 0.0) or 0.0) * g,
+                          float(getattr(self.model, 'h', 0.0) or 0.0) * g)
+        return _lh83_prev_raw_rect(self)
+
+    def _lh83_rect(self):
+        if _lh83_is_group_model(getattr(self, 'model', None)):
+            r = _lh83_raw_rect(self).normalized()
+            if r.width() < 1: r.adjust(-.5, 0, .5, 0)
+            if r.height() < 1: r.adjust(0, -.5, 0, .5)
+            return r
+        return _lh83_prev_rect(self)
+
+    def _lh83_handles(self):
+        if _lh83_is_group_model(getattr(self, 'model', None)):
+            g = self.window.grid_px
+            return _corner_handles(_lh83_rect(self), g * self.handle_size_factor)
+        return _lh83_prev_handles(self)
+
+    def _lh83_bounding_rect(self):
+        if _lh83_is_group_model(getattr(self, 'model', None)):
+            g = self.window.grid_px
+            return _lh83_rect(self).adjusted(-.35*g, -.35*g, .35*g, .35*g)
+        return _lh83_prev_bounding(self)
+
+    def _lh83_shape(self):
+        if _lh83_is_group_model(getattr(self, 'model', None)):
+            path = QPainterPath()
+            # Important: the entire outline is clickable/selectable, exactly like
+            # a single rectangle.  Children are not separate hit targets anymore.
+            path.addRect(_lh83_rect(self))
+            return path
+        if _lh83_prev_shape:
+            return _lh83_prev_shape(self)
+        path = QPainterPath(); path.addRect(self.boundingRect()); return path
+
+    def _lh83_draw_child(self, painter, d, sx, sy):
+        g = self.window.grid_px
+        shape = str(d.get('shape', '') or '').lower()
+        x = float(d.get('x', 0.0) or 0.0) * sx * g
+        y = float(d.get('y', 0.0) or 0.0) * sy * g
+        w = float(d.get('w', 0.0) or 0.0) * sx * g
+        h = float(d.get('h', 0.0) or 0.0) * sy * g
+        stroke, fill, lw, ls = _lh83_child_style(d, getattr(getattr(self, 'model', None), 'style', None))
+        painter.save()
+        painter.setPen(pen_for(stroke, lw, ls, g))
+        painter.setBrush(QBrush(rgb(fill)) if fill else QBrush(Qt.NoBrush))
+        if shape in ('line', 'arc'):
+            cx = d.get('ctrl_x', None); cy = d.get('ctrl_y', None)
+            if cx is not None and cy is not None:
+                path = QPainterPath(QPointF(x, y))
+                path.quadTo(QPointF(float(cx)*sx*g, -float(cy)*sy*g), QPointF(x + w, y + h))
+                painter.drawPath(path)
+            else:
+                r = float(d.get('curve_radius', 0.0) or 0.0) * sy * g
+                if abs(r) > 1e-9:
+                    path = QPainterPath(QPointF(x, y))
+                    path.quadTo(QPointF(x + w/2.0, y + h/2.0 - r), QPointF(x+w, y+h))
+                    painter.drawPath(path)
+                else:
+                    painter.drawLine(QPointF(x, y), QPointF(x+w, y+h))
+        elif shape == 'rect':
+            painter.drawRect(QRectF(x, y, w, h).normalized())
+        elif shape in ('ellipse', 'circle'):
+            painter.drawEllipse(QRectF(x, y, w, h).normalized())
+        else:
+            # Unknown grouped primitive: draw its saved bbox as a safe fallback.
+            painter.drawRect(QRectF(x, y, w, h).normalized())
+        painter.restore()
+
+    def _lh83_paint(self, painter, option, widget=None):
+        if not _lh83_is_group_model(getattr(self, 'model', None)):
+            return _lh83_prev_paint(self, painter, option, widget)
+        m = self.model
+        g = self.window.grid_px
+        bw = float(getattr(m, 'group_base_w', 0.0) or 0.0) or float(getattr(m, 'w', 1.0) or 1.0)
+        bh = float(getattr(m, 'group_base_h', 0.0) or 0.0) or float(getattr(m, 'h', 1.0) or 1.0)
+        sx = (float(getattr(m, 'w', 0.0) or 0.0) / bw) if abs(bw) > 1e-12 else 1.0
+        sy = (float(getattr(m, 'h', 0.0) or 0.0) / bh) if abs(bh) > 1e-12 else 1.0
+        for ch in list(getattr(m, 'group_children', []) or []):
+            try: _lh83_draw_child(self, painter, ch, sx, sy)
+            except Exception: pass
+        if self.isSelected():
+            painter.save()
+            painter.setPen(QPen(QColor(80, 80, 80), 1, Qt.DashLine))
+            painter.setBrush(QBrush(Qt.NoBrush))
+            painter.drawRect(_lh83_rect(self))
+            painter.setBrush(QBrush(QColor(255, 255, 255)))
+            for r in _lh83_handles(self).values(): painter.drawRect(r)
+            painter.drawEllipse(_rotation_handle(_lh83_rect(self), g * self.rotate_handle_factor))
+            painter.restore()
+
+    GraphicItem._raw_rect = _lh83_raw_rect
+    GraphicItem._rect = _lh83_rect
+    GraphicItem._handles = _lh83_handles
+    GraphicItem.boundingRect = _lh83_bounding_rect
+    GraphicItem.shape = _lh83_shape
+    GraphicItem.paint = _lh83_paint
+except Exception:
+    pass

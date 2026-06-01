@@ -17897,3 +17897,218 @@ try:
     MainWindow.__init__ = _v82_init
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# Liebherr v83: group == one real GraphicModel(shape='group').
+# Grouping no longer keeps selectable child objects.  The selected graphics are
+# replaced by one GraphicModel with local child geometry.  From this point on
+# the normal GraphicItem code handles move/resize/rotate/flip exactly like a
+# single rectangle-like graphic object.
+# ---------------------------------------------------------------------------
+def _lh83_is_user_graphic_model(m):
+    try:
+        if m is None or str(getattr(m, 'shape', '') or '').lower() == 'group':
+            return False
+        role = str(getattr(m, 'graphic_role', '') or '').lower()
+        return (not bool(getattr(m, 'locked_to_body', False))) and role not in ('body','template_body','imported_body')
+    except Exception:
+        return False
+
+def _lh83_selected_graphic_models(self):
+    out=[]
+    try: items=list(self.scene.selectedItems())
+    except Exception: items=[]
+    for it in items:
+        try:
+            if getattr(it, 'data', lambda *_: None)(0) != 'GRAPHIC':
+                continue
+            m=getattr(it,'model',None)
+            if m is not None and m not in out:
+                out.append(m)
+        except Exception:
+            pass
+    return out
+
+def _lh83_model_points(m):
+    try:
+        x=float(getattr(m,'x',0.0) or 0.0); y=float(getattr(m,'y',0.0) or 0.0)
+        w=float(getattr(m,'w',0.0) or 0.0); h=float(getattr(m,'h',0.0) or 0.0)
+        shape=str(getattr(m,'shape','') or '').lower()
+        pts=[(x,y),(x+w,y-h)]
+        if shape not in ('line','arc'):
+            pts.extend([(x+w,y),(x,y-h)])
+        try:
+            if getattr(m,'ctrl_x',None) is not None and getattr(m,'ctrl_y',None) is not None:
+                pts.append((x+float(m.ctrl_x), y-float(m.ctrl_y)))
+        except Exception: pass
+        return pts
+    except Exception:
+        return []
+
+def _lh83_bbox(models):
+    pts=[]
+    for m in models: pts.extend(_lh83_model_points(m))
+    if not pts: return None
+    xs=[p[0] for p in pts]; ys=[p[1] for p in pts]
+    return min(xs), min(ys), max(xs), max(ys)
+
+def _lh83_style_dict(st):
+    try:
+        return {'stroke': tuple(getattr(st,'stroke',(0,0,0)) or (0,0,0)),
+                'fill': getattr(st,'fill',None),
+                'line_width': float(getattr(st,'line_width',0.03) or 0.03),
+                'line_style': getattr(st,'line_style','solid') or 'solid'}
+    except Exception:
+        return {'stroke':(0,0,0),'fill':None,'line_width':0.03,'line_style':'solid'}
+
+def _lh83_child_from_model(m, gx, gy):
+    return {
+        'shape': str(getattr(m,'shape','rect') or 'rect'),
+        'x': float(getattr(m,'x',0.0) or 0.0) - gx,
+        # group local y is screen-down.  Model y is upwards, so top-local = group_top - child_top.
+        'y': gy - float(getattr(m,'y',0.0) or 0.0),
+        'w': float(getattr(m,'w',0.0) or 0.0),
+        'h': float(getattr(m,'h',0.0) or 0.0),
+        'curve_radius': float(getattr(m,'curve_radius',0.0) or 0.0),
+        'ctrl_x': getattr(m,'ctrl_x',None),
+        'ctrl_y': getattr(m,'ctrl_y',None),
+        'rotation': float(getattr(m,'rotation',0.0) or 0.0),
+        'scale_x': float(getattr(m,'scale_x',1.0) or 1.0),
+        'scale_y': float(getattr(m,'scale_y',1.0) or 1.0),
+        'style': _lh83_style_dict(getattr(m,'style',None)),
+    }
+
+def _lh83_group_selected_graphics(self):
+    models=[m for m in _lh83_selected_graphic_models(self) if _lh83_is_user_graphic_model(m)]
+    if len(models) < 2:
+        try: QMessageBox.information(self, 'Group Graphics', 'Bitte mindestens zwei eingefügte Grafikobjekte auswählen.')
+        except Exception: pass
+        return
+    b=_lh83_bbox(models)
+    if not b: return
+    minx,miny,maxx,maxy=b
+    gx=minx; gy=maxy
+    gw=max(maxx-minx, 1e-9); gh=max(maxy-miny, 1e-9)
+    try: self.push_undo_state()
+    except Exception: pass
+    try:
+        from symbol_wizard.models.document import GraphicModel, StyleModel
+        group=GraphicModel(shape='group', x=gx, y=gy, w=gw, h=gh)
+        group.graphic_role='user_graphic_group_object'
+        group.group_id=''
+        group.group_base_w=gw; group.group_base_h=gh
+        group.group_children=[_lh83_child_from_model(m, gx, gy) for m in models]
+        try:
+            group.style = StyleModel(stroke=(0,0,0), fill=None, line_width=0.03, line_style='solid')
+        except Exception: pass
+        unit=getattr(self,'current_unit',None)
+        if unit is not None:
+            old=list(getattr(unit,'graphics',[]) or [])
+            first=min([old.index(m) for m in models if m in old] or [len(old)])
+            unit.graphics=[m for m in old if m not in models]
+            unit.graphics.insert(first, group)
+        self.dirty=True
+        try: self._selection_restore_ids={id(group)}
+        except Exception: pass
+        self.rebuild_scene()
+        try:
+            for it in self.scene.items():
+                if getattr(it,'data',lambda *_:None)(0)=='GRAPHIC' and getattr(it,'model',None) is group:
+                    it.setSelected(True); break
+        except Exception: pass
+        try: self.refresh_properties(); self.rebuild_tree()
+        except Exception: pass
+        try: self.statusBar().showMessage('Grafikobjekte zu einem echten Gruppenobjekt zusammengefasst.', 3500)
+        except Exception: pass
+    except Exception as e:
+        try: QMessageBox.warning(self, 'Group Graphics', f'Gruppieren fehlgeschlagen: {e}')
+        except Exception: pass
+
+def _lh83_ungroup_selected_graphics(self):
+    groups=[m for m in _lh83_selected_graphic_models(self) if str(getattr(m,'shape','') or '').lower()=='group']
+    if not groups: return
+    try: self.push_undo_state()
+    except Exception: pass
+    try:
+        from symbol_wizard.models.document import GraphicModel, StyleModel
+        unit=getattr(self,'current_unit',None)
+        if unit is None: return
+        new_graphics=[]
+        made=[]
+        for m in list(getattr(unit,'graphics',[]) or []):
+            if m not in groups:
+                new_graphics.append(m); continue
+            bw=float(getattr(m,'group_base_w',0.0) or getattr(m,'w',1.0) or 1.0)
+            bh=float(getattr(m,'group_base_h',0.0) or getattr(m,'h',1.0) or 1.0)
+            sx=(float(getattr(m,'w',0.0) or 0.0)/bw) if abs(bw)>1e-12 else 1.0
+            sy=(float(getattr(m,'h',0.0) or 0.0)/bh) if abs(bh)>1e-12 else 1.0
+            for ch in list(getattr(m,'group_children',[]) or []):
+                gr=GraphicModel(shape=ch.get('shape','rect'))
+                gr.x=float(getattr(m,'x',0.0) or 0.0)+float(ch.get('x',0.0) or 0.0)*sx
+                gr.y=float(getattr(m,'y',0.0) or 0.0)-float(ch.get('y',0.0) or 0.0)*sy
+                gr.w=float(ch.get('w',0.0) or 0.0)*sx
+                gr.h=float(ch.get('h',0.0) or 0.0)*sy
+                gr.curve_radius=float(ch.get('curve_radius',0.0) or 0.0)*sy
+                gr.ctrl_x=ch.get('ctrl_x',None); gr.ctrl_y=ch.get('ctrl_y',None)
+                gr.rotation=(float(ch.get('rotation',0.0) or 0.0)+float(getattr(m,'rotation',0.0) or 0.0))%360.0
+                gr.scale_x=float(ch.get('scale_x',1.0) or 1.0)*float(getattr(m,'scale_x',1.0) or 1.0)
+                gr.scale_y=float(ch.get('scale_y',1.0) or 1.0)*float(getattr(m,'scale_y',1.0) or 1.0)
+                gr.graphic_role='user_graphic'
+                try:
+                    st=ch.get('style') or {}
+                    gr.style=StyleModel(stroke=tuple(st.get('stroke',(0,0,0)) or (0,0,0)), fill=st.get('fill',None), line_width=float(st.get('line_width',0.03) or 0.03), line_style=st.get('line_style','solid') or 'solid')
+                except Exception: pass
+                new_graphics.append(gr); made.append(gr)
+        unit.graphics=new_graphics
+        self.dirty=True
+        try: self._selection_restore_ids={id(x) for x in made}
+        except Exception: pass
+        self.rebuild_scene(); self.refresh_properties(); self.rebuild_tree()
+    except Exception as e:
+        try: QMessageBox.warning(self, 'Ungroup Graphics', f'Ungroup fehlgeschlagen: {e}')
+        except Exception: pass
+
+def _lh83_clean_group_ui(self):
+    # remove duplicate toolbar variants introduced by older experiments
+    try:
+        seen=False
+        for tb in list(self.findChildren(QToolBar)):
+            try:
+                title=str(tb.windowTitle() or '')
+                texts=[str(a.text() or '') for a in tb.actions()]
+                has= title=='Graphic Group' or any(('Group Graphics' in t or 'Ungroup' in t) for t in texts)
+                if has:
+                    if seen:
+                        self.removeToolBar(tb); tb.deleteLater()
+                    else:
+                        seen=True
+            except Exception: pass
+    except Exception: pass
+    # remove duplicate Edit actions, keep first of each
+    try:
+        mb=self.menuBar()
+        for act in mb.actions():
+            if str(act.text()).replace('&','').lower()=='edit':
+                menu=act.menu(); seen_g=False; seen_u=False
+                for a in list(menu.actions()):
+                    txt=str(a.text() or '')
+                    if 'Group Graphics' in txt:
+                        if seen_g: menu.removeAction(a)
+                        seen_g=True
+                    if 'Ungroup' in txt:
+                        if seen_u: menu.removeAction(a)
+                        seen_u=True
+    except Exception: pass
+
+try:
+    for _cls in (MainWindow, TemplateEditorDialog):
+        _cls.group_selected_graphics=_lh83_group_selected_graphics
+        _cls.ungroup_selected_graphics=_lh83_ungroup_selected_graphics
+    _lh83_old_init=MainWindow.__init__
+    def _lh83_init(self,*args,**kwargs):
+        _lh83_old_init(self,*args,**kwargs)
+        try: _lh83_clean_group_ui(self)
+        except Exception: pass
+    MainWindow.__init__=_lh83_init
+except Exception:
+    pass
