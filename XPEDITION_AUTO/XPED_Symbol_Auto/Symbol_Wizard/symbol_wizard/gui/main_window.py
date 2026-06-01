@@ -16563,3 +16563,456 @@ try:
         TemplateEditorDialog.push_undo_state = _sw77_te_push_undo_state
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# SW78: real vector-style graphic group proxy from stable v68 syntax-fixed base.
+# ---------------------------------------------------------------------------
+try:
+    from PySide6.QtCore import QPointF as _SW78_QPointF
+except Exception:
+    _SW78_QPointF = None
+
+
+def _sw78_gid(gr):
+    try:
+        gid = str(getattr(gr, 'group_id', '') or '')
+        if gid:
+            return gid
+        role = str(getattr(gr, 'graphic_role', '') or '')
+        if role.startswith('user_graphic_group:'):
+            return role.split(':', 1)[1]
+    except Exception:
+        pass
+    return ''
+
+
+def _sw78_set_gid(gr, gid):
+    gid = str(gid or '')
+    try: gr.group_id = gid
+    except Exception: pass
+    try: gr.graphic_role = ('user_graphic_group:' + gid) if gid else 'user_graphic'
+    except Exception: pass
+
+
+def _sw78_is_user_graphic(gr):
+    try:
+        role = str(getattr(gr, 'graphic_role', '') or '').lower()
+        return (not bool(getattr(gr, 'locked_to_body', False))) and role not in ('body', 'template_body', 'imported_body')
+    except Exception:
+        return False
+
+
+def _sw78_group_map(self):
+    groups = {}
+    try: graphics = list(getattr(self.current_unit, 'graphics', []) or [])
+    except Exception: graphics = []
+    for gr in graphics:
+        try:
+            gid = _sw78_gid(gr)
+            if gid and _sw78_is_user_graphic(gr):
+                groups.setdefault(gid, []).append(gr)
+        except Exception:
+            pass
+    return {k: v for k, v in groups.items() if len(v) >= 1}
+
+
+def _sw78_model_points(gr):
+    try:
+        x = float(getattr(gr, 'x', 0.0) or 0.0); y = float(getattr(gr, 'y', 0.0) or 0.0)
+        w = float(getattr(gr, 'w', 0.0) or 0.0); h = float(getattr(gr, 'h', 0.0) or 0.0)
+        sx = float(getattr(gr, 'scale_x', 1.0) or 1.0); sy = float(getattr(gr, 'scale_y', 1.0) or 1.0)
+        rot = math.radians(float(getattr(gr, 'rotation', 0.0) or 0.0))
+        cx = x + w / 2.0; cy = y - h / 2.0
+        raw = [(x, y), (x + w, y), (x + w, y - h), (x, y - h)]
+        c = math.cos(rot); s = math.sin(rot)
+        pts = []
+        for px, py in raw:
+            dx = (px - cx) * sx; dy = (py - cy) * sy
+            pts.append((cx + dx * c - dy * s, cy + dx * s + dy * c))
+        return pts
+    except Exception:
+        return []
+
+
+def _sw78_group_bbox_grid(models):
+    pts = []
+    for gr in models:
+        pts.extend(_sw78_model_points(gr))
+    if not pts:
+        return None
+    xs = [p[0] for p in pts]; ys = [p[1] for p in pts]
+    return (min(xs), min(ys), max(xs), max(ys))
+
+
+def _sw78_snap(self, v):
+    try:
+        return float(self.snap_grid_value(float(v)))
+    except Exception:
+        try:
+            st = float(self._edit_grid_step()) if hasattr(self, '_edit_grid_step') else 1.0
+            st = max(st, 1e-9)
+            return round(float(v) / st) * st
+        except Exception:
+            return float(v)
+
+
+def _sw78_group_origin(self, models):
+    bb = _sw78_group_bbox_grid(models)
+    if not bb:
+        return (0.0, 0.0)
+    minx, miny, maxx, maxy = bb
+    # lower-left of the group outline, snapped to edit-grid
+    return (_sw78_snap(self, minx), _sw78_snap(self, miny))
+
+
+def _sw78_model_center(gr):
+    try:
+        return (float(getattr(gr, 'x', 0.0) or 0.0) + float(getattr(gr, 'w', 0.0) or 0.0) / 2.0,
+                float(getattr(gr, 'y', 0.0) or 0.0) - float(getattr(gr, 'h', 0.0) or 0.0) / 2.0)
+    except Exception:
+        return (0.0, 0.0)
+
+
+def _sw78_set_model_center(gr, cx, cy):
+    try:
+        w = float(getattr(gr, 'w', 0.0) or 0.0); h = float(getattr(gr, 'h', 0.0) or 0.0)
+        gr.x = float(cx) - w / 2.0
+        gr.y = float(cy) + h / 2.0
+    except Exception:
+        pass
+
+
+def _sw78_group_ids_from_selection(self):
+    gids = []
+    try: items = list(self.scene.selectedItems())
+    except Exception: items = []
+    for it in items:
+        try:
+            if it.data(0) == 'GRAPHIC_GROUP':
+                gid = str(getattr(it, 'group_id', '') or '')
+            elif it.data(0) == 'GRAPHIC' and getattr(it, 'model', None) is not None:
+                gid = _sw78_gid(it.model)
+            else:
+                gid = ''
+            if gid and gid not in gids:
+                gids.append(gid)
+        except Exception:
+            pass
+    return gids
+
+
+def _sw78_selected_group_models(self):
+    groups = _sw78_group_map(self)
+    out = []
+    for gid in _sw78_group_ids_from_selection(self):
+        for gr in groups.get(gid, []):
+            if gr not in out:
+                out.append(gr)
+    return out
+
+
+class _SW78GraphicGroupProxy(QGraphicsRectItem):
+    def __init__(self, window, group_id, models):
+        self.window = window
+        self.group_id = str(group_id)
+        self.models = list(models or [])
+        self._moving = False
+        g = float(getattr(window, 'grid_px', 40.0) or 40.0)
+        bb = _sw78_group_bbox_grid(self.models) or (0, 0, 1, 1)
+        minx, miny, maxx, maxy = bb
+        left = minx * g; top = -maxy * g
+        w = max(1.0, (maxx - minx) * g); h = max(1.0, (maxy - miny) * g)
+        super().__init__(0, 0, w, h)
+        self.setPos(left, top)
+        self.setData(0, 'GRAPHIC_GROUP')
+        self.setZValue(9999)
+        self.setPen(QPen(QColor(40, 40, 40), 1, Qt.DashLine))
+        self.setBrush(QBrush(QColor(255, 255, 255, 1)))  # almost transparent but clickable full area
+        self.setFlags(QGraphicsItem.ItemIsMovable | QGraphicsItem.ItemIsSelectable | QGraphicsItem.ItemSendsGeometryChanges | QGraphicsItem.ItemIsFocusable)
+        self.setAcceptHoverEvents(True)
+        self._last_grid_pos = (minx, maxy)
+
+    def paint(self, painter, option, widget=None):
+        if self.isSelected():
+            painter.save()
+            painter.setPen(QPen(QColor(40, 40, 40), 1, Qt.DashLine))
+            painter.setBrush(QBrush(Qt.NoBrush))
+            painter.drawRect(self.rect())
+            try:
+                s = float(getattr(self.window, 'grid_px', 40.0) or 40.0) * 0.32
+                painter.setBrush(QBrush(QColor(255, 255, 255)))
+                for r in _corner_handles(self.rect(), s).values():
+                    painter.drawRect(r)
+                painter.drawEllipse(_rotation_handle(self.rect(), s))
+            except Exception:
+                pass
+            painter.restore()
+
+    def itemChange(self, change, value):
+        if change == QGraphicsItem.ItemPositionChange and self.scene():
+            try:
+                gpx = float(getattr(self.window, 'edit_grid_px', self.scene().grid_px) or self.scene().grid_px)
+                return QPointF(snap(value.x(), gpx), snap(value.y(), gpx))
+            except Exception:
+                return value
+        if change == QGraphicsItem.ItemPositionHasChanged and self.scene() and not self._moving:
+            try:
+                g = float(getattr(self.window, 'grid_px', 40.0) or 40.0)
+                new_left = self.pos().x() / g
+                new_top_grid = -self.pos().y() / g
+                old_left, old_top_grid = self._last_grid_pos
+                dx = new_left - old_left
+                dy = new_top_grid - old_top_grid
+                if abs(dx) > 1e-9 or abs(dy) > 1e-9:
+                    self._moving = True
+                    for gr in self.models:
+                        try:
+                            gr.x = float(getattr(gr, 'x', 0.0) or 0.0) + dx
+                            gr.y = float(getattr(gr, 'y', 0.0) or 0.0) + dy
+                        except Exception:
+                            pass
+                    self._last_grid_pos = (new_left, new_top_grid)
+                    try: self.window.notify_canvas_model_changed()
+                    except Exception: pass
+                    self._moving = False
+            except Exception:
+                self._moving = False
+        return super().itemChange(change, value)
+
+    def mousePressEvent(self, event):
+        try:
+            if event.button() == Qt.LeftButton:
+                self.window.push_undo_state()
+        except Exception:
+            pass
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        try:
+            self.window.rebuild_tree(); self.scene().update()
+        except Exception:
+            pass
+        super().mouseReleaseEvent(event)
+
+
+def _sw78_add_group_proxies(self, selected_ids=None):
+    selected_ids = selected_ids or set()
+    for gid, models in _sw78_group_map(self).items():
+        try:
+            proxy = _SW78GraphicGroupProxy(self, gid, models)
+            self.scene.addItem(proxy)
+            if any(id(m) in selected_ids for m in models):
+                proxy.setSelected(True)
+        except Exception:
+            pass
+
+
+def _sw78_harden_group_children(self):
+    try: items = list(self.scene.items())
+    except Exception: items = []
+    for it in items:
+        try:
+            if it.data(0) == 'GRAPHIC' and getattr(it, 'model', None) is not None and _sw78_gid(it.model):
+                it.setFlag(QGraphicsItem.ItemIsSelectable, False)
+                it.setFlag(QGraphicsItem.ItemIsMovable, False)
+                it.setFlag(QGraphicsItem.ItemIsFocusable, False)
+                it.setAcceptedMouseButtons(Qt.NoButton)
+                it.setZValue(10)
+        except Exception:
+            pass
+
+
+try:
+    _sw78_prev_rebuild_scene = MainWindow.rebuild_scene
+except Exception:
+    _sw78_prev_rebuild_scene = None
+
+
+def _sw78_rebuild_scene(self):
+    try: selected_ids = self._selection_restore_ids or self._capture_selection_ids()
+    except Exception: selected_ids = set()
+    if _sw78_prev_rebuild_scene:
+        _sw78_prev_rebuild_scene(self)
+    try:
+        self.scene.blockSignals(True)
+        _sw78_harden_group_children(self)
+        _sw78_add_group_proxies(self, selected_ids)
+    finally:
+        try: self.scene.blockSignals(False)
+        except Exception: pass
+    try: self.scene.update(); self.refresh_properties()
+    except Exception: pass
+
+
+def _sw78_group_selected_graphics(self):
+    models = []
+    try: items = list(self.scene.selectedItems())
+    except Exception: items = []
+    for it in items:
+        try:
+            if it.data(0) == 'GRAPHIC' and getattr(it, 'model', None) is not None and _sw78_is_user_graphic(it.model):
+                if it.model not in models:
+                    models.append(it.model)
+            elif it.data(0) == 'GRAPHIC_GROUP':
+                for gr in getattr(it, 'models', []) or []:
+                    if gr not in models:
+                        models.append(gr)
+        except Exception:
+            pass
+    if len(models) < 2:
+        try: QMessageBox.information(self, 'Group Graphics', 'Bitte mindestens zwei eingefügte Grafikobjekte auswählen.')
+        except Exception: pass
+        return
+    try: self.push_undo_state()
+    except Exception: pass
+    import uuid as _sw78_uuid
+    gid = 'G' + _sw78_uuid.uuid4().hex[:8]
+    for gr in models:
+        _sw78_set_gid(gr, gid)
+    try:
+        self._selection_restore_ids = {id(models[0])}
+        self.dirty = True
+        self.rebuild_scene(); self.rebuild_tree(); self.refresh_properties()
+    except Exception:
+        pass
+
+
+def _sw78_ungroup_selected_graphics(self):
+    models = _sw78_selected_group_models(self)
+    if not models:
+        try:
+            for it in self.scene.selectedItems():
+                if it.data(0) == 'GRAPHIC' and getattr(it, 'model', None) is not None:
+                    models.append(it.model)
+        except Exception: pass
+    if not models:
+        return
+    try: self.push_undo_state()
+    except Exception: pass
+    for gr in models:
+        _sw78_set_gid(gr, '')
+    try:
+        self._selection_restore_ids = {id(m) for m in models}
+        self.dirty = True
+        self.rebuild_scene(); self.rebuild_tree(); self.refresh_properties()
+    except Exception:
+        pass
+
+
+def _sw78_transform_group(self, op, value=None):
+    models = _sw78_selected_group_models(self)
+    if not models:
+        return False
+    try: self.push_undo_state()
+    except Exception: pass
+    ox, oy = _sw78_group_origin(self, models)
+    try:
+        if op == 'scale':
+            factor = float(value)
+            step = float(self._edit_grid_step()) if hasattr(self, '_edit_grid_step') else 1.0
+            for gr in models:
+                cx, cy = _sw78_model_center(gr)
+                # scale both position vector and local size, exactly like a vector group
+                old_w = float(getattr(gr, 'w', 0.0) or 0.0)
+                old_h = float(getattr(gr, 'h', 0.0) or 0.0)
+                gr.w = max(step, abs(old_w * factor))
+                gr.h = max(step, abs(old_h * factor))
+                _sw78_set_model_center(gr, ox + (cx - ox) * factor, oy + (cy - oy) * factor)
+        elif op == 'rotate':
+            deg = float(value)
+            rad = math.radians(deg); c = math.cos(rad); s = math.sin(rad)
+            for gr in models:
+                cx, cy = _sw78_model_center(gr)
+                dx, dy = cx - ox, cy - oy
+                _sw78_set_model_center(gr, ox + dx * c - dy * s, oy + dx * s + dy * c)
+                gr.rotation = (float(getattr(gr, 'rotation', 0.0) or 0.0) + deg) % 360.0
+        elif op == 'flip_h':
+            for gr in models:
+                cx, cy = _sw78_model_center(gr)
+                _sw78_set_model_center(gr, ox - (cx - ox), cy)
+                gr.scale_x = -float(getattr(gr, 'scale_x', 1.0) or 1.0)
+        elif op == 'flip_v':
+            for gr in models:
+                cx, cy = _sw78_model_center(gr)
+                _sw78_set_model_center(gr, cx, oy - (cy - oy))
+                gr.scale_y = -float(getattr(gr, 'scale_y', 1.0) or 1.0)
+    except Exception:
+        return False
+    try:
+        self._selection_restore_ids = {id(models[0])}
+        self.dirty = True
+        self.rebuild_scene(); self.rebuild_tree(); self.refresh_properties()
+    except Exception:
+        pass
+    return True
+
+try:
+    _sw78_prev_scale_grid = MainWindow.scale_selected_grid
+    _sw78_prev_rotate = MainWindow.rotate_selected
+    _sw78_prev_flip_h = MainWindow.flip_selected_horizontal
+    _sw78_prev_flip_v = MainWindow.flip_selected_vertical
+    _sw78_prev_refresh_properties = MainWindow.refresh_properties
+except Exception:
+    _sw78_prev_scale_grid = _sw78_prev_rotate = _sw78_prev_flip_h = _sw78_prev_flip_v = _sw78_prev_refresh_properties = None
+
+
+def _sw78_scale_selected_grid(self, direction:int):
+    try:
+        models = _sw78_selected_group_models(self)
+        if models:
+            bb = _sw78_group_bbox_grid(models)
+            if bb:
+                ref = max(1e-9, bb[2] - bb[0], bb[3] - bb[1])
+                step = float(self._edit_grid_step()) if hasattr(self, '_edit_grid_step') else 1.0
+                factor = max(step / ref, (ref + (1 if direction > 0 else -1) * step) / ref)
+                _sw78_transform_group(self, 'scale', factor)
+                return None
+    except Exception:
+        pass
+    return _sw78_prev_scale_grid(self, direction) if _sw78_prev_scale_grid else None
+
+
+def _sw78_rotate_selected(self, deg):
+    try:
+        if _sw78_transform_group(self, 'rotate', deg): return None
+    except Exception: pass
+    return _sw78_prev_rotate(self, deg) if _sw78_prev_rotate else None
+
+
+def _sw78_flip_h(self):
+    try:
+        if _sw78_transform_group(self, 'flip_h'): return None
+    except Exception: pass
+    return _sw78_prev_flip_h(self) if _sw78_prev_flip_h else None
+
+
+def _sw78_flip_v(self):
+    try:
+        if _sw78_transform_group(self, 'flip_v'): return None
+    except Exception: pass
+    return _sw78_prev_flip_v(self) if _sw78_prev_flip_v else None
+
+
+def _sw78_refresh_properties(self):
+    try:
+        groups = [it for it in self.scene.selectedItems() if getattr(it, 'data', lambda *_: None)(0) == 'GRAPHIC_GROUP']
+        if groups and hasattr(self, 'form') and self.form is not None:
+            while self.form.rowCount(): self.form.removeRow(0)
+            self.form.addRow(QLabel('<b>Selected: GRAPHIC GROUP</b>'))
+            self.form.addRow(QLabel('Gruppe verhält sich als ein Objekt.'))
+            return
+    except Exception:
+        pass
+    return _sw78_prev_refresh_properties(self) if _sw78_prev_refresh_properties else None
+
+try:
+    MainWindow.rebuild_scene = _sw78_rebuild_scene
+    MainWindow.group_selected_graphics = _sw78_group_selected_graphics
+    MainWindow.ungroup_selected_graphics = _sw78_ungroup_selected_graphics
+    MainWindow.scale_selected_grid = _sw78_scale_selected_grid
+    MainWindow.rotate_selected = _sw78_rotate_selected
+    MainWindow.flip_selected_horizontal = _sw78_flip_h
+    MainWindow.flip_selected_vertical = _sw78_flip_v
+    MainWindow.refresh_properties = _sw78_refresh_properties
+except Exception:
+    pass
