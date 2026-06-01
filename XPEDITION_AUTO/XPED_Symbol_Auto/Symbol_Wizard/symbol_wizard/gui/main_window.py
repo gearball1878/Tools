@@ -17527,3 +17527,373 @@ try:
     MainWindow.__init__ = _v81_init
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# V82: group transform equals single graphic transform semantics.
+# A grouped selection is a vector object.  The group proxy is only the visible /
+# selectable rectangular shell; all contained graphics keep local geometry and
+# are transformed by moving/scaling/rotating their own model center exactly like
+# standalone GraphicItem objects (rotation/scale_x/scale_y are preserved and
+# updated instead of rebuilding children from one diagonal).  This prevents
+# child objects from drifting apart and keeps the group outline around the real
+# transformed extents.
+# ---------------------------------------------------------------------------
+
+def _v82_f(v, default=0.0):
+    try:
+        return float(v)
+    except Exception:
+        return float(default)
+
+
+def _v82_child_state(m):
+    x = _v82_f(getattr(m, 'x', 0.0), 0.0)
+    y = _v82_f(getattr(m, 'y', 0.0), 0.0)
+    w = _v82_f(getattr(m, 'w', 0.0), 0.0)
+    h = _v82_f(getattr(m, 'h', 0.0), 0.0)
+    return {
+        'x': x, 'y': y, 'w': w, 'h': h,
+        'cx': x + w / 2.0, 'cy': y - h / 2.0,
+        'rotation': _v82_f(getattr(m, 'rotation', 0.0), 0.0),
+        'scale_x': _v82_f(getattr(m, 'scale_x', 1.0), 1.0),
+        'scale_y': _v82_f(getattr(m, 'scale_y', 1.0), 1.0),
+        'ctrl_x': getattr(m, 'ctrl_x', None),
+        'ctrl_y': getattr(m, 'ctrl_y', None),
+        'curve_radius': _v82_f(getattr(m, 'curve_radius', 0.0), 0.0),
+    }
+
+
+def _v82_capture_states(models):
+    return [_v82_child_state(m) for m in (models or [])]
+
+
+def _v82_set_from_center(m, cx, cy, w, h):
+    m.w = float(w)
+    m.h = float(h)
+    m.x = float(cx) - float(w) / 2.0
+    m.y = float(cy) + float(h) / 2.0
+
+
+def _v82_rot_point(px, py, ox, oy, deg):
+    a = math.radians(float(deg)); c = math.cos(a); s = math.sin(a)
+    rx, ry = px - ox, py - oy
+    return ox + rx * c - ry * s, oy + rx * s + ry * c
+
+
+def _v82_graphic_bounds(gr):
+    """Actual visual bbox of a GraphicModel including rotation and mirroring.
+
+    GraphicItem uses lower-left transform origin since v68, so the model-space
+    object corners must be transformed around bottom-left, not around center.
+    The result is the same rectangular envelope a selected standalone graphic
+    visually occupies on the canvas.
+    """
+    x = _v82_f(getattr(gr, 'x', 0.0), 0.0)
+    y = _v82_f(getattr(gr, 'y', 0.0), 0.0)
+    w = _v82_f(getattr(gr, 'w', 0.0), 0.0)
+    h = _v82_f(getattr(gr, 'h', 0.0), 0.0)
+    sx = _v82_f(getattr(gr, 'scale_x', 1.0), 1.0)
+    sy = _v82_f(getattr(gr, 'scale_y', 1.0), 1.0)
+    rot = _v82_f(getattr(gr, 'rotation', 0.0), 0.0)
+    # lower-left origin in model coordinates: (x, y-h)
+    ox, oy = x, y - h
+    base = [(x, y), (x + w, y), (x, y - h), (x + w, y - h)]
+    pts = []
+    for px, py in base:
+        # Convert to local lower-left, apply scale_x/scale_y like QTransform,
+        # then rotate around the same point.
+        lx, ly = px - ox, py - oy
+        qx, qy = ox + lx * sx, oy + ly * sy
+        pts.append(_v82_rot_point(qx, qy, ox, oy, rot))
+    try:
+        if getattr(gr, 'ctrl_x', None) is not None and getattr(gr, 'ctrl_y', None) is not None:
+            px = x + _v82_f(getattr(gr, 'ctrl_x', 0.0), 0.0)
+            py = y - _v82_f(getattr(gr, 'ctrl_y', 0.0), 0.0)
+            lx, ly = px - ox, py - oy
+            pts.append(_v82_rot_point(ox + lx * sx, oy + ly * sy, ox, oy, rot))
+    except Exception:
+        pass
+    try:
+        cr = abs(_v82_f(getattr(gr, 'curve_radius', 0.0), 0.0))
+        if cr > 1e-12:
+            # Conservative curve envelope: transformed midpoint +/- radius.
+            for sign in (-1.0, 1.0):
+                px = x + w * 0.5
+                py = y - h * 0.5 + sign * cr
+                lx, ly = px - ox, py - oy
+                pts.append(_v82_rot_point(ox + lx * sx, oy + ly * sy, ox, oy, rot))
+    except Exception:
+        pass
+    xs = [p[0] for p in pts] or [x]
+    ys = [p[1] for p in pts] or [y]
+    return (min(xs), min(ys), max(xs), max(ys))
+
+
+def _v82_group_bbox(models):
+    vals = [_v82_graphic_bounds(m) for m in (models or [])]
+    if not vals:
+        return (0.0, 0.0, 1.0, 1.0)
+    return (min(v[0] for v in vals), min(v[1] for v in vals), max(v[2] for v in vals), max(v[3] for v in vals))
+
+
+def _v82_apply_group_transform(models, op, value, win, bbox=None, states=None):
+    models = list(models or [])
+    if not models:
+        return False
+    states = states or _v82_capture_states(models)
+    bbox = bbox or _v82_group_bbox(models)
+    x0, y0, x1, y1 = bbox
+    ox, oy = x0, y0  # group lower-left, identical rule to the fixed single graphic pivot
+    for m, st in zip(models, states):
+        try:
+            cx, cy = st['cx'], st['cy']
+            w, h = st['w'], st['h']
+            rot = st['rotation']
+            scx = st['scale_x']; scy = st['scale_y']
+            radius_factor = 1.0
+            if op == 'move':
+                dx, dy = value
+                ncx, ncy = cx + float(dx), cy + float(dy)
+            elif op == 'rotate':
+                deg = float(value)
+                ncx, ncy = _v82_rot_point(cx, cy, ox, oy, deg)
+                rot = (rot + deg) % 360.0
+            elif op == 'flip_h':
+                ncx, ncy = ox - (cx - ox), cy
+                scx = -scx
+            elif op == 'flip_v':
+                ncx, ncy = cx, oy - (cy - oy)
+                scy = -scy
+            elif op == 'scale':
+                f = float(value)
+                ncx, ncy = ox + (cx - ox) * f, oy + (cy - oy) * f
+                w = max(1e-9, abs(w * f)); h = max(1e-9, abs(h * f))
+                radius_factor = abs(f)
+                try:
+                    if st.get('ctrl_x') is not None: m.ctrl_x = _v82_f(st['ctrl_x']) * f
+                    if st.get('ctrl_y') is not None: m.ctrl_y = _v82_f(st['ctrl_y']) * f
+                except Exception:
+                    pass
+            else:
+                return False
+            _v82_set_from_center(m, ncx, ncy, w, h)
+            try: m.rotation = rot
+            except Exception: pass
+            try: m.scale_x = scx
+            except Exception: pass
+            try: m.scale_y = scy
+            except Exception: pass
+            try:
+                if op == 'scale' and st.get('curve_radius') not in (None, 0, 0.0):
+                    m.curve_radius = float(st['curve_radius']) * radius_factor
+            except Exception:
+                pass
+        except Exception:
+            pass
+    return True
+
+
+def _v82_affine_apply(models, start_states, old_bbox, new_bbox, win):
+    """Resize group like one rectangular vector object.
+
+    The bbox side/handle operation defines one common affine map.  Child centers
+    and child dimensions are transformed by this single map; rotations and
+    flips stay on the child models.  No per-child grid snapping is performed,
+    because snapping children individually is exactly what made grouped geometry
+    drift apart in previous builds.
+    """
+    ox0, oy0, ox1, oy1 = old_bbox
+    nx0, ny0, nx1, ny1 = new_bbox
+    ow = max(1e-9, ox1 - ox0); oh = max(1e-9, oy1 - oy0)
+    sx = (nx1 - nx0) / ow
+    sy = (ny1 - ny0) / oh
+    for m, st in zip(models or [], start_states or []):
+        try:
+            cx = nx0 + (st['cx'] - ox0) * sx
+            cy = ny0 + (st['cy'] - oy0) * sy
+            w = max(1e-9, abs(st['w'] * sx))
+            h = max(1e-9, abs(st['h'] * sy))
+            _v82_set_from_center(m, cx, cy, w, h)
+            try: m.rotation = st['rotation']
+            except Exception: pass
+            try: m.scale_x = st['scale_x'] * (1.0 if sx >= 0 else -1.0)
+            except Exception: pass
+            try: m.scale_y = st['scale_y'] * (1.0 if sy >= 0 else -1.0)
+            except Exception: pass
+            try:
+                if st.get('ctrl_x') is not None: m.ctrl_x = _v82_f(st['ctrl_x']) * sx
+                if st.get('ctrl_y') is not None: m.ctrl_y = _v82_f(st['ctrl_y']) * sy
+                if st.get('curve_radius') not in (None, 0, 0.0):
+                    m.curve_radius = float(st['curve_radius']) * ((abs(sx) + abs(sy)) / 2.0)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+
+# Override all dynamic group helper functions used by the V80/V81 proxy.
+try:
+    _v80_graphic_bounds = _v82_graphic_bounds
+    _v80_group_bbox = _v82_group_bbox
+    _v80_transform_models = _v82_apply_group_transform
+    _v80_affine_apply = _v82_affine_apply
+    _v81_graphic_bounds = _v82_graphic_bounds
+    _v81_group_bbox = _v82_group_bbox
+    _v81_capture_states = _v82_capture_states
+    _v81_transform_models = _v82_apply_group_transform
+    _v81_affine_apply = _v82_affine_apply
+except Exception:
+    pass
+
+
+def _v82_group_mouse_press(self, event):
+    if event.button() == _V80Qt.LeftButton:
+        try: self.window.push_undo_state()
+        except Exception: pass
+    if self.isSelected() and event.button() == _V80Qt.LeftButton:
+        rot = _v80_rotation_handle(self._rect(), float(getattr(self.window, 'grid_px', 40.0) or 40.0) * self.rotate_handle_factor)
+        if rot.contains(event.pos()):
+            self._v80_rotating = True
+            # same transform point as single graphics after v68: lower-left of proxy rect
+            self._v80_rotate_center = self.mapToScene(_V80QPointF(0, self._rect().height()))
+            self._v80_rotate_start = _v80_angle_from(self._v80_rotate_center, event.scenePos())
+            self._v80_last_rot = 0.0
+            self._v82_rotate_bbox = _v82_group_bbox(self.models)
+            self._v82_rotate_states = _v82_capture_states(self.models)
+            event.accept(); return
+        h = _v80_hit_handle(self._handles(), event.pos())
+        if h:
+            self._v80_resizing = h
+            self._v80_resize_start = {'bbox': _v82_group_bbox(self.models), 'states': _v82_capture_states(self.models)}
+            event.accept(); return
+    return GraphicItem.mousePressEvent(self, event)
+
+
+def _v82_group_mouse_move(self, event):
+    g = float(getattr(self.window, 'grid_px', 40.0) or 40.0)
+    if getattr(self, '_v80_rotating', False):
+        delta = _v80_angle_from(self._v80_rotate_center, event.scenePos()) - self._v80_rotate_start
+        step = round(delta / 15.0) * 15.0
+        if abs(step - self._v80_last_rot) > 1e-9:
+            _v82_apply_group_transform(self.models, 'rotate', step, self.window,
+                                       bbox=getattr(self, '_v82_rotate_bbox', None),
+                                       states=getattr(self, '_v82_rotate_states', None))
+            self._v80_last_rot = step
+            _v80_update_child_items(self.window, self.models)
+            self._v80_moving = True; self._v80_sync_proxy_model(); self._v80_moving = False
+            try: self.window.refresh_properties()
+            except Exception: pass
+        event.accept(); return
+    if getattr(self, '_v80_resizing', None) and getattr(self, '_v80_resize_start', None):
+        p = _V80QPointF(snap(event.scenePos().x(), float(getattr(self.window, 'edit_grid_px', g) or g)),
+                        snap(event.scenePos().y(), float(getattr(self.window, 'edit_grid_px', g) or g)))
+        x0, y0, x1, y1 = self._v80_resize_start['bbox']
+        left = x0 * g; right = x1 * g; top = -y1 * g; bottom = -y0 * g
+        hname = self._v80_resizing
+        if hname in ('l', 'tl', 'bl'): left = p.x()
+        if hname in ('r', 'tr', 'br'): right = p.x()
+        if hname in ('t', 'tl', 'tr'): top = p.y()
+        if hname in ('b', 'bl', 'br'): bottom = p.y()
+        min_px = max(1.0, _v80_step(self.window) * g)
+        # Do not allow handle crossing; this matches current single-object min behaviour.
+        if right - left < min_px:
+            if hname in ('l', 'tl', 'bl'): left = right - min_px
+            else: right = left + min_px
+        if bottom - top < min_px:
+            if hname in ('t', 'tl', 'tr'): top = bottom - min_px
+            else: bottom = top + min_px
+        new_bbox = (left / g, -bottom / g, right / g, -top / g)
+        _v82_affine_apply(self.models, self._v80_resize_start['states'], self._v80_resize_start['bbox'], new_bbox, self.window)
+        _v80_update_child_items(self.window, self.models)
+        self._v80_moving = True; self._v80_sync_proxy_model(); self._v80_moving = False
+        try: self.window.refresh_properties()
+        except Exception: pass
+        event.accept(); return
+    return GraphicItem.mouseMoveEvent(self, event)
+
+
+def _v82_group_scale_by(self, factor):
+    bbox = _v82_group_bbox(self.models)
+    states = _v82_capture_states(self.models)
+    _v82_apply_group_transform(self.models, 'scale', float(factor), self.window, bbox=bbox, states=states)
+    _v80_update_child_items(self.window, self.models)
+    self._v80_moving = True; self._v80_sync_proxy_model(); self._v80_moving = False
+
+
+def _v82_group_rotate_by(self, deg):
+    bbox = _v82_group_bbox(self.models)
+    states = _v82_capture_states(self.models)
+    _v82_apply_group_transform(self.models, 'rotate', float(deg), self.window, bbox=bbox, states=states)
+    _v80_update_child_items(self.window, self.models)
+    self._v80_moving = True; self._v80_sync_proxy_model(); self._v80_moving = False
+
+
+def _v82_group_flip_h(self):
+    bbox = _v82_group_bbox(self.models)
+    states = _v82_capture_states(self.models)
+    _v82_apply_group_transform(self.models, 'flip_h', None, self.window, bbox=bbox, states=states)
+    _v80_update_child_items(self.window, self.models)
+    self._v80_moving = True; self._v80_sync_proxy_model(); self._v80_moving = False
+
+
+def _v82_group_flip_v(self):
+    bbox = _v82_group_bbox(self.models)
+    states = _v82_capture_states(self.models)
+    _v82_apply_group_transform(self.models, 'flip_v', None, self.window, bbox=bbox, states=states)
+    _v80_update_child_items(self.window, self.models)
+    self._v80_moving = True; self._v80_sync_proxy_model(); self._v80_moving = False
+
+try:
+    _V80GroupGraphicItem.mousePressEvent = _v82_group_mouse_press
+    _V80GroupGraphicItem.mouseMoveEvent = _v82_group_mouse_move
+    _V80GroupGraphicItem.scale_by = _v82_group_scale_by
+    _V80GroupGraphicItem.rotate_by = _v82_group_rotate_by
+    _V80GroupGraphicItem.flip_horizontal = _v82_group_flip_h
+    _V80GroupGraphicItem.flip_vertical = _v82_group_flip_v
+except Exception:
+    pass
+
+
+def _v82_remove_group_ui_duplicates(self):
+    # One toolbar + one Edit entry pair only.
+    try:
+        for tb in list(self.findChildren(_V80QToolBar)):
+            try:
+                title = str(tb.windowTitle() or '')
+                texts = [str(a.text() or '') for a in tb.actions()]
+                if title == 'Graphic Group' or any(('Group Graphics' in t or 'Ungroup Graphics' in t) for t in texts):
+                    self.removeToolBar(tb); tb.deleteLater()
+            except Exception:
+                pass
+    except Exception:
+        pass
+    try:
+        edit = None
+        for a in self.menuBar().actions():
+            if str(a.text()).replace('&','').strip().lower().startswith('edit'):
+                edit = a.menu(); break
+        if edit is not None:
+            for a in list(edit.actions()):
+                key = str(a.text() or '').replace('&','').strip().lower()
+                if 'group graphics' in key or 'ungroup graphics' in key:
+                    edit.removeAction(a)
+            ag = QAction('Group Graphics', self); ag.setShortcut(QKeySequence('Ctrl+G')); ag.triggered.connect(self.group_selected_graphics); edit.addAction(ag)
+            au = QAction('Ungroup Graphics', self); au.setShortcut(QKeySequence('Ctrl+Shift+G')); au.triggered.connect(self.ungroup_selected_graphics); edit.addAction(au)
+    except Exception:
+        pass
+    try:
+        tb = self.addToolBar('Graphic Group')
+        b = QPushButton('Group Graphics'); b.clicked.connect(self.group_selected_graphics); tb.addWidget(b)
+        b = QPushButton('Ungroup Graphics'); b.clicked.connect(self.ungroup_selected_graphics); tb.addWidget(b)
+    except Exception:
+        pass
+
+try:
+    _v82_old_init = MainWindow.__init__
+    def _v82_init(self, *a, **kw):
+        _v82_old_init(self, *a, **kw)
+        try: _v82_remove_group_ui_duplicates(self)
+        except Exception: pass
+    MainWindow.__init__ = _v82_init
+except Exception:
+    pass
