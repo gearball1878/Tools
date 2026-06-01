@@ -4213,15 +4213,17 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
                 # semantics. It is never movable/editable as a separate graphic.
                 item.setData(0, 'BODY_GRAPHIC')
                 item._body_model = u.body
-                item.setFlag(QGraphicsItem.ItemIsSelectable, self.selection_enabled.get('BODY', True))
+                # BODY-owned artwork is highlight/paint only. It is not a
+                # selection object; the logical BodyItem owns selection and
+                # handles. This keeps imports/templates identical to Symbol 1.
+                item.setFlag(QGraphicsItem.ItemIsSelectable, False)
                 item.setFlag(QGraphicsItem.ItemIsMovable, False)
+                item.setFlag(QGraphicsItem.ItemIsFocusable, False)
                 try:
-                    item.setAcceptedMouseButtons(Qt.AllButtons if self.selection_enabled.get('BODY', True) else Qt.NoButton)
+                    item.setAcceptedMouseButtons(Qt.NoButton)
                 except Exception:
                     pass
                 item.setZValue(0.2)
-                if id(u.body) in selected_ids:
-                    item.setSelected(True)
             elif not getattr(g, 'locked_to_body', False):
                 self._restore_or_select_item(item, selected_ids)
             else:
@@ -13023,5 +13025,104 @@ try:
         _cls._set = _lh50_set_safe
     MainWindow._set_attr_vis = _lh50_set_attr_vis
     MainWindow._set_attr_val = _lh50_set_attr_val
+except Exception:
+    pass
+
+
+# ---------------------------------------------------------------------------
+# Liebherr v51: BODY-owned highlight graphics are paint-only; BODY rotation is
+# a 0/90/180/270 dropdown and stays synced with CW/CCW.
+# ---------------------------------------------------------------------------
+
+def _lh51_select_one_logical_body(self):
+    """Select exactly the real logical BodyItem, never BODY_GRAPHIC artwork."""
+    try:
+        cur_body = getattr(getattr(self, 'current_unit', None), 'body', None)
+        target = None
+        for it in list(self.scene.items()):
+            try:
+                if it.data(0) == 'BODY' and (getattr(it, 'model', None) is cur_body or target is None):
+                    target = it
+                    if getattr(it, 'model', None) is cur_body:
+                        break
+            except Exception:
+                pass
+        if target is None:
+            return False
+        self.scene.blockSignals(True)
+        try:
+            for it in self.scene.items():
+                try: it.setSelected(False)
+                except Exception: pass
+            target.setSelected(True)
+        finally:
+            self.scene.blockSignals(False)
+        try: self.scene.update(); self.view.viewport().update()
+        except Exception: pass
+        return True
+    except Exception:
+        try: self.scene.blockSignals(False)
+        except Exception: pass
+        return False
+
+
+def _lh51_body_rotation_combo(self, body):
+    vals = ['0°', '90°', '180°', '270°']
+    try:
+        cur = int(round(float(getattr(body, 'rotation', 0.0) or 0.0) / 90.0) * 90) % 360
+    except Exception:
+        cur = 0
+    w = QComboBox(); w.blockSignals(True); w.addItems(vals); w.setCurrentText(f'{cur}°'); w.blockSignals(False)
+    def safe(txt):
+        try:
+            target = float(str(txt).replace('°','').strip()) % 360.0
+        except Exception:
+            return
+        sig = _lh46_selected_signature(self) if '_lh46_selected_signature' in globals() else []
+        fs = _lh47_selection_filter_state(self) if '_lh47_selection_filter_state' in globals() else None
+        def do():
+            try:
+                current = float(getattr(body, 'rotation', 0.0) or 0.0) % 360.0
+                delta = target - current
+                if abs(delta) > 180.0:
+                    delta -= 360.0 if delta > 0 else -360.0
+                if abs(delta) > 1e-9:
+                    try: self.push_undo_state()
+                    except Exception: pass
+                    self._transform_unit_as_body_group('rotate', delta)
+                    try: body.rotation = target
+                    except Exception: pass
+                    self.dirty = True
+            except Exception as e:
+                try: self.statusBar().showMessage(f'BODY rotation failed: {e}', 5000)
+                except Exception: pass
+            finally:
+                try: self._lh50_last_property_kind = 'BODY'
+                except Exception: pass
+                if '_lh50_restore_body_or_signature' in globals():
+                    _lh50_restore_body_or_signature(self, sig=sig, fs=fs, refresh_panel=True)
+                elif '_lh47_restore_selection_after_action' in globals():
+                    _lh47_restore_selection_after_action(self, sig=sig, filter_state=fs, force_body=True, refresh=True)
+        try: QTimer.singleShot(0, do)
+        except Exception: do()
+    w.currentTextChanged.connect(safe)
+    return w
+
+
+def _lh51_transform_props(self, m):
+    try:
+        if m is getattr(getattr(self, 'current_unit', None), 'body', None):
+            self.form.addRow('Rotation [deg]', _lh51_body_rotation_combo(self, m))
+            return
+    except Exception:
+        pass
+    # non-BODY fallback stays as before
+    self.form.addRow('Rotation [deg]', self._dbl(getattr(m, 'rotation', 0), lambda v, model=m: self.set_and_refresh(model, 'rotation', v), -360, 360, 15))
+
+try:
+    for _cls in (MainWindow, TemplateEditorDialog):
+        _cls.transform_props = _lh51_transform_props
+    # Override previous helper so all restore paths avoid BODY_GRAPHIC selection.
+    globals()['_lh47_select_one_logical_body'] = _lh51_select_one_logical_body
 except Exception:
     pass

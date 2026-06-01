@@ -834,13 +834,15 @@ class GraphicItem(TransformMixin, QGraphicsItem):
         self.common_flags()
         self.setData(0, 'GRAPHIC')
         if getattr(model, 'locked_to_body', False) and not getattr(window, 'is_template_editor', False):
-            # Imported body primitives are the BODY representation itself in the
-            # Symbol Wizard. They may be selected as BODY, but never moved or
-            # edited as individual graphics.
+            # Imported/template BODY primitives are paint/highlight only in the
+            # Symbol Wizard. They must never become real selected objects; the
+            # logical BodyItem is the only selected item. This prevents the
+            # property panel from switching to "2 objects selected".
             self.setFlag(QGraphicsItem.ItemIsMovable, False)
-            self.setFlag(QGraphicsItem.ItemIsSelectable, True)
-            self.setAcceptedMouseButtons(Qt.AllButtons)
-            self.setAcceptHoverEvents(True)
+            self.setFlag(QGraphicsItem.ItemIsSelectable, False)
+            self.setFlag(QGraphicsItem.ItemIsFocusable, False)
+            self.setAcceptedMouseButtons(Qt.NoButton)
+            self.setAcceptHoverEvents(False)
         self.apply_transform_from_model()
 
     def _raw_rect(self):
@@ -900,7 +902,16 @@ class GraphicItem(TransformMixin, QGraphicsItem):
             painter.drawRect(QRectF(0, 0, m.w * g, m.h * g))
         elif m.shape in ('ellipse', 'circle'):
             painter.drawEllipse(QRectF(0, 0, m.w * g, m.h * g))
-        if self.isSelected():
+        selected_for_highlight = self.isSelected()
+        if getattr(self.model, 'locked_to_body', False) and not getattr(self.window, 'is_template_editor', False):
+            try:
+                selected_for_highlight = selected_for_highlight or any(
+                    getattr(i, 'data', lambda *_: None)(0) == 'BODY' and i.isSelected()
+                    for i in self.scene().items()
+                )
+            except Exception:
+                pass
+        if selected_for_highlight:
             painter.save()
             if getattr(self.model, 'locked_to_body', False) and not getattr(self.window, 'is_template_editor', False):
                 # BODY selection highlight on the real artwork only. No proxy
