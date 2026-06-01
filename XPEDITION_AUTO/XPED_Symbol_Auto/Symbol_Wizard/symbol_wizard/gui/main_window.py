@@ -20356,3 +20356,242 @@ try:
     MainWindow.rebuild_scene = _lh105_rebuild_scene
 except Exception:
     pass
+
+# ---------------------------------------------------------------------------
+# LH v106: canonical Symbol-1 canvas BODY for every symbol type
+# ---------------------------------------------------------------------------
+# User-facing rule: Symbol 1 is the reference implementation.  Imported/template
+# body artwork is used exactly once to derive the BODY rectangle, then removed
+# from the canvas/model as BODY artwork.  From that point on every symbol uses
+# the same BodyItem, selection, resize, rotate and flip path as Symbol 1.
+# The old BODY_GRAPHIC/reference-artwork path is intentionally bypassed.
+# ---------------------------------------------------------------------------
+
+def _lh106_unit_declares_import_or_template_body(unit):
+    try:
+        attrs = getattr(getattr(unit, 'body', None), 'attributes', {}) or {}
+        return any(str(attrs.get(k, '0')) == '1' for k in (
+            'MENTOR_GRAPHICS_AS_BODY',
+            'MENTOR_BODY_GRAPHICS_LOCKED',
+            'MENTOR_HAS_BODY',
+            'TEMPLATE_GRAPHICS_AS_BODY',
+            'TEMPLATE_BODY_GRAPHICS_LOCKED',
+        ))
+    except Exception:
+        return False
+
+
+def _lh106_is_hard_wizard_user_graphic(gr):
+    try:
+        raw = str(getattr(gr, 'mentor_raw', '') or '')
+        role = str(getattr(gr, 'graphic_role', '') or '').lower()
+        group_id = str(getattr(gr, 'group_id', '') or '')
+        return raw == '__USER_GRAPHIC__' or role.startswith('user_graphic_group:') or group_id.startswith('user_graphic_group:')
+    except Exception:
+        return False
+
+
+def _lh106_graphic_bounds(gr):
+    x = float(getattr(gr, 'x', 0.0) or 0.0)
+    y = float(getattr(gr, 'y', 0.0) or 0.0)
+    w = float(getattr(gr, 'w', 0.0) or 0.0)
+    h = float(getattr(gr, 'h', 0.0) or 0.0)
+    xs = [x, x + w]
+    ys = [y, y - h]
+    try:
+        cx = getattr(gr, 'ctrl_x', None)
+        cy = getattr(gr, 'ctrl_y', None)
+        if cx is not None:
+            xs.append(x + float(cx))
+        if cy is not None:
+            ys.append(y - float(cy))
+    except Exception:
+        pass
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def _lh106_body_candidate_graphics(unit):
+    out = []
+    for gr in getattr(unit, 'graphics', []) or []:
+        if _lh106_is_hard_wizard_user_graphic(gr):
+            continue
+        # In an import/template BODY unit every pre-existing graphic primitive is
+        # interpreted as BODY artwork.  The outer union becomes the Symbol-1 BODY.
+        out.append(gr)
+    return out
+
+
+def _lh106_outer_body_bounds_from_graphics(unit):
+    gs = _lh106_body_candidate_graphics(unit)
+    if not gs:
+        return None
+    xs, ys = [], []
+    for gr in gs:
+        try:
+            x0, y0, x1, y1 = _lh106_graphic_bounds(gr)
+            xs.extend([x0, x1])
+            ys.extend([y0, y1])
+        except Exception:
+            pass
+    if not xs or not ys:
+        return None
+    left, right = min(xs), max(xs)
+    bottom, top = min(ys), max(ys)
+    return (left, top, max(0.01, right - left), max(0.01, top - bottom))
+
+
+def _lh106_clean_number(self, v):
+    try:
+        return self._clean_float(v)
+    except Exception:
+        try:
+            v = round(float(v), 9)
+            return 0.0 if abs(v) < 1e-9 else v
+        except Exception:
+            return v
+
+
+def _lh106_canonicalize_body_like_symbol1(self, unit=None):
+    """Convert imported/template BODY artwork to the normal Symbol-1 BodyModel.
+
+    After this function, the unit has one authoritative BODY: unit.body.  The
+    old imported/template body graphics are removed so no hidden reference frame
+    can continue to drive scaling, rotation, selection or bounds.
+    """
+    u = unit or self.current_unit
+    if not _lh106_unit_declares_import_or_template_body(u):
+        return False
+    if bool(getattr(u, '_symbol1_body_canonicalized', False)):
+        return True
+
+    bounds = _lh106_outer_body_bounds_from_graphics(u)
+    if bounds is not None:
+        x, y, w, h = bounds
+        try:
+            u.body.x = _lh106_clean_number(self, x)
+            u.body.y = _lh106_clean_number(self, y)
+            u.body.width = _lh106_clean_number(self, w)
+            u.body.height = _lh106_clean_number(self, h)
+        except Exception:
+            u.body.x, u.body.y, u.body.width, u.body.height = x, y, w, h
+
+    # Remove BODY artwork primitives from the normal canvas/model path.  Only
+    # graphics created later in the Wizard remain real editable GRAPHIC objects.
+    kept = []
+    removed = []
+    for gr in getattr(u, 'graphics', []) or []:
+        if _lh106_is_hard_wizard_user_graphic(gr):
+            try:
+                gr.locked_to_body = False
+                gr.graphic_role = 'user_graphic'
+            except Exception:
+                pass
+            kept.append(gr)
+        else:
+            removed.append(gr)
+    if removed:
+        try:
+            # Keep a non-runtime backup for debugging/export migration, but do
+            # not draw or transform these primitives anymore.
+            u._symbol1_body_artwork_backup = removed
+        except Exception:
+            pass
+        u.graphics = kept
+
+    try:
+        attrs = getattr(u.body, 'attributes', {}) or {}
+        attrs['SYMBOL1_CANVAS_BODY'] = '1'
+        # Disable old canvas special paths.  Keep MENTOR_HAS_BODY as metadata;
+        # the runtime check below ignores all BODY-artwork flags after canonicalization.
+        for k in ('MENTOR_GRAPHICS_AS_BODY', 'MENTOR_BODY_GRAPHICS_LOCKED', 'TEMPLATE_GRAPHICS_AS_BODY', 'TEMPLATE_BODY_GRAPHICS_LOCKED'):
+            if k in attrs:
+                attrs[k] = '0'
+        if getattr(u.body, 'visible_attributes', None) is not None:
+            for k in ('SYMBOL1_CANVAS_BODY', 'MENTOR_GRAPHICS_AS_BODY', 'MENTOR_BODY_GRAPHICS_LOCKED', 'TEMPLATE_GRAPHICS_AS_BODY', 'TEMPLATE_BODY_GRAPHICS_LOCKED'):
+                u.body.visible_attributes[k] = False
+    except Exception:
+        pass
+
+    try:
+        u._symbol1_body_canonicalized = True
+    except Exception:
+        pass
+    try:
+        self._invalidate_body_group_transform_cache(u)
+    except Exception:
+        pass
+    return True
+
+
+def _lh106_body_graphics_for_unit(self, unit=None):
+    # After v106 the visible/editable BODY is always BodyItem.  Hidden/imported
+    # body artwork must not participate in runtime bounds or transforms.
+    try:
+        _lh106_canonicalize_body_like_symbol1(self, unit or self.current_unit)
+    except Exception:
+        pass
+    return []
+
+
+def _lh106_sync_body_model_to_body_bounds_only(self, unit=None):
+    # BodyModel is authoritative after canonicalization, exactly like Symbol 1.
+    try:
+        _lh106_canonicalize_body_like_symbol1(self, unit or self.current_unit)
+    except Exception:
+        pass
+    return None
+
+
+def _lh106_rebuild_scene(self):
+    selected_ids = getattr(self, '_selection_restore_ids', set()) or self._capture_selection_ids()
+    self._selection_restore_ids = set()
+    self.scene.blockSignals(True)
+    self.scene.clear()
+    u = self.current_unit
+    try:
+        _lh106_canonicalize_body_like_symbol1(self, u)
+    except Exception:
+        pass
+    self.set_format_guide_to_active_origin()
+    try:
+        self.dock_pins_to_body(u)
+    except Exception:
+        pass
+
+    # Exact Symbol-1 path for every symbol: one BodyItem, no BODY_GRAPHIC, no
+    # highlight/proxy/reference frame.  Handles and resize operate on BodyModel.
+    body_item = BodyItem(u.body, self)
+    self.apply_item_selectability(body_item)
+    self.scene.addItem(body_item)
+    self._restore_or_select_item(body_item, selected_ids)
+
+    self.add_attribute_text_items(u)
+    for g in getattr(u, 'graphics', []) or []:
+        item = GraphicItem(g, self)
+        self.apply_item_selectability(item)
+        self.scene.addItem(item)
+        self._restore_or_select_item(item, selected_ids)
+    for p in getattr(u, 'pins', []) or []:
+        item = PinItem(p, self)
+        self.apply_item_selectability(item)
+        self.scene.addItem(item)
+        self._restore_or_select_item(item, selected_ids)
+    for t in getattr(u, 'texts', []) or []:
+        item = TextItem(t, self)
+        self.apply_item_selectability(item)
+        self.scene.addItem(item)
+        self._restore_or_select_item(item, selected_ids)
+
+    self.scene.update()
+    self.scene.blockSignals(False)
+    self.refresh_properties()
+
+
+try:
+    MainWindow._canonicalize_body_like_symbol1 = _lh106_canonicalize_body_like_symbol1
+    MainWindow._body_graphics_for_unit = _lh106_body_graphics_for_unit
+    MainWindow._sync_body_model_to_body_bounds_only = _lh106_sync_body_model_to_body_bounds_only
+    MainWindow._lh_final_body_graphics = _lh106_body_graphics_for_unit
+    MainWindow.rebuild_scene = _lh106_rebuild_scene
+except Exception:
+    pass
