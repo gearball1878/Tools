@@ -1,7 +1,7 @@
 from __future__ import annotations
 import math
 from PySide6.QtCore import QPointF, QRectF, Qt, QEvent
-from PySide6.QtGui import QColor, QFont, QPainter, QPen, QBrush, QTransform, QTextCursor, QCursor, QPainterPath, QTextOption, QFontMetricsF
+from PySide6.QtGui import QColor, QFont, QPainter, QPen, QBrush, QTransform, QTextCursor, QCursor, QPainterPath, QTextOption, QFontMetricsF, QPainterPathStroker
 from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem, QGraphicsTextItem
 from symbol_wizard.models.document import PinSide, LineStyle
 from symbol_wizard.rules.grid import snap
@@ -199,19 +199,39 @@ class BodyItem(TransformMixin, QGraphicsRectItem):
         return _corner_handles(self.rect(), self.window.grid_px * self.handle_size_factor)
 
     def paint(self, painter, option, widget=None):
-        # Native Mentor imports use the imported graphics as the visible BODY.
-        # The logical BodyItem is only an anchor/group for pins, graphics and
-        # attributes and must not draw an extra rectangle while selected/moved.
+        # Native Mentor imports use imported primitives as visible BODY.  In the
+        # Symbol Wizard the body is a non-editable logical anchor, but it should
+        # still be visually recognizable.  Therefore draw only a lightweight
+        # highlight frame there.  In the Template Editor the body remains fully
+        # editable and gets the normal handles.
+        graphics_as_body = False
         try:
             attrs = getattr(self.model, 'attributes', {}) or {}
-            if str(attrs.get('MENTOR_GRAPHICS_AS_BODY', '0')) == '1':
-                return
+            graphics_as_body = str(attrs.get('MENTOR_GRAPHICS_AS_BODY', '0')) == '1'
         except Exception:
             pass
+        if graphics_as_body and not getattr(self.window, 'is_template_editor', False):
+            painter.save()
+            if self.isSelected():
+                pen = QPen(QColor(0, 150, 170, 230), 2, Qt.DashLine)
+            else:
+                pen = QPen(QColor(0, 150, 170, 95), 1, Qt.DashLine)
+            pen.setCosmetic(True)
+            painter.setPen(pen)
+            painter.setBrush(QBrush(Qt.NoBrush))
+            painter.drawRect(self.rect())
+            if self.isSelected():
+                painter.setPen(QPen(QColor(0, 150, 170, 230), 1))
+                painter.setBrush(QBrush(QColor(255, 255, 255)))
+                s = self.window.grid_px * self.handle_size_factor
+                for r in _corner_handles(self.rect(), s).values():
+                    painter.drawRect(r)
+            painter.restore()
+            return
         super().paint(painter, option, widget)
         if self.isSelected():
             painter.save()
-            painter.setPen(QPen(QColor(40, 40, 40), 1))
+            painter.setPen(QPen(QColor(0, 150, 170) if graphics_as_body else QColor(40, 40, 40), 1))
             painter.setBrush(QBrush(QColor(255, 255, 255)))
             for r in self._handles().values():
                 painter.drawRect(r)
@@ -383,8 +403,39 @@ class PinItem(TransformMixin, QGraphicsItem):
         self.apply_transform_from_model()
 
     def boundingRect(self):
+        # Keep a generous repaint area for labels/handles, but do not use this
+        # rectangle as the mouse hit area.  shape() below is intentionally tight
+        # so pins do not block selection of nearby body/text/graphic objects.
         g = self.window.grid_px
-        return QRectF(-6 * g, -1.2 * g, 12 * g, 2.4 * g)
+        return QRectF(-6 * g, -1.6 * g, 12 * g, 3.2 * g)
+
+    def shape(self):
+        g = self.window.grid_px
+        L = float(getattr(self.model, 'length', 1.0) or 1.0) * g
+        m = self.model
+        if m.side == PinSide.LEFT.value:
+            p1, p2 = QPointF(-L, 0), QPointF(0, 0)
+        elif m.side == PinSide.TOP.value:
+            p1, p2 = QPointF(0, -L), QPointF(0, 0)
+        elif m.side == PinSide.BOTTOM.value:
+            p1, p2 = QPointF(0, L), QPointF(0, 0)
+        else:
+            p1, p2 = QPointF(0, 0), QPointF(L, 0)
+        path = QPainterPath(p1)
+        path.lineTo(p2)
+        # Small terminal/anchor hit boxes only.  Labels are painted by the pin
+        # but should not make the pin selection area huge.
+        s = max(5.0, 0.22 * g)
+        path.addRect(QRectF(p1.x() - s/2, p1.y() - s/2, s, s))
+        path.addRect(QRectF(p2.x() - s/2, p2.y() - s/2, s, s))
+        if bool(getattr(m, 'inverted', False)):
+            r = max(4.0, .20 * g)
+            bx = (-r if m.side == PinSide.LEFT.value else (r if m.side == PinSide.RIGHT.value else 0))
+            by = (0 if m.side in (PinSide.LEFT.value, PinSide.RIGHT.value) else (-r if m.side == PinSide.TOP.value else r))
+            path.addEllipse(QPointF(bx, by), r, r)
+        stroker = QPainterPathStroker()
+        stroker.setWidth(max(6.0, 0.16 * g))
+        return stroker.createStroke(path).united(path)
 
     def paint(self, painter, option, widget=None):
         g, m = self.window.grid_px, self.model

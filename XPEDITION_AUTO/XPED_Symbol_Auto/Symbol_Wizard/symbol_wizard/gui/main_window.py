@@ -1790,7 +1790,11 @@ class TemplateEditorDialog(QDialog):
         kind = item.data(0)
         filter_kind = 'TEXT' if kind in ('ATTR_REF_DES', 'ATTR_BODY') else kind
         selectable = self.selection_enabled.get(filter_kind, True)
-        # Imported Mentor body graphics are a single locked body group in the Symbol Wizard.
+        # BODY remains selectable/movable in the Symbol Wizard because it is the
+        # logical object that owns template/import graphics, pins and attributes.
+        # Only its body-owned graphic primitives are locked there; primitive
+        # editing stays restricted to the Template Editor.
+        # Imported Mentor/template body graphics are a single locked body group in the Symbol Wizard.
         # They are only editable in the Template Editor.
         if kind == 'GRAPHIC' and getattr(getattr(item, 'model', None), 'locked_to_body', False) and not getattr(self, 'is_template_editor', False):
             selectable = False
@@ -1963,7 +1967,7 @@ class TemplateEditorDialog(QDialog):
         for item in self.scene.items():
             kind = item.data(0)
             filter_kind = 'TEXT' if kind in ('ATTR_REF_DES', 'ATTR_BODY') else kind
-            if kind in ('BODY','PIN','TEXT','ATTR_REF_DES','ATTR_BODY','GRAPHIC') and not (kind == 'GRAPHIC' and getattr(getattr(item, 'model', None), 'locked_to_body', False)) and self.selection_enabled.get(filter_kind, True): item.setSelected(True)
+            if (kind in ('PIN','TEXT','ATTR_REF_DES','ATTR_BODY','GRAPHIC','BODY')) and not (kind == 'GRAPHIC' and getattr(getattr(item, 'model', None), 'locked_to_body', False) and not getattr(self, 'is_template_editor', False)) and self.selection_enabled.get(filter_kind, True): item.setSelected(True)
         self.refresh_properties()
     def copy_selected(self):
         self.set_tool(DrawTool.SELECT.value)
@@ -2106,7 +2110,11 @@ class TemplateEditorDialog(QDialog):
         kind = item.data(0)
         filter_kind = 'TEXT' if kind in ('ATTR_REF_DES', 'ATTR_BODY') else kind
         selectable = self.selection_enabled.get(filter_kind, True)
-        # Imported Mentor body graphics are a single locked body group in the Symbol Wizard.
+        # BODY remains selectable/movable in the Symbol Wizard because it is the
+        # logical object that owns template/import graphics, pins and attributes.
+        # Only its body-owned graphic primitives are locked there; primitive
+        # editing stays restricted to the Template Editor.
+        # Imported Mentor/template body graphics are a single locked body group in the Symbol Wizard.
         # They are only editable in the Template Editor.
         if kind == 'GRAPHIC' and getattr(getattr(item, 'model', None), 'locked_to_body', False) and not getattr(self, 'is_template_editor', False):
             selectable = False
@@ -3853,13 +3861,20 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         self.add_attribute_text_items(u)
         for g in u.graphics:
             item = GraphicItem(g, self)
+            self.apply_item_selectability(item)
             if not getattr(g, 'locked_to_body', False):
-                self.apply_item_selectability(item)
                 self._restore_or_select_item(item, selected_ids)
             else:
-                # Body-owned imported graphics are visually part of the BODY group.
-                # Keep them above the grid but below pins/text and non-selectable.
-                item.setZValue(-0.1)
+                # Body-owned imported/template graphics are visual primitives of the
+                # BODY.  In the Symbol Wizard they must never become individually
+                # selectable or snap/move as separate graphics; clicks fall through
+                # to the selectable BodyItem underneath.
+                if not getattr(self, 'is_template_editor', False):
+                    item.setZValue(-0.1)
+                    try:
+                        item.setAcceptedMouseButtons(Qt.NoButton)
+                    except Exception:
+                        pass
             self.scene.addItem(item)
         for p in u.pins:
             item = PinItem(p, self)
@@ -3922,7 +3937,11 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
         kind = item.data(0)
         filter_kind = 'TEXT' if kind in ('ATTR_REF_DES', 'ATTR_BODY') else kind
         selectable = self.selection_enabled.get(filter_kind, True)
-        # Imported Mentor body graphics are a single locked body group in the Symbol Wizard.
+        # BODY remains selectable/movable in the Symbol Wizard because it is the
+        # logical object that owns template/import graphics, pins and attributes.
+        # Only its body-owned graphic primitives are locked there; primitive
+        # editing stays restricted to the Template Editor.
+        # Imported Mentor/template body graphics are a single locked body group in the Symbol Wizard.
         # They are only editable in the Template Editor.
         if kind == 'GRAPHIC' and getattr(getattr(item, 'model', None), 'locked_to_body', False) and not getattr(self, 'is_template_editor', False):
             selectable = False
@@ -6427,6 +6446,17 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
                 if isinstance(style, dict):
                     g.style = StyleModel(**style)
                 graphics.append(g)
+            # Templates imported from Mentor/Xpedition store their visible body as
+            # graphic primitives.  Normalize old generated template JSON here:
+            # those primitives are Body-owned in the Symbol Wizard, but still
+            # individually editable in the Template Editor.
+            try:
+                attrs = getattr(body, 'attributes', {}) or {}
+                if str(attrs.get('MENTOR_GRAPHICS_AS_BODY', '0')) == '1' or str(attrs.get('MENTOR_BODY_GRAPHICS_LOCKED', '0')) == '1':
+                    for _g in graphics:
+                        _g.locked_to_body = True
+            except Exception:
+                pass
             return SymbolUnitModel(name=str(src.get('name', payload.get('name', 'Template'))), body=body, pins=pins, texts=texts, graphics=graphics)
         except Exception:
             return None
@@ -6696,6 +6726,17 @@ Unter **Help → Class Model** ist ein vollständiges Klassenmodell des Tools ve
                     if isinstance(style, dict):
                         g.style = StyleModel(**style)
                     graphics.append(g)
+                # Templates imported from Mentor/Xpedition store their visible body as
+                # graphic primitives. Normalize old generated template JSON here:
+                # those primitives are Body-owned in the Symbol Wizard, but still
+                # individually editable in the Template Editor.
+                try:
+                    attrs = getattr(body, 'attributes', {}) or {}
+                    if str(attrs.get('MENTOR_GRAPHICS_AS_BODY', '0')) == '1' or str(attrs.get('MENTOR_BODY_GRAPHICS_LOCKED', '0')) == '1':
+                        for _g in graphics:
+                            _g.locked_to_body = True
+                except Exception:
+                    pass
                 return SymbolUnitModel(name=str(src.get('name', payload.get('name', 'Template'))), body=body, pins=pins, texts=texts, graphics=graphics)
             except Exception:
                 return None
