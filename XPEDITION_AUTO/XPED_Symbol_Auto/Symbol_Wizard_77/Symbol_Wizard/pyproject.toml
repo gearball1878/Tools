@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "symbol-wizard"
+version = "0.1.0"
+description = "Grid-based Mentor/Xpedition symbol editor"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["PySide6"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+symbol-wizard = "symbol_wizard.app:main"
+
+[tool.setuptools]
+packages = [
+  "symbol_wizard",
+  "symbol_wizard.graphics",
+  "symbol_wizard.gui",
+  "symbol_wizard.gui.legacy_pipeline",
+  "symbol_wizard.gui.legacy_pipeline.functions",
+  "symbol_wizard.io",
+  "symbol_wizard.models",
+  "symbol_wizard.rules",
+]
+
+[tool.setuptools.package-data]
+symbol_wizard = [
+  "docs/*.md",
+  "symbol_templates/*.json",
+  "symbol_templates/.template_manifest.json",
+  "symbol_templates/mentor_known_templates.tar.xz",
+  "symbol_types/*.json",
+]

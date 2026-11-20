@@ -1,0 +1,2255 @@
+[
+  {
+    "id": "508be90e9f137fad1626638d97a4ce828c1db822dd8bf77298c6dd822d167281",
+    "key": "function",
+    "label": "Funktion / Aufgabe",
+    "description": "",
+    "object_types": [
+      "SystemDefinition",
+      "SystemDomain",
+      "SystemElement",
+      "SystemRelation",
+      "Domain",
+      "ArchitectureElement",
+      "InterfacePort",
+      "ArchitectureSignal",
+      "Signal",
+      "Connection",
+      "TechnicalRealization",
+      "MechanicalComponent",
+      "MechanicalConstraint",
+      "SoftwareComponent",
+      "InterfaceRequirement"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "text",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Forward",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "c30ed899ef97aaf73efb758ccfaa1ddf45274423fd261b2850b9317b4befc650",
+    "key": "operatingConditions",
+    "label": "Betriebsbedingungen",
+    "description": "",
+    "object_types": [
+      "SystemDefinition",
+      "SystemDomain",
+      "SystemElement",
+      "SystemRelation",
+      "Domain",
+      "ArchitectureElement",
+      "InterfacePort",
+      "ArchitectureSignal",
+      "Signal",
+      "Connection",
+      "TechnicalRealization",
+      "MechanicalComponent",
+      "MechanicalConstraint",
+      "SoftwareComponent",
+      "InterfaceRequirement"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "json",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "7d8263df0689c63e858492c66ff6658c0c2c86a405f07e6aa23bc0ca5fddfb4f",
+    "key": "operatingModes",
+    "label": "Betriebsmodi",
+    "description": "",
+    "object_types": [
+      "SystemDefinition",
+      "SystemDomain",
+      "SystemElement",
+      "SystemRelation",
+      "Domain",
+      "ArchitectureElement",
+      "InterfacePort",
+      "ArchitectureSignal",
+      "Signal",
+      "Connection",
+      "TechnicalRealization",
+      "MechanicalComponent",
+      "MechanicalConstraint",
+      "SoftwareComponent",
+      "InterfaceRequirement"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "list",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "3b7b173b468e7fb410201b0cfe90497127f8476080d77fc1d96ff1be0e52ebea",
+    "key": "variants",
+    "label": "Varianten",
+    "description": "",
+    "object_types": [
+      "SystemDefinition",
+      "SystemDomain",
+      "SystemElement",
+      "SystemRelation",
+      "Domain",
+      "ArchitectureElement",
+      "InterfacePort",
+      "ArchitectureSignal",
+      "Signal",
+      "Connection",
+      "TechnicalRealization",
+      "MechanicalComponent",
+      "MechanicalConstraint",
+      "SoftwareComponent",
+      "InterfaceRequirement"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "list",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "b2933663c127798e8aef5124a68bfe323716455434fa095b60a5262c4c03f567",
+    "key": "dependencies",
+    "label": "Abhängigkeiten",
+    "description": "",
+    "object_types": [
+      "SystemDefinition",
+      "SystemDomain",
+      "SystemElement",
+      "SystemRelation",
+      "Domain",
+      "ArchitectureElement",
+      "InterfacePort",
+      "ArchitectureSignal",
+      "Signal",
+      "Connection",
+      "TechnicalRealization",
+      "MechanicalComponent",
+      "MechanicalConstraint",
+      "SoftwareComponent",
+      "InterfaceRequirement"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "list",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "55d9489c46c7abae512bab2b5ce9338a12335b43dfd9ee0069b0a583dcd8ec9b",
+    "key": "evidence",
+    "label": "Nachweise / Quellen",
+    "description": "",
+    "object_types": [
+      "SystemDefinition",
+      "SystemDomain",
+      "SystemElement",
+      "SystemRelation",
+      "Domain",
+      "ArchitectureElement",
+      "InterfacePort",
+      "ArchitectureSignal",
+      "Signal",
+      "Connection",
+      "TechnicalRealization",
+      "MechanicalComponent",
+      "MechanicalConstraint",
+      "SoftwareComponent",
+      "InterfaceRequirement"
+    ],
+    "scopes": [
+      "realization_attributes"
+    ],
+    "data_type": "list",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "7cb14c2e8e2ac0db14fd5f3ae964720bd05006a3659cfbead7791c8bd96c3e6b",
+    "key": "valueOrigin",
+    "label": "Herkunft der Realisierungswerte",
+    "description": "",
+    "object_types": [
+      "SystemDefinition",
+      "SystemDomain",
+      "SystemElement",
+      "SystemRelation",
+      "Domain",
+      "ArchitectureElement",
+      "InterfacePort",
+      "ArchitectureSignal",
+      "Signal",
+      "Connection",
+      "TechnicalRealization",
+      "MechanicalComponent",
+      "MechanicalConstraint",
+      "SoftwareComponent",
+      "InterfaceRequirement"
+    ],
+    "scopes": [
+      "realization_attributes"
+    ],
+    "data_type": "enum",
+    "unit": "",
+    "choices": [
+      "Ausgewählt",
+      "Explizite Designangabe",
+      "Berechnet",
+      "Simuliert",
+      "Gemessen"
+    ],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "01694ce2b7a0e6059e73a7647cce34dda18bd00091ab222272957de2251a8a98",
+    "key": "revision",
+    "label": "Realisierungsrevision",
+    "description": "",
+    "object_types": [
+      "SystemDefinition",
+      "SystemDomain",
+      "SystemElement",
+      "SystemRelation",
+      "Domain",
+      "ArchitectureElement",
+      "InterfacePort",
+      "ArchitectureSignal",
+      "Signal",
+      "Connection",
+      "TechnicalRealization",
+      "MechanicalComponent",
+      "MechanicalConstraint",
+      "SoftwareComponent",
+      "InterfaceRequirement"
+    ],
+    "scopes": [
+      "realization_attributes"
+    ],
+    "data_type": "text",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Backward",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "abfadb739841989a8da2a8a1a0fa7a1cf6bf281df6911c2e13919fa88a3c9ef5",
+    "key": "purpose",
+    "label": "Systemzweck",
+    "description": "",
+    "object_types": [
+      "SystemDefinition"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "text",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "3a0306ba3d5b2fac189ef0597d5cb946665c5240cb907e21a159d7568d49249c",
+    "key": "systemBoundary",
+    "label": "Systemgrenze",
+    "description": "",
+    "object_types": [
+      "SystemDefinition",
+      "SystemDomain"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "text",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "35d508dbb64019f1a43175bbe7231e971d8d97aac4c5386dc1bf22721748f832",
+    "key": "responsibility",
+    "label": "Verantwortung / Zuständigkeit",
+    "description": "",
+    "object_types": [
+      "SystemDomain",
+      "Domain"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "text",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "c25a8be970d04c09df97bc0e57526ed8655b8e8d94582d705dbce41c7cc6a7c2",
+    "key": "independence",
+    "label": "Unabhängigkeit / Isolation",
+    "description": "",
+    "object_types": [
+      "SystemDomain",
+      "Domain",
+      "SystemElement",
+      "ArchitectureElement"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "text",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "b486751099f43945862bcbf7b8490d0e18d4b3aa7e9ac943aa3fe02f08679409",
+    "key": "resourceBudget",
+    "label": "Ressourcenbudget",
+    "description": "",
+    "object_types": [
+      "SystemDomain",
+      "SystemElement",
+      "Domain",
+      "ArchitectureElement",
+      "SoftwareComponent"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "json",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "4845c8a1bd79240bf958144201115d627ffca30fa9c399d342ed0cbf4952eb0e",
+    "key": "allocatedObjects",
+    "label": "Zugeordnete Realisierungsobjekte",
+    "description": "",
+    "object_types": [
+      "SystemDefinition",
+      "SystemDomain",
+      "SystemElement"
+    ],
+    "scopes": [
+      "realization_attributes"
+    ],
+    "data_type": "list",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "6b142ae00a7cfa7e8c60d31e75985b69b7bf0d2b464570807ba23f8ffbb51f45",
+    "key": "exchangeContent",
+    "label": "Austauschinhalt",
+    "description": "",
+    "object_types": [
+      "SystemRelation",
+      "Connection",
+      "InterfaceRequirement"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "text",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "7a6a13dc9e7a41cceaa760f7c28617546bb1c03f9f35ecea9c0a0951ffe19c2d",
+    "key": "availability",
+    "label": "Verfügbarkeit",
+    "description": "",
+    "object_types": [
+      "SystemDefinition",
+      "SystemRelation",
+      "SystemElement"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "number",
+    "unit": "%",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "80271ab6b9cee4c6e2c84e522e841b54bb1b8b0b08285bb00b78a4f6b0b9557a",
+    "key": "voltage",
+    "label": "Spannung",
+    "description": "",
+    "object_types": [
+      "Domain",
+      "ArchitectureElement",
+      "InterfacePort",
+      "ArchitectureSignal",
+      "Signal",
+      "TechnicalRealization"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "number",
+    "unit": "V",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Forward",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "8778b1aa53b0e9ba95b94d32458173635a7d603554c273274edd1d95931753d5",
+    "key": "current",
+    "label": "Dauerstrom",
+    "description": "",
+    "object_types": [
+      "Domain",
+      "ArchitectureElement",
+      "InterfacePort",
+      "ArchitectureSignal",
+      "Signal",
+      "TechnicalRealization"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "number",
+    "unit": "A",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Forward",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "155b9eb82e55bad49c96b61c24e49c98b390db9f50d4658342f807321d0adbb0",
+    "key": "peakCurrent",
+    "label": "Spitzenstrom",
+    "description": "",
+    "object_types": [
+      "Domain",
+      "ArchitectureElement",
+      "InterfacePort",
+      "ArchitectureSignal",
+      "Signal",
+      "TechnicalRealization"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "number",
+    "unit": "A",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Forward",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "0fa81afe96a3afe7b7cd8aba73969a5e7e6f93bc3d395879c9c48b27850461b2",
+    "key": "power",
+    "label": "Leistung",
+    "description": "",
+    "object_types": [
+      "Domain",
+      "ArchitectureElement",
+      "InterfacePort",
+      "ArchitectureSignal",
+      "Signal",
+      "TechnicalRealization"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "number",
+    "unit": "W",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Forward",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "09a4bb99b671ab195e644abedaa311a65541dfecff47794b69712c800992dd4e",
+    "key": "referencePotential",
+    "label": "Bezugspotenzial",
+    "description": "",
+    "object_types": [
+      "Domain",
+      "ArchitectureElement",
+      "InterfacePort",
+      "ArchitectureSignal",
+      "Signal",
+      "TechnicalRealization"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "text",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Abgleich",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "7bbd5e21d6383e902bccc286b6aebe36f53e9bd4a32110f9d9e136cd33ef6c88",
+    "key": "isolation",
+    "label": "Isolationsanforderung",
+    "description": "",
+    "object_types": [
+      "Domain",
+      "ArchitectureElement",
+      "InterfacePort",
+      "ArchitectureSignal",
+      "Signal",
+      "TechnicalRealization"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "json",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Forward",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "3ce9742aedf4324223c4c9f5eeccb96c95dc9601692147b09e6b3023dfd4dc9b",
+    "key": "channels",
+    "label": "Kanalanzahl",
+    "description": "",
+    "object_types": [
+      "ArchitectureElement",
+      "TechnicalRealization"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "number",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "3a4eae28de47d14ca03fea1a9ede9092940c83ba0f8336356e5dec574209e9d5",
+    "key": "resolution",
+    "label": "Auflösung",
+    "description": "",
+    "object_types": [
+      "ArchitectureElement",
+      "TechnicalRealization"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "number",
+    "unit": "bit",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "808a4726cd341749113e32ae714214de8547b41758b5a14f68a53ef4112188d3",
+    "key": "capacity",
+    "label": "Kapazität / Umfang",
+    "description": "",
+    "object_types": [
+      "ArchitectureElement",
+      "TechnicalRealization",
+      "SoftwareComponent"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "json",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "bcc2644c2a98396177465fc9422675bd07eace440d65d45363b9f343fcf1362e",
+    "key": "componentConstraints",
+    "label": "Bauteilvorgaben",
+    "description": "",
+    "object_types": [
+      "ArchitectureElement",
+      "TechnicalRealization"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "list",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "4271ee884bcc8ef541f089677d531d24d0c6ee32c76482133687ea265fb78d84",
+    "key": "coreComponents",
+    "label": "Kernbausteine / Referenzen",
+    "description": "",
+    "object_types": [
+      "ArchitectureElement",
+      "TechnicalRealization"
+    ],
+    "scopes": [
+      "realization_attributes"
+    ],
+    "data_type": "list",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Backward",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "0d06c3a2b83f160db07f80693ff2e4629f58e3fecc873e0e6a860a97c116fa34",
+    "key": "schematicReference",
+    "label": "Schaltplanreferenz",
+    "description": "",
+    "object_types": [
+      "Domain",
+      "ArchitectureElement",
+      "InterfacePort",
+      "ArchitectureSignal",
+      "Signal",
+      "TechnicalRealization"
+    ],
+    "scopes": [
+      "realization_attributes"
+    ],
+    "data_type": "text",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Backward",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "90de464a22aa7f5f1eec09eeb4e33d92385936914ce54c4b6cc78ce886dc674c",
+    "key": "interfaceType",
+    "label": "Schnittstellentyp",
+    "description": "",
+    "object_types": [
+      "InterfacePort",
+      "ArchitectureSignal",
+      "Signal"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "text",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Abgleich",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "2f41205521374f88fbe0a99771b10b4ddca6099eaba06cf9f3d1cabc57a3bdbb",
+    "key": "interfaceVersion",
+    "label": "Schnittstellenversion",
+    "description": "",
+    "object_types": [
+      "InterfacePort",
+      "ArchitectureSignal",
+      "Signal"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "text",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Abgleich",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "944d3f52aa0970f0c101144544345d1fcf185228e3fea034e6a19ff6dc65b658",
+    "key": "signalRole",
+    "label": "Signalrolle",
+    "description": "",
+    "object_types": [
+      "InterfacePort",
+      "ArchitectureSignal",
+      "Signal"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "text",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Abgleich",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "cc7d47afc15c486e8f9f1ed79db69d729c202fa4b2f304af86525af691b2c7d8",
+    "key": "required",
+    "label": "Erforderlich",
+    "description": "",
+    "object_types": [
+      "InterfacePort",
+      "ArchitectureSignal",
+      "Signal"
+    ],
+    "scopes": [
+      "requirement_attributes"
+    ],
+    "data_type": "boolean",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "587bee94e3a394c59c162051b4d9848db4fa8db3e9a2b66e966b9ec330b16217",
+    "key": "frequency",
+    "label": "Frequenz",
+    "description": "",
+    "object_types": [
+      "InterfacePort",
+      "ArchitectureSignal",
+      "Signal"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "number",
+    "unit": "Hz",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Forward",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "e5646cc89887772926bc30e54c53f2e40095a50ce4ea6b3e1dffe3fc3674b163",
+    "key": "dataRate",
+    "label": "Datenrate",
+    "description": "",
+    "object_types": [
+      "InterfacePort",
+      "ArchitectureSignal",
+      "Signal"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "number",
+    "unit": "bit/s",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Forward",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "750a3df53ef75a6001d72abf961d388e915a5a1eb36a00669d9705c560f91186",
+    "key": "riseTime",
+    "label": "Anstiegszeit",
+    "description": "",
+    "object_types": [
+      "InterfacePort",
+      "ArchitectureSignal",
+      "Signal"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "number",
+    "unit": "ns",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Forward",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "631de48ea38fecceacf48d73370a10b38aa51e4e8ba7103a2a1e172adf487c14",
+    "key": "fallTime",
+    "label": "Abfallzeit",
+    "description": "",
+    "object_types": [
+      "InterfacePort",
+      "ArchitectureSignal",
+      "Signal"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "number",
+    "unit": "ns",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Forward",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "10465b9795a46ad7d5b6578c8457eb9c5e731132f806c9ca171b1640ae177000",
+    "key": "impedance",
+    "label": "Single-ended Impedanz",
+    "description": "",
+    "object_types": [
+      "InterfacePort",
+      "ArchitectureSignal",
+      "Signal"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "number",
+    "unit": "Ω",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Forward",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "ade8f4fb45fdc4f96b4641fff175258ca231558fd2cb9c10f4979f04b292faba",
+    "key": "differentialImpedance",
+    "label": "Differenzielle Impedanz",
+    "description": "",
+    "object_types": [
+      "InterfacePort",
+      "ArchitectureSignal",
+      "Signal"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "number",
+    "unit": "Ω",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Forward",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "10f5d913b8f7d5f90f8294019774600af1bbf729ca6228e73df3649ca249aa53",
+    "key": "physicalForm",
+    "label": "Physikalische Signalform",
+    "description": "",
+    "object_types": [
+      "InterfacePort",
+      "ArchitectureSignal",
+      "Signal"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "enum",
+    "unit": "",
+    "choices": [
+      "Single-ended",
+      "Differentiell",
+      "Trio",
+      "Koax",
+      "Stromschnittstelle"
+    ],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Abgleich",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "376a0641a25851ba768ece3df98aa9426e4e334d3a90f97e2102a1e8abfb4d10",
+    "key": "speedClass",
+    "label": "Geschwindigkeitsklasse",
+    "description": "",
+    "object_types": [
+      "InterfacePort",
+      "ArchitectureSignal",
+      "Signal"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "enum",
+    "unit": "",
+    "choices": [
+      "Low",
+      "Mid",
+      "High"
+    ],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Abgleich",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "6ef9bdbf7c1194d38f8dd34848aa951340e637c3f1e8de601715472968ada350",
+    "key": "powerClass",
+    "label": "Leistungsklasse",
+    "description": "",
+    "object_types": [
+      "InterfacePort",
+      "ArchitectureSignal",
+      "Signal"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "enum",
+    "unit": "",
+    "choices": [
+      "Low",
+      "Mid",
+      "High"
+    ],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Abgleich",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "012bfc523decf415116618ba63d3ef203e5ef3e50b9cf5987eb74f101af7fe7b",
+    "key": "interfaceProfile",
+    "label": "Schnittstellenprofil",
+    "description": "",
+    "object_types": [
+      "InterfacePort",
+      "ArchitectureSignal",
+      "Signal"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "text",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Abgleich",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "df67b89bc33433507460ef608076f751a1743b6ea4156e95cecd5084082aeb1c",
+    "key": "differentialPair",
+    "label": "Differenzpaar / Partner",
+    "description": "",
+    "object_types": [
+      "InterfacePort",
+      "ArchitectureSignal",
+      "Signal"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "text",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Abgleich",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "8e085ec52899adf261d25320541272949096068fcf7118328345be11550659a7",
+    "key": "termination",
+    "label": "Terminierung",
+    "description": "",
+    "object_types": [
+      "InterfacePort",
+      "ArchitectureSignal",
+      "Signal"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "json",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Forward",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "8917368fb85d28ed1dc8c4717a9e50ab915b911869702fe891c980de3daa06e9",
+    "key": "topology",
+    "label": "Topologie",
+    "description": "",
+    "object_types": [
+      "ArchitectureSignal",
+      "Connection"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "text",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Abgleich",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "a34e338b141f4abdc8176cdf9615ff1ce76712b1f80a4a59d2de360fd098b46d",
+    "key": "memberCount",
+    "label": "Mitgliederanzahl",
+    "description": "",
+    "object_types": [
+      "ArchitectureSignal"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "number",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "756c2da2ef22e216da54ce5914d4d394dfb98eb7898fce724ec0357084781390",
+    "key": "memberDefinition",
+    "label": "Businhalt / Vektoren",
+    "description": "",
+    "object_types": [
+      "ArchitectureSignal",
+      "InterfacePort"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "list",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Abgleich",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "56c1c2598d94ce467877d1a39f679165209e169374c48e8e3ae3c8c55d4e8431",
+    "key": "maxLength",
+    "label": "Maximale Länge",
+    "description": "",
+    "object_types": [
+      "ArchitectureSignal",
+      "Signal",
+      "Connection"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "number",
+    "unit": "mm",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Forward",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "279b3bf34d3feb795fc2565dd336e38afd058dea29d61f7923eef6e3f08e4cb4",
+    "key": "maxSkew",
+    "label": "Maximaler Laufzeitversatz",
+    "description": "",
+    "object_types": [
+      "InterfacePort",
+      "ArchitectureSignal",
+      "Signal"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "number",
+    "unit": "ps",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Forward",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "59ab964f5b9a23a39722bf263b8823d4397e83fc34fc18696f7d802f166d04df",
+    "key": "voltageDrop",
+    "label": "Spannungsabfall",
+    "description": "",
+    "object_types": [
+      "InterfacePort",
+      "ArchitectureSignal",
+      "Signal"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "number",
+    "unit": "V",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Forward",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "29496bdb83e26e46c74a87081bbb0ebbc71d3ed80785268cb7f6b13e35521787",
+    "key": "temperatureRise",
+    "label": "Zulässige Erwärmung",
+    "description": "",
+    "object_types": [
+      "InterfacePort",
+      "ArchitectureSignal",
+      "Signal"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "number",
+    "unit": "K",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Forward",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "93befef1834237bbcd24ff142dac021a1bdda8280b008890445c4c9b5ddbb612",
+    "key": "netClass",
+    "label": "Netzklasse / Bus-Standardklasse",
+    "description": "",
+    "object_types": [
+      "ArchitectureSignal",
+      "Signal"
+    ],
+    "scopes": [
+      "realization_attributes"
+    ],
+    "data_type": "text",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Abgleich",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "52497812623c277bbf726b446a77b5e0a3057adec0bf4c74ead8eab1b2840345",
+    "key": "netClasses",
+    "label": "Weitere ECAD-Netzklassen",
+    "description": "",
+    "object_types": [
+      "ArchitectureSignal",
+      "Signal"
+    ],
+    "scopes": [
+      "realization_attributes"
+    ],
+    "data_type": "list",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Abgleich",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "b4edf6309fda9816737fa9eb94b7777581467911fe0a8630012ef144d1ee50a3",
+    "key": "classPriority",
+    "label": "ECAD-Klassenpriorität",
+    "description": "",
+    "object_types": [
+      "ArchitectureSignal",
+      "Signal"
+    ],
+    "scopes": [
+      "realization_attributes"
+    ],
+    "data_type": "json",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Backward",
+    "system": true,
+    "readonly": true,
+    "origin": "ISD"
+  },
+  {
+    "id": "1a62b0219f02922bbfec44da427ecb6d3c796b242e25c1252885c605b677ccc3",
+    "key": "connectedNet",
+    "label": "Angeschlossenes Netz / Bus",
+    "description": "",
+    "object_types": [
+      "InterfacePort"
+    ],
+    "scopes": [
+      "realization_attributes"
+    ],
+    "data_type": "text",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Backward",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "ff0b5bb23c3fcffbaa053dbbc1999bf59a38c6f76893ceb173ff3353c130e2dd",
+    "key": "pinMapping",
+    "label": "Pinzuordnung",
+    "description": "",
+    "object_types": [
+      "InterfacePort",
+      "Signal"
+    ],
+    "scopes": [
+      "realization_attributes"
+    ],
+    "data_type": "json",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Backward",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "2c7ae0f3e02b92c37e598d95d1e99743aa7d9201865236be2983f8834b5f5905",
+    "key": "dimensions",
+    "label": "Geometrie / Abmessungen",
+    "description": "",
+    "object_types": [
+      "MechanicalComponent",
+      "MechanicalConstraint"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "json",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "2456b991ff0564fac4d480410067b52a5edb60de266f419a34ee419fba0bd387",
+    "key": "mass",
+    "label": "Masse",
+    "description": "",
+    "object_types": [
+      "MechanicalComponent"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "number",
+    "unit": "kg",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "ff11a80caaaf60370999036336979c664a19e697b5dfc72acdfeba1153138ebd",
+    "key": "material",
+    "label": "Material",
+    "description": "",
+    "object_types": [
+      "MechanicalComponent"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "text",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "a9fd0450448129bd3cbd970b7b4f0230d99949107abeeda198b59cef62322fd1",
+    "key": "loadCases",
+    "label": "Lastfälle",
+    "description": "",
+    "object_types": [
+      "MechanicalComponent",
+      "MechanicalConstraint"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "list",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "f2b6b1629793070f9520d465f6c2103691794336bb706f2353d3009057859147",
+    "key": "manufacturing",
+    "label": "Fertigung / Montage",
+    "description": "",
+    "object_types": [
+      "MechanicalComponent",
+      "MechanicalConstraint"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "text",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "3153845c6e4b84f7ca8ffb1198ade03129f85d1d9357b2702425405ed33e32f3",
+    "key": "sealing",
+    "label": "Dichtung / Schutz",
+    "description": "",
+    "object_types": [
+      "MechanicalConstraint"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "text",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "d6c13d22a6a3854529a82ac0cb993b059490fe30af2ad978e609211a4662f395",
+    "key": "cadReference",
+    "label": "CAD-Referenz",
+    "description": "",
+    "object_types": [
+      "MechanicalComponent"
+    ],
+    "scopes": [
+      "realization_attributes"
+    ],
+    "data_type": "text",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "c3537340c0158a03e725541c1f3017f974b67f3ea7bf11372e99c128c4f6d98f",
+    "key": "dataContract",
+    "label": "API / Datenvertrag",
+    "description": "",
+    "object_types": [
+      "SoftwareComponent",
+      "InterfaceRequirement"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "json",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "51392bbb435a5749d0cfd81f1a311c40144ac41331278451fa9dff2a4c81f12a",
+    "key": "protocol",
+    "label": "Protokoll",
+    "description": "",
+    "object_types": [
+      "SoftwareComponent",
+      "InterfaceRequirement"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "text",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "d40520d9e371a99864632fa1942bf0090ca01a1bad285a102201d5dd474a0ffe",
+    "key": "timing",
+    "label": "Timing / Latenz",
+    "description": "",
+    "object_types": [
+      "SoftwareComponent",
+      "InterfaceRequirement"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "json",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "b6d253bf57cf50b9036a77477bd06ca5e72d1cc86dc2cbcec15a771e5d0ba9a8",
+    "key": "errorHandling",
+    "label": "Fehlerverhalten",
+    "description": "",
+    "object_types": [
+      "SoftwareComponent",
+      "InterfaceRequirement"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "text",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "328caf2f1b990a9ffb98f563f685c6c1f1c5661e34a6f3b63911f37ac386b844",
+    "key": "compatibility",
+    "label": "Kompatibilität",
+    "description": "",
+    "object_types": [
+      "SoftwareComponent",
+      "InterfaceRequirement"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "text",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "013f7aa877ac191c42f7523a1b8c333e42631ebcde2cbcbab2a776979f16fe91",
+    "key": "deployment",
+    "label": "Deployment-Ziel",
+    "description": "",
+    "object_types": [
+      "SoftwareComponent"
+    ],
+    "scopes": [
+      "realization_attributes"
+    ],
+    "data_type": "text",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "df5ba9600bb867252daa782873fa79e46cc2b1070d2be8cf216c1b8a090ae56c",
+    "key": "repository",
+    "label": "Repository",
+    "description": "",
+    "object_types": [
+      "SoftwareComponent"
+    ],
+    "scopes": [
+      "realization_attributes"
+    ],
+    "data_type": "text",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "6e21fc18ce340bb39ab98af14880aca721ac861f91eddb2c4d36fb39e05a516c",
+    "key": "build",
+    "label": "Build / Version",
+    "description": "",
+    "object_types": [
+      "SoftwareComponent"
+    ],
+    "scopes": [
+      "realization_attributes"
+    ],
+    "data_type": "text",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "7f8313b2b1b3e1a4afd1106f1bad5f06fb2025842672cc73718fbede53ae90af",
+    "key": "performance",
+    "label": "Leistungs- / Funktionskennwerte",
+    "description": "",
+    "object_types": [
+      "SystemDefinition",
+      "SystemDomain",
+      "SystemElement",
+      "SystemRelation",
+      "ArchitectureElement",
+      "TechnicalRealization"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "json",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "6a17466e52df870027c9102c7f0703dd044406e0fa8d4fe8af34a8970f82c3a1",
+    "key": "inputsOutputs",
+    "label": "Ein- und Ausgaben",
+    "description": "",
+    "object_types": [
+      "SystemElement",
+      "ArchitectureElement"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "json",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "70d11bb5dc1fa49edcf49b0bd8bef2eed2f6d8ff800e05916b3472f1bfde7c09",
+    "key": "stateBehavior",
+    "label": "Zustands- und Betriebsverhalten",
+    "description": "",
+    "object_types": [
+      "SystemElement",
+      "ArchitectureElement"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "json",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "e20e14e93d9cafbdbb36096cdd4f1abd9b3f44bebbc2242dcafa1e3ef0250622",
+    "key": "exchangeRoles",
+    "label": "Schnittstellenrollen",
+    "description": "",
+    "object_types": [
+      "SystemRelation",
+      "InterfaceRequirement"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "list",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "89a4d5d32d03c0fa80f70997564ed3440d2787936c0f46f513addf680eaf574a",
+    "key": "powerBudget",
+    "label": "Leistungsbudget",
+    "description": "",
+    "object_types": [
+      "SystemDomain",
+      "Domain"
+    ],
+    "scopes": [
+      "requirement_attributes"
+    ],
+    "data_type": "number",
+    "unit": "W",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "e2ddc018f082e09d6367d9eb7800578444d0bb94a37117071a1306d3edefcf8d",
+    "key": "chosenImplementation",
+    "label": "Gewählte Umsetzung",
+    "description": "",
+    "object_types": [
+      "SystemElement",
+      "ArchitectureElement",
+      "TechnicalRealization"
+    ],
+    "scopes": [
+      "realization_attributes"
+    ],
+    "data_type": "text",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "79fa90ddb70425a075794957fcaea514a6b14150f6214bb4d6013052404d7c5b",
+    "key": "polarity",
+    "label": "Polarität",
+    "description": "",
+    "object_types": [
+      "ArchitectureSignal",
+      "Signal"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "enum",
+    "unit": "",
+    "choices": [
+      "Active high",
+      "Active low"
+    ],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Abgleich",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "8c53436e01610d0b6633b1b03e389576a26e78ffd77c8020bde1ec809e2841e6",
+    "key": "noiseLimit",
+    "label": "Rauschgrenze",
+    "description": "",
+    "object_types": [
+      "InterfacePort",
+      "ArchitectureSignal",
+      "Signal"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "number",
+    "unit": "V",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Forward",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "352dcb3b23d6c3371d19915eaae9230de20b47147e243042e1fe68d818ae1d7c",
+    "key": "accuracy",
+    "label": "Genauigkeit",
+    "description": "",
+    "object_types": [
+      "Domain",
+      "ArchitectureElement",
+      "InterfacePort",
+      "ArchitectureSignal",
+      "Signal",
+      "TechnicalRealization"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "json",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Forward",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "f9828f42e1629dac03be48b20b4b33dbcb91857cb258b58bacaa253152013360",
+    "key": "tolerances",
+    "label": "Geometrische Toleranzen",
+    "description": "",
+    "object_types": [
+      "MechanicalComponent",
+      "MechanicalConstraint"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "json",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "757ecaf96eb64a1d1b5d6d238bc2a1a34f722e245cc4a7d6734beb3dde51e165",
+    "key": "thermalRequirements",
+    "label": "Thermische Anforderungen",
+    "description": "",
+    "object_types": [
+      "MechanicalComponent",
+      "MechanicalConstraint"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "json",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "c28bd4995c28184be0c817dd5fa8783647e593841c0c20c58658bbdfe212fbbe",
+    "key": "assembly",
+    "label": "Montage / Befestigung",
+    "description": "",
+    "object_types": [
+      "MechanicalComponent",
+      "MechanicalConstraint"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "json",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "6ebffe8cfbf79776dea49d71bafe493a9d17136192effcabbb9f749d73ede3fa",
+    "key": "surface",
+    "label": "Oberfläche",
+    "description": "",
+    "object_types": [
+      "MechanicalComponent"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "text",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "49edbff5c9134ba1a4144796543ab9f5df4d85b61fec2fb44b03745d49e8fa08",
+    "key": "interfacePartners",
+    "label": "Schnittstellenpartner",
+    "description": "",
+    "object_types": [
+      "SystemRelation",
+      "MechanicalConstraint",
+      "InterfaceRequirement"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "list",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "95ae68bb6aae4f098eec5b079e66b9f6e89ef89333f3c46134081e08135b84cb",
+    "key": "runtimeResources",
+    "label": "Laufzeitressourcen",
+    "description": "",
+    "object_types": [
+      "SoftwareComponent"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "json",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  },
+  {
+    "id": "ace17a2309756347b8a75b60817dbe2f59dca47f1c409e8682c9eef051100b37",
+    "key": "operations",
+    "label": "Operationen / Funktionen",
+    "description": "",
+    "object_types": [
+      "SoftwareComponent",
+      "InterfaceRequirement"
+    ],
+    "scopes": [
+      "requirement_attributes",
+      "realization_attributes"
+    ],
+    "data_type": "list",
+    "unit": "",
+    "choices": [],
+    "minimum": null,
+    "maximum": null,
+    "default": null,
+    "exchange": "Nur ISD",
+    "system": true,
+    "readonly": false,
+    "origin": "ISD"
+  }
+]

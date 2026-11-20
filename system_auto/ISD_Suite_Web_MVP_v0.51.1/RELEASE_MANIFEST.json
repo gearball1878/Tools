@@ -1,0 +1,591 @@
+{
+  "files": [
+    {
+      "bytes": 17857,
+      "path": "Architecture_Catalog.json",
+      "sha256": "7510cd7167b4bc891feea5528a0b3a975f2ee8cd4a94d6171d4503fac711b0ba"
+    },
+    {
+      "bytes": 25744,
+      "path": "Interface_Template_File.json",
+      "sha256": "970c044d833d89c074cb590634a4b6d13ed0e5c5ed66532632977c504b38dd91"
+    },
+    {
+      "bytes": 25134,
+      "path": "README.md",
+      "sha256": "a584b4ba8f3893c7226436d9b25ea2306875d31c8bbe252fa19007c87b030a3c"
+    },
+    {
+      "bytes": 57,
+      "path": "architecture_app/__init__.py",
+      "sha256": "1ac5d2548bce5806fc7d8baadda846bff9ff0b1795b205d0e09a83e36e3db1e7"
+    },
+    {
+      "bytes": 5224,
+      "path": "architecture_app/ai_catalog.py",
+      "sha256": "43da8650e678a1a79bcd6819542034b04b8a70d6c26ccd542e1c07562e7ea7a6"
+    },
+    {
+      "bytes": 7771,
+      "path": "architecture_app/ai_context.py",
+      "sha256": "dbb4999ffaa1cfb2b7e46f36ad298d827f9ba2dc3863e9cdc8c384c70da86bb6"
+    },
+    {
+      "bytes": 102490,
+      "path": "architecture_app/ai_provider.py",
+      "sha256": "a43145b58a3d31a847f8970e8ffc6c5e564f45370349cc18bad0cf2eda8070a8"
+    },
+    {
+      "bytes": 5626,
+      "path": "architecture_app/ai_transports.py",
+      "sha256": "dc0f9586d79ce56e87b31f1905bb51079560d2cf30c7d4080de54cb613411cf4"
+    },
+    {
+      "bytes": 12658,
+      "path": "architecture_app/ai_ui.py",
+      "sha256": "6ac70ec620a2761c2170a81035f8814061b1f258dee8a7cff3ab97c90211afbe"
+    },
+    {
+      "bytes": 2883,
+      "path": "architecture_app/analysis_profiles.py",
+      "sha256": "8ef14b72e9ad49789211ab22a6216c76a77a9adce51b336d47b825150cd5351e"
+    },
+    {
+      "bytes": 17637,
+      "path": "architecture_app/analysis_queue.py",
+      "sha256": "171ef4dc52a83963aa746943765cfb4aae74decb62f33a90219a648c70260402"
+    },
+    {
+      "bytes": 11129,
+      "path": "architecture_app/annotation_review.py",
+      "sha256": "5a23d0131a0da7e6eec0d28b9be1ec2f1751a67ec416c4f90da869fce6d4dc6a"
+    },
+    {
+      "bytes": 114398,
+      "path": "architecture_app/app.py",
+      "sha256": "4b2453d85916542419afc699e9a7de0ab8135eb722f6e97f9dbf4d57cb75beb6"
+    },
+    {
+      "bytes": 3881,
+      "path": "architecture_app/architecture_bindings_ui.py",
+      "sha256": "eacbf5df288baa2d35c930ff74427b93bcead8bc45fdb6f7d67291bb45c5fc48"
+    },
+    {
+      "bytes": 10664,
+      "path": "architecture_app/architecture_catalog.py",
+      "sha256": "43ef5ae37f38bad5d26bb6fbbb1547902d4cb376ec772763e19c004c78e1e801"
+    },
+    {
+      "bytes": 29987,
+      "path": "architecture_app/architecture_compilation.py",
+      "sha256": "b85304b3d5f644d97151a73b5837c298ef7d78c7856f7606c7913f65fee428bc"
+    },
+    {
+      "bytes": 16731,
+      "path": "architecture_app/architecture_editing.py",
+      "sha256": "4f457035a8ff05e124f7c1aad62677422b0482329d94425f02cb8299f1c188d9"
+    },
+    {
+      "bytes": 4385,
+      "path": "architecture_app/architecture_generation_ui.py",
+      "sha256": "ce84d0aa5b668589096ea6388721f9ea649fe65318d0f3e07f534b867a8574c5"
+    },
+    {
+      "bytes": 55333,
+      "path": "architecture_app/architecture_masks_ui.py",
+      "sha256": "9c0daa6f77752f805b7e865696e0d005130533af46b126a51b54893196638f8f"
+    },
+    {
+      "bytes": 27763,
+      "path": "architecture_app/architecture_pdf.py",
+      "sha256": "164d7e1f41b8120ea62eac6d65e7e8f7dca01f44cd098071cc1a5c3dc8b29ef1"
+    },
+    {
+      "bytes": 4208,
+      "path": "architecture_app/architecture_scope.py",
+      "sha256": "75682f40a1a860d66a7963baf4ccef554f90d3d9309783e6e6069e4c06b99bf6"
+    },
+    {
+      "bytes": 54363,
+      "path": "architecture_app/assistant_ui.py",
+      "sha256": "8e9c59309bca4ba22c161028243a1186fd2c5f3e42f4aa29324492f05cf7b00e"
+    },
+    {
+      "bytes": 6424,
+      "path": "architecture_app/assistant_workflow.py",
+      "sha256": "67c2763c81e73b7a98da1c0f0791b0d64a13c2f38a2e23cf25a237dc47c54ab7"
+    },
+    {
+      "bytes": 4921,
+      "path": "architecture_app/attachment_store.py",
+      "sha256": "71ecdffd904ee7b91b7e3037875c6f22a1f30e6da3f3a4c09c1a493732d4cd12"
+    },
+    {
+      "bytes": 13167,
+      "path": "architecture_app/attribute_spaces.py",
+      "sha256": "f40147aa66e70877fad74a073463c5368a8b6d5e2999b03683f37ece36b1cf55"
+    },
+    {
+      "bytes": 18637,
+      "path": "architecture_app/bus_content.py",
+      "sha256": "4d9b3a27c67b5977c88e5639e18e729943f90fcee7d8b541fa9aa7346a5daa19"
+    },
+    {
+      "bytes": 19810,
+      "path": "architecture_app/catalog_ui.py",
+      "sha256": "e3431f626f5cce48790c6fc46e8d0c73ecb31f4286993cc2caab4419e4bf4873"
+    },
+    {
+      "bytes": 10584,
+      "path": "architecture_app/comparison_ui.py",
+      "sha256": "ac3c939eff52c8ed91e943025f3af0188c5ccd20fc37c98997e03112775184e5"
+    },
+    {
+      "bytes": 4664,
+      "path": "architecture_app/credentials.py",
+      "sha256": "b60450dcc33e90da67650c40e8ae30c153f9c22be34f19301b427a250780b70b"
+    },
+    {
+      "bytes": 12669,
+      "path": "architecture_app/deletion.py",
+      "sha256": "91d3fabbace0595d8d21363eef63324e21969b52d73830997260659f70e766fa"
+    },
+    {
+      "bytes": 70448,
+      "path": "architecture_app/development_ui.py",
+      "sha256": "81d4a2906b927cfd9b726eb43c23dfefcf4613e9217312299df7dbe780739690"
+    },
+    {
+      "bytes": 35827,
+      "path": "architecture_app/diagram.py",
+      "sha256": "ad0cf5d53306ec28346a6f8e2d83dd72028f528e2252d44190fa16cc37a5be0f"
+    },
+    {
+      "bytes": 6373,
+      "path": "architecture_app/discipline_architecture.py",
+      "sha256": "b964151421ff60de7224e2d949c919dd5a2ebf9e31fc7fb2329010a3d83f047a"
+    },
+    {
+      "bytes": 39338,
+      "path": "architecture_app/document_analysis_ui.py",
+      "sha256": "9d652619b8c247076d3f2fddb66713f44afe3af869c5f46a6b0cf7e33de64472"
+    },
+    {
+      "bytes": 7381,
+      "path": "architecture_app/document_ingestion.py",
+      "sha256": "39aa0f31e1b58a898f126b7f78f8d03d69a65ba8105773310496b9c0e128d8bc"
+    },
+    {
+      "bytes": 1352,
+      "path": "architecture_app/ecad_connector.py",
+      "sha256": "6a55717d6c15066a663964b5ca47588e98e2232061d6ae6ce508ba69bccfb42a"
+    },
+    {
+      "bytes": 19487,
+      "path": "architecture_app/ecad_functional.py",
+      "sha256": "2eb69f0822785587b5680e8c1f6a6a41deb3dd0d24b11f46202ded35a846887c"
+    },
+    {
+      "bytes": 2647,
+      "path": "architecture_app/ecad_functional_links.py",
+      "sha256": "c7d6abd08e287a2c35e1cbe4416e354f85881f0f3892e030cbe5cf36ed2743c0"
+    },
+    {
+      "bytes": 10661,
+      "path": "architecture_app/ecad_inspector.py",
+      "sha256": "b8ffa5c67ee3f0a25a64e2630b26b0a8274020ed61f743b95281b2d6e06c5fc8"
+    },
+    {
+      "bytes": 2748,
+      "path": "architecture_app/ecad_pin_mapping.py",
+      "sha256": "a985178e7d19f90e9cf4712c72d03dc1ab08fb912c2e2abc34b641923150a66d"
+    },
+    {
+      "bytes": 1369,
+      "path": "architecture_app/ecad_references.py",
+      "sha256": "068c79e0b8733d949891b9f5df28e4c9e923ed50740de78a8e3dfff6bc3e7125"
+    },
+    {
+      "bytes": 17134,
+      "path": "architecture_app/ecad_ui.py",
+      "sha256": "27a177fee9ac7b35addb80bdc36c0612b877ce27b961473e7dcb886fd8c4b72a"
+    },
+    {
+      "bytes": 3735,
+      "path": "architecture_app/function_migration.py",
+      "sha256": "35b0218b69f6c527fb14c5a7658c20d0ad1f105a59f66a866eb73ef2932d4748"
+    },
+    {
+      "bytes": 10242,
+      "path": "architecture_app/handbook.py",
+      "sha256": "f1fb439e876b70f6163f876add597db3a64f53af224657b09345b234b4e33216"
+    },
+    {
+      "bytes": 930,
+      "path": "architecture_app/hardware_topology.py",
+      "sha256": "a6569377c18f8d7e15631e37c911823b50a759151ebe32b5c69e853f00fddc14"
+    },
+    {
+      "bytes": 14976,
+      "path": "architecture_app/help_ui.py",
+      "sha256": "b1ff85b12cdea4cb0d84c12b269e194b4f582deb4b849c5e6b8caf10437b39a7"
+    },
+    {
+      "bytes": 1428,
+      "path": "architecture_app/identity.py",
+      "sha256": "c65264f010f156a8d9b777e6ebcb44c1ea7f7a15fc94f10c6df92439c14bb0f1"
+    },
+    {
+      "bytes": 8156,
+      "path": "architecture_app/integration.py",
+      "sha256": "c4c504213c4789dd14a72c5bf6166ae83c9049395a5ff91d4f96cd95961d4538"
+    },
+    {
+      "bytes": 7658,
+      "path": "architecture_app/integration_ui.py",
+      "sha256": "dc5261225094f7e9927e27cbea779b013de82aee924fd5d452fbc7b0d8ca45e0"
+    },
+    {
+      "bytes": 6225,
+      "path": "architecture_app/interface_compilation.py",
+      "sha256": "80e073400747f691a4d8571c7fe88d4911324bed262eaf533301a4fd6e804d43"
+    },
+    {
+      "bytes": 1091,
+      "path": "architecture_app/kicad_cli.py",
+      "sha256": "83b96c4bd64e34653f84d9c33823dc2788ea2b284e3ffd5ac4470df327dca36b"
+    },
+    {
+      "bytes": 49561,
+      "path": "architecture_app/kicad_connector.py",
+      "sha256": "46ed13a81352b40dc7227eac7ef5099f84533a55c06a0abaafb3fb2a6f70b256"
+    },
+    {
+      "bytes": 31578,
+      "path": "architecture_app/kicad_forward.py",
+      "sha256": "f211033e74e467c4334d7e4de66bde20dabbfb8fd1b398ab7ffde0b99843c784"
+    },
+    {
+      "bytes": 5136,
+      "path": "architecture_app/kicad_layout.py",
+      "sha256": "651f4f6039d12f01434c618dfbaa9bb6886e923b25d609ed65104640b975af44"
+    },
+    {
+      "bytes": 9002,
+      "path": "architecture_app/kicad_local.py",
+      "sha256": "8dbd3343257ee03a62b23916e2960de5f1f024d69b24a2e201731ce085532e66"
+    },
+    {
+      "bytes": 10907,
+      "path": "architecture_app/kicad_native_import.py",
+      "sha256": "5765c4bd0df9affb17744dfd3287e23a5c18cb341be657a716591113ac103ed4"
+    },
+    {
+      "bytes": 40162,
+      "path": "architecture_app/kicad_project_readback.py",
+      "sha256": "05739577e0a6fd6019a811521985bc01ac6dd22934d0dea4e66aaa9dad93fda3"
+    },
+    {
+      "bytes": 18525,
+      "path": "architecture_app/kicad_readback.py",
+      "sha256": "de6c816ee9505f0defe5106fdc3a3e6c8905e22c1bd20334796e4d94bcdcd32a"
+    },
+    {
+      "bytes": 4978,
+      "path": "architecture_app/kicad_rules.py",
+      "sha256": "14c6f8e85cfc63911abfab2726e9ba45f4636e8a656180337583231baf742a20"
+    },
+    {
+      "bytes": 45994,
+      "path": "architecture_app/model_validation.py",
+      "sha256": "ab97b04bc7a224d213df656afb19bc7b0ef50df431e6214416bae1f213d9281e"
+    },
+    {
+      "bytes": 87293,
+      "path": "architecture_app/models.py",
+      "sha256": "9c3b87f458478b21748600f12af976d9f0a551d7d82f0811f6bc25db92130b51"
+    },
+    {
+      "bytes": 4299,
+      "path": "architecture_app/netclass_readback.py",
+      "sha256": "6c21f914a4e8fe0d404d646e8de2d1c27b26782417346b11a2bd464fe2452083"
+    },
+    {
+      "bytes": 21113,
+      "path": "architecture_app/netclasses.py",
+      "sha256": "e05dc338c3b7d01e64f36373ba7c26f5a248b59b1bec53d176965d22b2998497"
+    },
+    {
+      "bytes": 12147,
+      "path": "architecture_app/object_properties.py",
+      "sha256": "0d990b264fd6b5de34396b741110834945d031a1c753578e37e72d5fd9bdec7c"
+    },
+    {
+      "bytes": 1629,
+      "path": "architecture_app/package_preparation.py",
+      "sha256": "9b1a3f414f3be42ef19ecbd42d437acc9b82a3bdf155e2487c749ed86c4f053e"
+    },
+    {
+      "bytes": 950,
+      "path": "architecture_app/project_import.py",
+      "sha256": "b0eda1b238b6c2e632a76d5ac5dc3f592ed8e3119fbb9ca5f2185481cc343150"
+    },
+    {
+      "bytes": 5054,
+      "path": "architecture_app/project_import_ui.py",
+      "sha256": "90165a43a6aa48ff165a1a002b7fe011a8630388d22410b7be129cb270b6e1c8"
+    },
+    {
+      "bytes": 2841,
+      "path": "architecture_app/property_inputs.py",
+      "sha256": "68fdc1ac8094a162baca16ab3b39d94e8d44802c4abbd8422c1abbe7a3921d72"
+    },
+    {
+      "bytes": 18604,
+      "path": "architecture_app/property_manager.py",
+      "sha256": "8ae61e1060fc3c7767001c62cbbebff36b65b709f0e2025a84bfc86af516d31f"
+    },
+    {
+      "bytes": 43447,
+      "path": "architecture_app/property_schema.py",
+      "sha256": "2a1c322545caa7b8d9fb044b6b52306f062b2219c7ed8778e7c0d27e095bcbe6"
+    },
+    {
+      "bytes": 51351,
+      "path": "architecture_app/property_schema_v041.json",
+      "sha256": "f0390b9537d1d6187ef6219083745097c0fbe952380d0cf00086f0e7ad5ba6d5"
+    },
+    {
+      "bytes": 61514,
+      "path": "architecture_app/property_schema_v042.json",
+      "sha256": "21ec721e241490a07e2283c70cc505fa5389c180d8dfdfe594387ac286e28537"
+    },
+    {
+      "bytes": 67037,
+      "path": "architecture_app/property_schema_v043.json",
+      "sha256": "bd2f2ad778c02bdb4d3cf240c20def727508ad88b469c757ed9eda9e8f2a20dc"
+    },
+    {
+      "bytes": 57030,
+      "path": "architecture_app/property_schema_v048.json",
+      "sha256": "db1cebc848cdbb243b8cb50e289e569f00f63500dc4a15d03da6020608254f16"
+    },
+    {
+      "bytes": 5230,
+      "path": "architecture_app/realization_context_ui.py",
+      "sha256": "c485bebe0ae1c2db83497b67cb22774ea73cf2edd993181ca6bff3611a5798e4"
+    },
+    {
+      "bytes": 51480,
+      "path": "architecture_app/realization_dialogs_ui.py",
+      "sha256": "34c9fdb854faac0d147de48291000e780b704368d26212253dfccbaf0b86551b"
+    },
+    {
+      "bytes": 6968,
+      "path": "architecture_app/realization_focus.py",
+      "sha256": "599f60d4a7e4a0e1158b94f4017e9ceb93927056a578fc1ecb9ca222120e5ef1"
+    },
+    {
+      "bytes": 16769,
+      "path": "architecture_app/realization_focus_ui.py",
+      "sha256": "1224269bc7dc80d154599305014180f9d2f68a4a235e2a227e695c7b88ff5bca"
+    },
+    {
+      "bytes": 7522,
+      "path": "architecture_app/realization_service.py",
+      "sha256": "45f6b2e2c75773513fe0ff87b88e9c6725d049156fd958f6d59bdc5e45b3e617"
+    },
+    {
+      "bytes": 39556,
+      "path": "architecture_app/repository.py",
+      "sha256": "5261155fb4297f5ddf159be08314a22954c22bc505be0f91647426fde09128b5"
+    },
+    {
+      "bytes": 2556,
+      "path": "architecture_app/requirement_graph.py",
+      "sha256": "b02908b4c71ea1fb110a8d88d78889d2eb87794e668938d0dd28fb49b5e33471"
+    },
+    {
+      "bytes": 6458,
+      "path": "architecture_app/requirement_profiles.py",
+      "sha256": "17f719be8f1674faad8a00ac53bb348214c84674ab59bb45e18a41e681f2de83"
+    },
+    {
+      "bytes": 44600,
+      "path": "architecture_app/requirements_edit_ui.py",
+      "sha256": "99be7d92f46f3d5dd855d60e7194b3e154b74abdbb0f13d158ce39c191bfba1d"
+    },
+    {
+      "bytes": 24461,
+      "path": "architecture_app/requirements_exchange.py",
+      "sha256": "58314cf64d8b5e1920f3edcac3c65b95619452bfda012ed2445f88453807c7fd"
+    },
+    {
+      "bytes": 6708,
+      "path": "architecture_app/requirements_exchange_ui.py",
+      "sha256": "db05eaccea36c931c0fcb97cee833b2928f4dc5a09e03597f6854eae7d303735"
+    },
+    {
+      "bytes": 12792,
+      "path": "architecture_app/requirements_layers.py",
+      "sha256": "fed02db62683b81acae0b4c0d4a8ef796944c551afeaf6d0181cde7d7e392638"
+    },
+    {
+      "bytes": 6438,
+      "path": "architecture_app/requirements_navigation_ui.py",
+      "sha256": "f5648048d7ac224b96fbd372dfe5727bcacae554d889b3005365b5247c40c3db"
+    },
+    {
+      "bytes": 9754,
+      "path": "architecture_app/requirements_presentation.py",
+      "sha256": "f5d04221b4b3d5231996edd591c00f1521e7bda87175ada08105e0c32d55ee89"
+    },
+    {
+      "bytes": 107643,
+      "path": "architecture_app/requirements_service.py",
+      "sha256": "fdafff00ef13d5ba13b3f62c61ac7b678e1f45e2610314cdcbd46b17cdf56c6f"
+    },
+    {
+      "bytes": 220011,
+      "path": "architecture_app/requirements_ui.py",
+      "sha256": "34e82f80abf031c6c3dccf1c7579248fd4d4434fb20f50caadfa61c82d5f5a50"
+    },
+    {
+      "bytes": 3682,
+      "path": "architecture_app/reviewed_delta.py",
+      "sha256": "6831fe2b800e88caaf2c7c2a4be5f8ada92fc896d2e9631e1038e3f63d1ff478"
+    },
+    {
+      "bytes": 5348,
+      "path": "architecture_app/signal_naming.py",
+      "sha256": "062477efa7abbeda5baeb0d0b3ea2edcc2aa60348ff628e7f16b2f27c494ed57"
+    },
+    {
+      "bytes": 39789,
+      "path": "architecture_app/system_architecture.py",
+      "sha256": "20818098ca85d53e589103687025f6af321da77f0efc8bfc3239d30bf73f4e22"
+    },
+    {
+      "bytes": 12186,
+      "path": "architecture_app/technical_comparison.py",
+      "sha256": "b4de1f39ec0660db19280f40f4ab67ab255d87a758f6ae80ad1b9a09661f4f3d"
+    },
+    {
+      "bytes": 21642,
+      "path": "architecture_app/technical_sources_ui.py",
+      "sha256": "f2958ac856d0668ba1047513d9e61ff72922aece2333fe5fef5b1e8513e46989"
+    },
+    {
+      "bytes": 8128,
+      "path": "architecture_app/technical_values_ui.py",
+      "sha256": "a76eb730cfed6b2d9e5edc72dbe2ae3716bdd9196c71a214bd7cc0e9519c4e08"
+    },
+    {
+      "bytes": 23296,
+      "path": "architecture_app/topology.py",
+      "sha256": "d26693ce10be39a27d7672b40a52b7f7695e9ec95c1a317a748f80d0abb3f4dc"
+    },
+    {
+      "bytes": 23348,
+      "path": "architecture_app/traceability.py",
+      "sha256": "20c5805155f0f0c1dcb82bda9f6d2177274bbf6222c1d74b4d5a430c0d6c8ae7"
+    },
+    {
+      "bytes": 6351,
+      "path": "architecture_app/traceability_ui.py",
+      "sha256": "8e07f1a3c15300653ea731fc66b683f9aa27c7a979d18d63135f80b674768538"
+    },
+    {
+      "bytes": 27914,
+      "path": "architecture_app/ui_assets.py",
+      "sha256": "ec52fe373487fe10a5804b2adf4b0a8164c9e54d6764821fb06a4d6aa6e87070"
+    },
+    {
+      "bytes": 2483,
+      "path": "architecture_app/xpedition_adapter.py",
+      "sha256": "55b4a0125e386b60664ec7e4072b82d931bbfc059672b6896f6e65f9b017b16c"
+    },
+    {
+      "bytes": 5647,
+      "path": "architecture_app/xpedition_cli.py",
+      "sha256": "629b3ba3bc9b8bd3170dd91695c227011ad04706a2642d86c70b7ac227b6dc31"
+    },
+    {
+      "bytes": 32222,
+      "path": "architecture_app/xpedition_com.py",
+      "sha256": "a1644a5799c6529973bfa4a7957a213e2800d10ea447386b705a4fb6ff4b2383"
+    },
+    {
+      "bytes": 8124,
+      "path": "architecture_app/xpedition_connector.py",
+      "sha256": "e320b8ef0b09214470da234582421f085bb1aca57ccce6497b7dbba2150d5f4b"
+    },
+    {
+      "bytes": 8522,
+      "path": "architecture_app/xpedition_exchange.py",
+      "sha256": "79254c7430f7691beb16df182fa05ccdb2f2440f7a1843a9ae91f9ef7235efc1"
+    },
+    {
+      "bytes": 9152,
+      "path": "architecture_app/xpedition_ui.py",
+      "sha256": "f31600557cdb6ce8ff0a35862cf018610d0eeee6d7bc0bb28caa83e5b5dc52f5"
+    },
+    {
+      "bytes": 1231,
+      "path": "changelogs/CHANGELOG_v0.51.1.md",
+      "sha256": "296c32b80fb87b345b39c55085646d0e8296768cdfa82f685e63380401921f62"
+    },
+    {
+      "bytes": 21345,
+      "path": "docs/ARCHITEKTUR.md",
+      "sha256": "c75339ed7278418c06ba7517d2e3b4caebf188f78670d8445c81109aa9922243"
+    },
+    {
+      "bytes": 143274,
+      "path": "docs/HANDBUCH_ISD_SUITE.md",
+      "sha256": "cc12f1972c7da0c1bbef1af3e00265d8306c54bbaf8a00d2b917a98a1cbcdab2"
+    },
+    {
+      "bytes": 1830,
+      "path": "docs/PRUEFBERICHT_v0.51.1.md",
+      "sha256": "3e0595595ba818ccbd0763afa1ede5de30dca1971461eea6d1de0ed3dfd7ddca"
+    },
+    {
+      "bytes": 94,
+      "path": "main.py",
+      "sha256": "f1894ae7daf59a67c683b3403482df3b5412f5d0fa65e7e442ef0ab97334f206"
+    },
+    {
+      "bytes": 266,
+      "path": "requirements.txt",
+      "sha256": "2224fb70775fc91e03a567c26f03a85f86c062286dd1cc19ef80557562badaf2"
+    },
+    {
+      "bytes": 2133,
+      "path": "start_windows.bat",
+      "sha256": "9bb6127e583ead8dca7bf9ef4c15f1c19273239179608390f0f41cc446d1fe4e"
+    },
+    {
+      "bytes": 14443,
+      "path": "vendor/ELK_LICENSE.md",
+      "sha256": "637e81f4a1b6b4079535c499fca05e238cf7605c1ff5b76d60d7da7ce96700c9"
+    },
+    {
+      "bytes": 21515,
+      "path": "vendor/architecture_canvas.js",
+      "sha256": "aee13c034a6397f2b6201d527fd8c570a1d6dc36ff7109377ee3612009f30f8d"
+    },
+    {
+      "bytes": 1609707,
+      "path": "vendor/elk.bundled.js",
+      "sha256": "1222e44f953ce7746af23801e723708f8e6f436b8b377a6a5fc7552f34a307b3"
+    },
+    {
+      "bytes": 9219,
+      "path": "vendor/requirements_graph.js",
+      "sha256": "87948a0be3db5c56190b79480e8a25745b7c739fc14b948057d1c3d3d4e65a53"
+    }
+  ],
+  "kind": "application",
+  "version": "0.51.1"
+}

@@ -1,0 +1,53 @@
+{
+  "format": "sysml2-xped-auto-map/v1",
+  "model_name": "Generic_Architecture",
+  "ids": {
+    "{36D7739B-780D-50A5-92C2-AF223B6EB021}": {
+      "kind": "system",
+      "source_id": "Generic_Architecture",
+      "path": "Generic_Architecture"
+    },
+    "{51A55FB3-EAB6-53FE-A4CC-DF91FAD77040}": {
+      "kind": "domain",
+      "source_id": "BLK-5D3D5D5154",
+      "path": "PSU"
+    },
+    "{B745CB1D-0902-5734-B787-E5787EA00CEE}": {
+      "kind": "ae",
+      "source_id": "BLK-852E3DB2DA",
+      "path": "PSU.PSU_SmC"
+    },
+    "{D3FB3EC3-B5E3-5FE8-B26D-030C28DEDA4E}": {
+      "kind": "ae-port",
+      "source_id": "PRT-A85E28F3A3",
+      "path": "PSU.PSU_SmC.UART_Link_1"
+    },
+    "{A34FA919-D3FD-53C9-B1CA-CD7FDE27D90A}": {
+      "kind": "ae-port",
+      "source_id": "PRT-BD8E94A077",
+      "path": "PSU.PSU_SmC.RES#_PSU_INFO_1V8"
+    }
+  },
+  "nets": {
+    "{DC7EDF0B-6C15-5ABC-BFAD-A6F4F682BF51}": {
+      "source_id": "NET-0EF5AEA09B",
+      "name": "UART_Link_1",
+      "endpoints": [
+        [
+          "PSU.PSU_SmC",
+          "UART_Link_1"
+        ]
+      ]
+    },
+    "{18E62E58-CA03-5E3C-9E22-5C069DFA4CA3}": {
+      "source_id": "NET-52AFE7B6D6",
+      "name": "RES#_PSU_INFO_1V8",
+      "endpoints": [
+        [
+          "PSU.PSU_SmC",
+          "RES#_PSU_INFO_1V8"
+        ]
+      ]
+    }
+  }
+}

@@ -1,0 +1,18 @@
+EDB - Dokumentenmappe zum Konzept
+Version 0.1, 25.10.2026
+
+Inhalt
+1. EDB_Kurzueberblick_v0.1.pdf
+   Einseitiger Einstieg zum Weitergeben.
+2. EDB_Highlevel_Mindmap_v0.1.pdf
+   Konzeptübersicht im A3-Querformat.
+3. EDB_Konzeptbroschuere_v0.1.pdf
+   Siebenseitige Erläuterung für Kunden und Entwicklungspartner.
+4. EDB_Praesentation_v0.1.url
+   Verweis auf die bearbeitbare Präsentation mit 11 Folien.
+
+Präsentation öffnen:
+https://chatgpt.com/space/page_0a849f7cf91c8191abf0e968d0fa33a2
+
+Die Mappe beschreibt den gemeinsam erarbeiteten Konzeptstand.
+Sie enthält keine ausgearbeitete technische Architektur oder Detailanforderungen.

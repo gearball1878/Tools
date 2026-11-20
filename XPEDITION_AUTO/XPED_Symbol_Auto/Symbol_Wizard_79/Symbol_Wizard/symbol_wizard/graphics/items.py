@@ -1,0 +1,1544 @@
+from __future__ import annotations
+import math
+from PySide6.QtCore import QPointF, QRectF, Qt, QEvent
+from PySide6.QtGui import QColor, QFont, QPainter, QPen, QBrush, QTransform, QTextCursor, QCursor, QPainterPath, QTextOption, QFontMetricsF, QPainterPathStroker
+from PySide6.QtWidgets import QGraphicsItem, QGraphicsRectItem, QGraphicsTextItem, QApplication
+from symbol_wizard.models.document import PinSide, LineStyle
+from symbol_wizard.rules.grid import snap
+
+
+def rgb(c):
+    return QColor(*c)
+
+
+def mentor_pin_color(pin_type):
+    return {
+        'IN': (0, 80, 220), 'OUT': (220, 0, 0),
+        'BIDI': (160, 0, 180), 'BI': (160, 0, 180),
+        'POWER': (230, 120, 0), 'GROUND': (0, 150, 0),
+        'ANALOG': (0, 150, 170), 'PASSIVE': (0, 0, 0),
+    }.get(str(pin_type or '').upper(), (0, 0, 0))
+
+def is_default_black(color):
+    try:
+        return tuple(color) == (0, 0, 0)
+    except Exception:
+        return True
+
+def pen_for(color, width_grid, style, grid_px):
+    p = QPen(rgb(color), max(1, width_grid * grid_px))
+    p.setStyle({
+        LineStyle.SOLID.value: Qt.SolidLine,
+        LineStyle.DASH.value: Qt.DashLine,
+        LineStyle.DOT.value: Qt.DotLine,
+        LineStyle.DASH_DOT.value: Qt.DashDotLine,
+    }.get(style, Qt.SolidLine))
+    return p
+
+
+
+
+def _text_qfont(model, px_size):
+    font = QFont(getattr(model, 'font_family', 'Arial'), max(6, int(px_size)))
+    try:
+        font.setBold(bool(getattr(model, 'bold', False)))
+        font.setItalic(bool(getattr(model, 'italic', False)))
+        font.setUnderline(bool(getattr(model, 'underline', False)))
+    except Exception:
+        pass
+    return font
+
+
+def _select_only_this_item(item, event):
+    try:
+        if event.button() != Qt.LeftButton:
+            return
+        if event.modifiers() & (Qt.ControlModifier | Qt.ShiftModifier):
+            return
+        sc = item.scene()
+        if sc is None:
+            return
+        selected = list(sc.selectedItems())
+        if len(selected) <= 1 and (not selected or selected[0] is item):
+            return
+        sc.blockSignals(True)
+        try:
+            for other in selected:
+                if other is not item:
+                    other.setSelected(False)
+            item.setSelected(True)
+        finally:
+            sc.blockSignals(False)
+        win = getattr(item, 'window', None) or getattr(sc, 'window', None)
+        if win is not None:
+            try:
+                win.refresh_properties()
+            except Exception:
+                pass
+    except Exception:
+        pass
+class TransformMixin:
+    handle_size_factor = .32
+    rotate_handle_factor = .32
+
+    def apply_transform_from_model(self):
+        def f(name, default):
+            try:
+                return float(getattr(self.model, name, default) or default)
+            except (TypeError, ValueError):
+                return default
+        sx, sy, rot = f('scale_x', 1.0), f('scale_y', 1.0), f('rotation', 0.0)
+        self.model.scale_x, self.model.scale_y, self.model.rotation = sx, sy, rot
+        try:
+            br = self.boundingRect()
+            self.setTransformOriginPoint(br.center())
+        except Exception:
+            pass
+        self.setTransform(QTransform().scale(sx, sy))
+        self.setRotation(rot)
+
+    def flip_horizontal(self):
+        self.model.scale_x = -float(getattr(self.model, 'scale_x', 1.0) or 1.0)
+        self.apply_transform_from_model()
+        self.update()
+
+    def flip_vertical(self):
+        self.model.scale_y = -float(getattr(self.model, 'scale_y', 1.0) or 1.0)
+        self.apply_transform_from_model()
+        self.update()
+
+    def common_flags(self):
+        self.setAcceptHoverEvents(True)
+        self.setFlags(
+            QGraphicsItem.ItemIsMovable
+            | QGraphicsItem.ItemIsSelectable
+            | QGraphicsItem.ItemSendsGeometryChanges
+            | QGraphicsItem.ItemIsFocusable
+        )
+
+    def itemChange(self, change, value):
+        # Imported Mentor BODY primitives are one locked geometric BODY group.
+        # They must never be individually grid-snapped by QGraphicsItem while
+        # the logical BodyItem moves the group; otherwise lines/arcs drift apart.
+        if getattr(getattr(self, 'model', None), 'locked_to_body', False):
+            if change == QGraphicsItem.ItemPositionHasChanged and self.scene():
+                self.update_model_pos()
+            return super().itemChange(change, value)
+        if change == QGraphicsItem.ItemPositionChange and self.scene():
+            win = self.scene().window
+            # In the Template Editor, moving an item directly on the canvas must
+            # create an undo snapshot before Qt applies the new position.  Many
+            # item classes do not have their own mousePress undo hook, so this
+            # central hook covers Body, Pin, Text and Graphic moves consistently.
+            try:
+                if (getattr(win, 'is_template_editor', False)
+                        and not getattr(win, '_loading_template', False)
+                        and not getattr(win, '_restoring_undo_redo', False)
+                        and (QApplication.mouseButtons() & Qt.LeftButton)
+                        and not getattr(self, '_undo_state_pushed_for_drag', False)):
+                    win.push_undo_state()
+                    self._undo_state_pushed_for_drag = True
+            except Exception:
+                pass
+            snap_enabled = not bool(getattr(win, 'template_snap_check', None) and not win.template_snap_check.isChecked())
+            if snap_enabled:
+                # Use the active edit grid in the normal Symbol Wizard as well.
+                # This keeps copied/pasted pins on the same raster that the user is
+                # currently editing with (0.100/0.050/0.025 inch).
+                g = float(getattr(win, 'edit_grid_px', self.scene().grid_px) or self.scene().grid_px)
+                return QPointF(snap(value.x(), g), snap(value.y(), g))
+        if change == QGraphicsItem.ItemPositionHasChanged and self.scene():
+            self.update_model_pos()
+            # Do not rebuild the scene while dragging; this keeps canvas editing smooth.
+            try:
+                self.scene().window.notify_canvas_model_changed()
+            except Exception:
+                self.scene().window.live_refresh()
+        return super().itemChange(change, value)
+
+    def update_model_pos(self):
+        pass
+
+    def rotate_by(self, deg):
+        try:
+            cur = float(getattr(self.model, 'rotation', 0.0) or 0.0)
+        except (TypeError, ValueError):
+            cur = 0.0
+        self.model.rotation = (round((cur + float(deg)) / 15.0) * 15.0) % 360
+        self.apply_transform_from_model()
+        self.update()
+
+    def scale_selected(self, factor):
+        if hasattr(self.model, 'font_size_grid'):
+            self.model.font_size_grid = max(.1, self.model.font_size_grid * factor)
+            g = self.scene().grid_px
+            self.setFont(_text_qfont(self.model, g * self.model.font_size_grid * .45))
+        elif hasattr(self.model, 'length'):
+            self.model.length = max(.1, self.model.length * factor)
+        self.update()
+
+    def scale_by(self, factor):
+        """Public toolbar-compatible scale hook for transformable items."""
+        return self.scale_selected(factor)
+
+
+def _corner_handles(rect: QRectF, s: float):
+    return {
+        'tl': QRectF(rect.left() - s / 2, rect.top() - s / 2, s, s),
+        'tr': QRectF(rect.right() - s / 2, rect.top() - s / 2, s, s),
+        'bl': QRectF(rect.left() - s / 2, rect.bottom() - s / 2, s, s),
+        'br': QRectF(rect.right() - s / 2, rect.bottom() - s / 2, s, s),
+        'l': QRectF(rect.left() - s / 2, rect.center().y() - s / 2, s, s),
+        'r': QRectF(rect.right() - s / 2, rect.center().y() - s / 2, s, s),
+        't': QRectF(rect.center().x() - s / 2, rect.top() - s / 2, s, s),
+        'b': QRectF(rect.center().x() - s / 2, rect.bottom() - s / 2, s, s),
+    }
+
+
+def _hit_handle(handles, pos):
+    for name, r in handles.items():
+        if r.contains(pos):
+            return name
+    return None
+
+def _cursor_for_handle(name):
+    if name in ('l', 'r'):
+        return Qt.SizeHorCursor
+    if name in ('t', 'b'):
+        return Qt.SizeVerCursor
+    if name in ('tl', 'br'):
+        return Qt.SizeFDiagCursor
+    if name in ('tr', 'bl'):
+        return Qt.SizeBDiagCursor
+    if name == 'rot':
+        return Qt.CrossCursor
+    return Qt.ArrowCursor
+
+def _rotation_handle(rect: QRectF, s: float):
+    return QRectF(rect.center().x() - s / 2, rect.top() - 1.8 * s, s, s)
+
+def _angle_from(center: QPointF, p: QPointF):
+    return math.degrees(math.atan2(p.y() - center.y(), p.x() - center.x()))
+
+
+def _plain_canvas_text_item(item) -> bool:
+    try:
+        return (getattr(item, 'data', lambda *_: None)(0) == 'TEXT'
+                and getattr(item, 'model', None) is not None
+                and not bool(getattr(item.model, '_is_attribute_text', False)))
+    except Exception:
+        return False
+
+
+def _body_item_candidates_for_window(window):
+    try:
+        items = list(window.scene.items())
+    except Exception:
+        return []
+    body_items = []
+    body_graphics = []
+    for item in items:
+        try:
+            kind = item.data(0)
+        except Exception:
+            continue
+        if kind == 'BODY':
+            body_items.append(item)
+        elif kind == 'BODY_GRAPHIC':
+            body_graphics.append(item)
+    return body_items or body_graphics
+
+
+def _hit_tolerance_px(window, factor: float = 0.26, minimum: float = 10.0) -> float:
+    """Comfort hit width for selecting thin canvas objects."""
+    try:
+        return max(float(minimum), float(getattr(window, 'grid_px', 40.0) or 40.0) * float(factor))
+    except Exception:
+        return float(minimum)
+
+
+def _swap_h_align(value):
+    v = str(value or '').lower()
+    if v == 'left':
+        return 'right'
+    if v == 'right':
+        return 'left'
+    return value
+
+
+def _swap_v_align(value):
+    v = str(value or '').lower()
+    if v == 'upper':
+        return 'lower'
+    if v == 'lower':
+        return 'upper'
+    return value
+
+
+def _normalize_text_scale(model):
+    """Keep text readable after flip operations.
+
+    Existing templates may already contain negative text scale values from older
+    mirror patches.  For plain text, body attributes and pin-owned attributes,
+    negative scale must not be interpreted as a glyph mirror; only the grid
+    anchor is mirrored.
+    """
+    for attr in ('scale_x', 'scale_y'):
+        try:
+            value = abs(float(getattr(model, attr, 1.0) or 1.0))
+        except Exception:
+            value = 1.0
+        try:
+            setattr(model, attr, value)
+        except Exception:
+            pass
+
+
+def _flip_scale_attr(model, attr):
+    # Kept for compatibility with older imports; text mirror behaviour now uses
+    # anchor movement plus positive text scale.
+    _normalize_text_scale(model)
+
+
+class BodyItem(TransformMixin, QGraphicsRectItem):
+    def __init__(self, model, window):
+        self.model = model
+        self.window = window
+        self._resizing = None
+        self._rotating = False
+        self._resize_anchor_scene = None
+        self._resize_start = None
+        self._rotating = False
+        self._rotate_start_angle = 0.0
+        self._rotate_start_model = 0.0
+        self._rotate_center_scene = QPointF()
+        self._last_model_pos = (model.x, model.y)
+        g = window.grid_px
+        super().__init__(0, 0, model.width * g, model.height * g)
+        self.setPos(model.x * g, -model.y * g)
+        self.setPen(pen_for(model.color, model.line_width, model.line_style, g))
+        self.setBrush(QBrush(Qt.NoBrush))
+        self.common_flags()
+        self.setData(0, 'BODY')
+        self.apply_transform_from_model()
+
+    def update_model_pos(self):
+        g = self.window.grid_px
+        old_x, old_y = self._last_model_pos
+        self.model.x = self.pos().x() / g
+        self.model.y = -self.pos().y() / g
+        dx, dy = self.model.x - old_x, self.model.y - old_y
+        if abs(dx) > 1e-9 or abs(dy) > 1e-9:
+            self.window.move_current_unit_group(dx, dy, source_body=self.model)
+            self.window.update_current_unit_canvas_positions()
+        self._last_model_pos = (self.model.x, self.model.y)
+
+    def _handles(self):
+        return _corner_handles(self.rect(), self.window.grid_px * self.handle_size_factor)
+
+    def paint(self, painter, option, widget=None):
+        # Native Mentor imports use imported primitives as visible BODY.  In the
+        # Symbol Wizard the body is a non-editable logical anchor, but it should
+        # still be visually recognizable.  Therefore draw only a lightweight
+        # highlight frame there.  In the Template Editor the body remains fully
+        # editable and gets the normal handles.
+        graphics_as_body = False
+        try:
+            attrs = getattr(self.model, 'attributes', {}) or {}
+            graphics_as_body = str(attrs.get('MENTOR_GRAPHICS_AS_BODY', '0')) == '1'
+        except Exception:
+            pass
+        if graphics_as_body:
+            # Imported/template symbols behave like internally created symbols,
+            # but their visible BODY is the imported artwork itself.  Do not draw
+            # a proxy rectangle.  When selected, show only lightweight corner /
+            # rotation handles so the user sees the BODY selection without
+            # mistaking a helper frame for real geometry.
+            if self.isSelected():
+                painter.save()
+                painter.setPen(QPen(QColor(0, 150, 170), 1))
+                painter.setBrush(QBrush(QColor(255, 255, 255)))
+                for r in self._handles().values():
+                    painter.drawRect(r)
+                painter.drawEllipse(_rotation_handle(self.rect(), self.window.grid_px * self.rotate_handle_factor))
+                painter.restore()
+            return
+        super().paint(painter, option, widget)
+        if self.isSelected():
+            painter.save()
+            painter.setPen(QPen(QColor(0, 150, 170) if graphics_as_body else QColor(40, 40, 40), 1))
+            painter.setBrush(QBrush(QColor(255, 255, 255)))
+            for r in self._handles().values():
+                painter.drawRect(r)
+            painter.drawEllipse(_rotation_handle(self.rect(), self.window.grid_px * self.rotate_handle_factor))
+            painter.restore()
+
+    def hoverMoveEvent(self, event):
+        if self.isSelected():
+            h = 'rot' if _rotation_handle(self.rect(), self.window.grid_px * self.rotate_handle_factor).contains(event.pos()) else _hit_handle(self._handles(), event.pos())
+            self.setCursor(QCursor(_cursor_for_handle(h)) if h else QCursor(Qt.ArrowCursor))
+        super().hoverMoveEvent(event)
+
+    def hoverLeaveEvent(self, event):
+        self.unsetCursor()
+        super().hoverLeaveEvent(event)
+
+    def mousePressEvent(self, event):
+        _select_only_this_item(self, event)
+        self._undo_state_pushed_for_drag = False
+        if self.isSelected() and event.button() == Qt.LeftButton:
+            # Body move/resize/rotate changes multiple attached objects (pins, texts, graphics,
+            # body attributes).  Save the state before Qt starts moving the item so Ctrl+Z
+            # restores the complete pre-move group state.
+            try:
+                self.window.push_undo_state()
+                self._undo_state_pushed_for_drag = True
+            except Exception:
+                pass
+        if self.isSelected():
+            if _rotation_handle(self.rect(), self.window.grid_px * self.rotate_handle_factor).contains(event.pos()):
+                self._rotating = True
+                self._rotate_center_scene = self.mapToScene(self.boundingRect().center())
+                self._rotate_start_angle = _angle_from(self._rotate_center_scene, event.scenePos())
+                self._rotate_start_model = float(getattr(self.model, 'rotation', 0.0) or 0.0)
+                event.accept(); return
+            h = _hit_handle(self._handles(), event.pos())
+            if h:
+                self._resizing = h
+                self._resize_start = {
+                    'x': float(self.model.x),
+                    'y': float(self.model.y),
+                    'w': float(self.model.width),
+                    'h': float(self.model.height),
+                    'pins': [(p, float(p.x), float(p.y), float(p.length)) for p in self.window.current_unit.pins],
+                    'texts': [(t, float(t.x), float(t.y)) for t in self.window.current_unit.texts],
+                    'attributes': [(t, float(t.x), float(t.y)) for t in getattr(self.window.current_unit.body, 'attribute_texts', {}).values()],
+                    'graphics': [(gr, float(gr.x), float(gr.y), float(gr.w), float(gr.h)) for gr in self.window.current_unit.graphics],
+                }
+                event.accept()
+                return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if getattr(self, '_rotating', False):
+            delta = _angle_from(self._rotate_center_scene, event.scenePos()) - self._rotate_start_angle
+            target = (round((self._rotate_start_model + delta) / 90.0) * 90.0) % 360
+            step = target - float(getattr(self.model, 'rotation', 0.0) or 0.0)
+            if abs(step) > 180:
+                step -= 360 if step > 0 else -360
+            if abs(step) > 1e-9:
+                try:
+                    self.window._transform_unit_as_body_group('rotate', step, refresh=False)
+                    self.window.update_current_unit_canvas_positions()
+                except Exception:
+                    self.model.rotation = target
+                    self.apply_transform_from_model()
+            try:
+                self.window.notify_canvas_model_changed()
+            except Exception:
+                self.window.live_refresh()
+            event.accept(); return
+        if self._resizing and self._resize_start is not None:
+            g = self.window.grid_px
+            p = QPointF(snap(event.scenePos().x(), self.window.edit_grid_px), snap(event.scenePos().y(), self.window.edit_grid_px))
+            st = self._resize_start
+
+            left = st['x'] * g
+            top = -st['y'] * g
+            right = left + st['w'] * g
+            bottom = top + st['h'] * g
+
+            # Edge handles resize exactly one axis. Corner handles resize both axes.
+            if self._resizing in ('l', 'tl', 'bl'):
+                left = p.x()
+            if self._resizing in ('r', 'tr', 'br'):
+                right = p.x()
+            if self._resizing in ('t', 'tl', 'tr'):
+                top = p.y()
+            if self._resizing in ('b', 'bl', 'br'):
+                bottom = p.y()
+
+            min_size = g
+            if right < left:
+                left, right = right, left
+            if bottom < top:
+                top, bottom = bottom, top
+            if right - left < min_size:
+                if self._resizing in ('l', 'tl', 'bl'):
+                    left = right - min_size
+                else:
+                    right = left + min_size
+            if bottom - top < min_size:
+                if self._resizing in ('t', 'tl', 'tr'):
+                    top = bottom - min_size
+                else:
+                    bottom = top + min_size
+
+            old = (self.model.x, self.model.y, self.model.width, self.model.height)
+            new_x = left / g
+            new_y = -top / g
+            new_w = (right - left) / g
+            new_h = (bottom - top) / g
+
+            self.prepareGeometryChange()
+            self.setPos(left, top)
+            self.setRect(0, 0, new_w * g, new_h * g)
+            self.model.x, self.model.y, self.model.width, self.model.height = new_x, new_y, new_w, new_h
+            self._last_model_pos = (new_x, new_y)
+
+            self.window.scale_current_unit_children_from_body_resize(st, self.model)
+            self.window.update_current_unit_canvas_positions()
+            try:
+                self.window.notify_canvas_model_changed()
+            except Exception:
+                self.window.live_refresh()
+            self.update()
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self._undo_state_pushed_for_drag = False
+        self._resizing = None
+        self._resize_anchor_scene = None
+        self._resize_start = None
+        self.window.enforce_symbol_size_limit(silent=True)
+        self.window.update_current_unit_canvas_positions()
+        self.window.update_attribute_items_for_unit()
+        self.window.rebuild_tree()
+        self.window.rebuild_pin_table()
+        self.scene().update()
+        try:
+            self.window.refresh_properties()
+        except Exception:
+            pass
+        super().mouseReleaseEvent(event)
+
+    def rotate_by(self, deg):
+        try:
+            self.window._transform_unit_as_body_group('rotate', deg)
+        except Exception:
+            super().rotate_by(deg)
+
+    def flip_horizontal(self):
+        try:
+            self.window._transform_unit_as_body_group('flip_h')
+        except Exception:
+            super().flip_horizontal()
+
+    def flip_vertical(self):
+        try:
+            self.window._transform_unit_as_body_group('flip_v')
+        except Exception:
+            super().flip_vertical()
+
+    def scale_selected(self, factor):
+        try:
+            self.window._transform_unit_as_body_group('scale', factor)
+        except Exception:
+            st = {
+                'x': float(self.model.x), 'y': float(self.model.y),
+                'w': float(self.model.width), 'h': float(self.model.height),
+                'pins': [(p, float(p.x), float(p.y), float(p.length)) for p in self.window.current_unit.pins],
+                'texts': [(t, float(t.x), float(t.y)) for t in self.window.current_unit.texts],
+                'attributes': [(t, float(t.x), float(t.y)) for t in getattr(self.window.current_unit.body, 'attribute_texts', {}).values()],
+                'graphics': [(gr, float(gr.x), float(gr.y), float(gr.w), float(gr.h)) for gr in self.window.current_unit.graphics],
+            }
+            self.model.width = max(1, round(self.model.width * factor))
+            self.model.height = max(1, round(self.model.height * factor))
+            g = self.window.grid_px
+            self.setRect(0, 0, self.model.width * g, self.model.height * g)
+            self.window.scale_current_unit_children_from_body_resize(st, self.model)
+            self.window.update_current_unit_canvas_positions()
+        self.window.update_attribute_items_for_unit()
+        try:
+            self.window.refresh_properties()
+        except Exception:
+            pass
+        self.update()
+
+
+class PinItem(TransformMixin, QGraphicsItem):
+    def __init__(self, model, window):
+        super().__init__()
+        self.model = model
+        self.window = window
+        g = window.grid_px
+        self.setPos(model.x * g, -model.y * g)
+        self.common_flags()
+        self.setData(0, 'PIN')
+        self.apply_transform_from_model()
+
+    def boundingRect(self):
+        # Keep a generous repaint area for labels/handles, but do not use this
+        # rectangle as the mouse hit area.  shape() below is intentionally tight
+        # so pins do not block selection of nearby body/text/graphic objects.
+        g = self.window.grid_px
+        return QRectF(-6 * g, -1.6 * g, 12 * g, 3.2 * g)
+
+    def shape(self):
+        g = self.window.grid_px
+        L = float(getattr(self.model, 'length', 1.0) or 1.0) * g
+        m = self.model
+        if m.side == PinSide.LEFT.value:
+            p1, p2 = QPointF(-L, 0), QPointF(0, 0)
+        elif m.side == PinSide.TOP.value:
+            p1, p2 = QPointF(0, -L), QPointF(0, 0)
+        elif m.side == PinSide.BOTTOM.value:
+            p1, p2 = QPointF(0, L), QPointF(0, 0)
+        else:
+            p1, p2 = QPointF(0, 0), QPointF(L, 0)
+        path = QPainterPath(p1)
+        path.lineTo(p2)
+        # Comfortable hit boxes for thin pin geometry. Labels are painted by the pin
+        # but do not make the pin selection area huge.
+        s = max(10.0, 0.34 * g)
+        path.addRect(QRectF(p1.x() - s/2, p1.y() - s/2, s, s))
+        path.addRect(QRectF(p2.x() - s/2, p2.y() - s/2, s, s))
+        if bool(getattr(m, 'inverted', False)):
+            r = max(4.0, .20 * g)
+            bx = (-r if m.side == PinSide.LEFT.value else (r if m.side == PinSide.RIGHT.value else 0))
+            by = (0 if m.side in (PinSide.LEFT.value, PinSide.RIGHT.value) else (-r if m.side == PinSide.TOP.value else r))
+            path.addEllipse(QPointF(bx, by), r, r)
+        stroker = QPainterPathStroker()
+        stroker.setWidth(_hit_tolerance_px(self.window, 0.30, 12.0))
+        return stroker.createStroke(path).united(path)
+    def paint(self, painter, option, widget=None):
+        g, m = self.window.grid_px, self.model
+        L = m.length * g
+        line_color = m.color
+        # Native Mentor/Xpedition symbols usually do not store RGB colors.
+        # In the Wizard UI they are colored semantically from PINTYPE while
+        # the native .sym export remains colorless/standard Mentor.
+        try:
+            if getattr(self.window.symbol, 'template_name', '') == 'mentor_native_origin' and is_default_black(line_color):
+                line_color = mentor_pin_color(getattr(m, 'pin_type', ''))
+        except Exception:
+            pass
+        painter.setPen(pen_for(line_color, m.line_width, m.line_style, g))
+        painter.setBrush(QBrush(Qt.NoBrush))
+        if m.side == PinSide.LEFT.value:
+            x1, y1, x2, y2 = -L, 0, 0, 0
+        elif m.side == PinSide.TOP.value:
+            x1, y1, x2, y2 = 0, -L, 0, 0
+        elif m.side == PinSide.BOTTOM.value:
+            x1, y1, x2, y2 = 0, L, 0, 0
+        else:
+            x1, y1, x2, y2 = 0, 0, L, 0
+        painter.drawLine(QPointF(x1, y1), QPointF(x2, y2))
+        if m.inverted:
+            r = .18 * g
+            painter.drawEllipse(QPointF((-r if m.side == PinSide.LEFT.value else (r if m.side == PinSide.RIGHT.value else 0)), (0 if m.side in (PinSide.LEFT.value, PinSide.RIGHT.value) else (-r if m.side == PinSide.TOP.value else r))), r, r)
+        num_color = getattr(m.number_font, 'color', (0, 0, 0))
+        try:
+            if getattr(self.window.symbol, 'template_name', '') == 'mentor_native_origin' and is_default_black(num_color):
+                num_color = line_color
+        except Exception:
+            pass
+        painter.setPen(pen_for(num_color, m.line_width, m.line_style, g))
+        painter.setFont(QFont(m.number_font.family, max(6, int(g * m.number_font.size_grid * .45))))
+        def _qt_align(h, v):
+            ha = {'left': Qt.AlignLeft, 'center': Qt.AlignHCenter, 'right': Qt.AlignRight}.get(str(h or '').lower(), Qt.AlignHCenter)
+            va = {'upper': Qt.AlignTop, 'center': Qt.AlignVCenter, 'lower': Qt.AlignBottom}.get(str(v or '').lower(), Qt.AlignVCenter)
+            return ha | va
+        def _draw_anchored_text(text, ax, ay, w_grid, h_grid, align, font_model):
+            # ax/ay are model-grid coordinates in the symbol coordinate system.
+            # Convert to this pin item's local painter coordinates.
+            lx = (float(ax) - float(m.x)) * g
+            ly = -(float(ay) - float(m.y)) * g
+            rect = QRectF(lx - w_grid * g / 2, ly - h_grid * g / 2, w_grid * g, h_grid * g)
+            try:
+                # Text labels and pin attributes must stay readable.  Negative
+                # scale values are a mirror transform and are intentionally
+                # ignored here; flip operations only move the text anchor.
+                sx = abs(float(getattr(font_model, 'scale_x', 1.0) or 1.0))
+                sy = abs(float(getattr(font_model, 'scale_y', 1.0) or 1.0))
+            except Exception:
+                sx, sy = 1.0, 1.0
+            if abs(sx - 1.0) > 1e-9 or abs(sy - 1.0) > 1e-9:
+                painter.save()
+                c = rect.center()
+                painter.translate(c)
+                painter.scale(sx, sy)
+                painter.translate(-c)
+                painter.drawText(rect, align, str(text))
+                painter.restore()
+            else:
+                painter.drawText(rect, align, str(text))
+        if m.visible_number:
+            if getattr(m, 'number_x', None) is not None and getattr(m, 'number_y', None) is not None:
+                _draw_anchored_text(m.number, m.number_x, m.number_y, 4.5, 1.1, _qt_align(getattr(m, 'number_h_align', 'center'), getattr(m, 'number_v_align', 'center')), m.number_font)
+            else:
+                painter.drawText(QRectF(min(x1, x2) - .4*g, min(y1, y2) - .85 * g, max(abs(x2 - x1), .8*g), max(abs(y2-y1), .5*g)), Qt.AlignCenter, m.number)
+        # Pin name and pin function are independent display attributes.
+        # If Mentor-native label coordinates are present, draw exactly at the imported anchor.
+        parts = []
+        if m.visible_name and str(m.name or '').strip():
+            parts.append(m.name)
+        if m.visible_function and str(m.function or '').strip():
+            parts.append(m.function)
+        label = ' / '.join([x for x in parts if x])
+        if label:
+            label_color = getattr(m.label_font, 'color', (0, 0, 0))
+            try:
+                if getattr(self.window.symbol, 'template_name', '') == 'mentor_native_origin' and is_default_black(label_color):
+                    label_color = line_color
+            except Exception:
+                pass
+            painter.setPen(pen_for(label_color, m.line_width, m.line_style, g))
+            painter.setFont(QFont(m.label_font.family, max(8, int(g * m.label_font.size_grid * .45))))
+            if getattr(m, 'label_x', None) is not None and getattr(m, 'label_y', None) is not None:
+                _draw_anchored_text(label, m.label_x, m.label_y, 7.5, 1.1, _qt_align(getattr(m, 'label_h_align', 'center'), getattr(m, 'label_v_align', 'center')), m.label_font)
+            elif m.side == PinSide.LEFT.value:
+                painter.drawText(QRectF(.25 * g, -.35 * g, 6 * g, .7 * g), Qt.AlignVCenter | Qt.AlignLeft, label)
+            elif m.side == PinSide.TOP.value:
+                painter.drawText(QRectF(-3 * g, .15 * g, 6 * g, .7 * g), Qt.AlignCenter, label)
+            elif m.side == PinSide.BOTTOM.value:
+                painter.drawText(QRectF(-3 * g, -.85 * g, 6 * g, .7 * g), Qt.AlignCenter, label)
+            else:
+                painter.drawText(QRectF(-6.25 * g, -.35 * g, 6 * g, .7 * g), Qt.AlignVCenter | Qt.AlignRight, label)
+        # Draw imported/custom visible pin attributes as children of the pin.
+        # They use absolute symbol anchors converted into this pin item's local
+        # coordinate space, so dragging the pin keeps attributes attached.
+        for key, tm in (getattr(m, 'attribute_texts', {}) or {}).items():
+            try:
+                if not (getattr(m, 'visible_attributes', {}) or {}).get(key, False):
+                    continue
+                text = getattr(tm, 'text', '') or f"{key}: {(getattr(m, 'attributes', {}) or {}).get(key, '')}"
+                painter.setPen(pen_for(getattr(tm, 'color', (0, 0, 0)), getattr(m, 'line_width', 0.03), getattr(m, 'line_style', 'solid'), g))
+                painter.setFont(_text_qfont(tm, g * float(getattr(tm, 'font_size_grid', .45) or .45) * .45))
+                _draw_anchored_text(text, tm.x, tm.y, 8.0, 1.1, _qt_align(getattr(tm, 'h_align', 'left'), getattr(tm, 'v_align', 'center')), tm)
+            except Exception:
+                pass
+        if self.isSelected():
+            painter.setPen(QPen(QColor(80, 80, 80), 1, Qt.DashLine))
+            painter.drawRect(self.boundingRect())
+            s = self.window.grid_px * self.handle_size_factor
+            painter.setBrush(QBrush(QColor(255, 255, 255)))
+            for r in _corner_handles(self.boundingRect(), s).values():
+                painter.drawRect(r)
+            painter.drawEllipse(_rotation_handle(self.boundingRect(), self.window.grid_px * self.rotate_handle_factor))
+
+    def mousePressEvent(self, event):
+        _select_only_this_item(self, event)
+        self._undo_state_pushed_for_drag = False
+        if self.isSelected() and event.button() == Qt.LeftButton:
+            try:
+                self.window.push_undo_state()
+                self._undo_state_pushed_for_drag = True
+            except Exception:
+                pass
+        if self.isSelected() and _rotation_handle(self.boundingRect(), self.window.grid_px * self.rotate_handle_factor).contains(event.pos()):
+            self._rotating = True
+            self._rotate_center_scene = self.mapToScene(self.boundingRect().center())
+            self._rotate_start_angle = _angle_from(self._rotate_center_scene, event.scenePos())
+            self._rotate_start_model = float(getattr(self.model, 'rotation', 0.0) or 0.0)
+            event.accept(); return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if getattr(self, '_rotating', False):
+            delta = _angle_from(self._rotate_center_scene, event.scenePos()) - self._rotate_start_angle
+            self.model.rotation = (round((self._rotate_start_model + delta) / 15.0) * 15.0) % 360
+            self.apply_transform_from_model()
+            try:
+                self.window.notify_canvas_model_changed()
+            except Exception:
+                self.window.live_refresh()
+            event.accept(); return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self._undo_state_pushed_for_drag = False
+        self._rotating = False
+        super().mouseReleaseEvent(event)
+
+    def update_model_pos(self):
+        g = self.window.grid_px
+        old_x, old_y = float(self.model.x), float(self.model.y)
+        self.model.x = self.pos().x() / g
+        self.model.y = -self.pos().y() / g
+        dx, dy = float(self.model.x) - old_x, float(self.model.y) - old_y
+        if abs(dx) > 1e-9 or abs(dy) > 1e-9:
+            # Loose docking: a user drag intentionally detaches the pin from the
+            # automatic BODY edge. Programmatic moves (scene rebuild/body resize)
+            # keep the existing docking state.
+            try:
+                if QApplication.mouseButtons() & Qt.LeftButton:
+                    self.model.auto_dock = False
+            except Exception:
+                pass
+            for ax_name, ay_name in (('label_x', 'label_y'), ('number_x', 'number_y')):
+                if getattr(self.model, ax_name, None) is not None and getattr(self.model, ay_name, None) is not None:
+                    setattr(self.model, ax_name, float(getattr(self.model, ax_name)) + dx)
+                    setattr(self.model, ay_name, float(getattr(self.model, ay_name)) + dy)
+            for tm in (getattr(self.model, 'attribute_texts', {}) or {}).values():
+                try:
+                    tm.x = float(tm.x) + dx
+                    tm.y = float(tm.y) + dy
+                except Exception:
+                    pass
+
+    def _mirror_owned_text_anchors(self, horizontal: bool):
+        """Mirror labels, numbers and imported pin attributes with the pin.
+
+        Pin-owned texts are painted by PinItem instead of being separate
+        QGraphicsTextItems.  Therefore a normal item transform only mirrors the
+        pin geometry and leaves those text anchors behind.  Keep the pin anchor
+        fixed and mirror all pin-owned text anchors around it.
+        """
+        try:
+            cx = float(getattr(self.model, 'x', 0.0) or 0.0)
+            cy = float(getattr(self.model, 'y', 0.0) or 0.0)
+        except Exception:
+            cx, cy = 0.0, 0.0
+        if horizontal:
+            for attr in ('label_x', 'number_x'):
+                try:
+                    value = getattr(self.model, attr, None)
+                    if value is not None:
+                        setattr(self.model, attr, 2.0 * cx - float(value))
+                except Exception:
+                    pass
+            for attr in ('label_h_align', 'number_h_align'):
+                try:
+                    setattr(self.model, attr, _swap_h_align(getattr(self.model, attr, 'center')))
+                except Exception:
+                    pass
+        else:
+            for attr in ('label_y', 'number_y'):
+                try:
+                    value = getattr(self.model, attr, None)
+                    if value is not None:
+                        setattr(self.model, attr, 2.0 * cy - float(value))
+                except Exception:
+                    pass
+            for attr in ('label_v_align', 'number_v_align'):
+                try:
+                    setattr(self.model, attr, _swap_v_align(getattr(self.model, attr, 'center')))
+                except Exception:
+                    pass
+
+        for tm in (getattr(self.model, 'attribute_texts', {}) or {}).values():
+            try:
+                if horizontal:
+                    tm.x = 2.0 * cx - float(getattr(tm, 'x', cx) or cx)
+                    tm.h_align = _swap_h_align(getattr(tm, 'h_align', 'left'))
+                    _normalize_text_scale(tm)
+                else:
+                    tm.y = 2.0 * cy - float(getattr(tm, 'y', cy) or cy)
+                    tm.v_align = _swap_v_align(getattr(tm, 'v_align', 'center'))
+                    _normalize_text_scale(tm)
+            except Exception:
+                pass
+
+    def flip_horizontal(self):
+        self._mirror_owned_text_anchors(horizontal=True)
+        TransformMixin.flip_horizontal(self)
+        try:
+            self.window.notify_canvas_model_changed()
+        except Exception:
+            try:
+                self.window.live_refresh()
+            except Exception:
+                pass
+
+    def flip_vertical(self):
+        self._mirror_owned_text_anchors(horizontal=False)
+        TransformMixin.flip_vertical(self)
+        try:
+            self.window.notify_canvas_model_changed()
+        except Exception:
+            try:
+                self.window.live_refresh()
+            except Exception:
+                pass
+
+    def scale_selected(self, factor):
+        # Pin length is quantized to the active edit grid so copied/imported
+        # pins can be edited at the same raster as the current workspace.
+        try:
+            step = self.window._edit_grid_step() if hasattr(self.window, '_edit_grid_step') else 1.0
+        except Exception:
+            step = 1.0
+        try:
+            value = float(self.model.length) * float(factor)
+            self.model.length = max(step, round(value / step) * step)
+        except Exception:
+            self.model.length = max(1.0, round(self.model.length * factor))
+        self.apply_transform_from_model()
+        self.update()
+
+
+    def scale_by(self, factor):
+        return self.scale_selected(factor)
+
+
+class TextItem(TransformMixin, QGraphicsTextItem):
+    def __init__(self, model, window):
+        self.model = model
+        self.window = window
+        super().__init__(model.text)
+        try:
+            self.document().setDocumentMargin(0)
+        except Exception:
+            pass
+        self.common_flags()
+        # Text remains movable/selectable in edit mode. Text editing starts only on double click.
+        self.setTextInteractionFlags(Qt.NoTextInteraction)
+        self.setData(0, 'TEXT')
+        self._rotating = False
+        self.apply_text_from_model()
+        try:
+            if self.data(0) == 'TEXT':
+                setattr(self.model, '_is_attribute_text', False)
+                self.setFlag(QGraphicsItem.ItemIsSelectable, True)
+                self.setFlag(QGraphicsItem.ItemIsMovable, True)
+                self.setFlag(QGraphicsItem.ItemIsFocusable, True)
+        except Exception:
+            pass
+
+    def itemChange(self, change, value):
+        # Text/attribute objects are positioned by their selected grid anchor
+        # (left/center/right x upper/center/lower).  The anchor point, not the
+        # item top-left, must snap to the grid.
+        if change == QGraphicsItem.ItemPositionChange and self.scene():
+            if bool(getattr(self.scene().window, 'template_snap_check', None) and not self.scene().window.template_snap_check.isChecked()):
+                return super().itemChange(change, value)
+            g = self.scene().grid_px
+            try:
+                off = self._text_anchor_offset()
+                anchor = QPointF(value.x() + off.x(), value.y() + off.y())
+                snapped_anchor = QPointF(snap(anchor.x(), g), snap(anchor.y(), g))
+                return snapped_anchor - off
+            except Exception:
+                return QPointF(snap(value.x(), g), snap(value.y(), g))
+        if change == QGraphicsItem.ItemPositionHasChanged and self.scene():
+            self.update_model_pos()
+            try:
+                self.scene().window.notify_canvas_model_changed()
+            except Exception:
+                self.scene().window.live_refresh()
+        return super().itemChange(change, value)
+
+    def _visual_text_rect(self):
+        """Tight local text rectangle used for grid anchoring.
+
+        QGraphicsTextItem/document sizes contain layout slack, especially on
+        the right edge.  Using font metrics for the actual lines makes
+        right-aligned text end exactly at the selected grid line and makes
+        lower alignment use the visual bottom instead of the item top.
+        """
+        try:
+            fm = QFontMetricsF(self.font())
+            text = str(getattr(self.model, 'text', '') or '')
+            lines = text.split('\n') or ['']
+            width = max((fm.horizontalAdvance(line) for line in lines), default=0.0)
+            height = max(fm.height(), fm.lineSpacing() * len(lines))
+            return QRectF(0, 0, width, height)
+        except Exception:
+            return self.boundingRect()
+
+    def _text_anchor_offset(self):
+        """Return the local visual point that must sit on model.x/model.y."""
+        br = self._visual_text_rect()
+        h = getattr(self.model, 'h_align', 'left')
+        v = getattr(self.model, 'v_align', 'upper')
+        if h == 'center':
+            ox = br.center().x()
+        elif h == 'right':
+            ox = br.right()
+        else:
+            ox = br.left()
+        if v == 'center':
+            oy = br.center().y()
+        elif v == 'lower':
+            oy = br.bottom()
+        else:
+            oy = br.top()
+        return QPointF(ox, oy)
+
+    def _aligned_scene_pos(self):
+        g = self.window.grid_px
+        anchor = QPointF(self.model.x * g, -self.model.y * g)
+        return anchor - self._text_anchor_offset()
+
+    def apply_transform_from_model(self):
+        def f(name, default):
+            try:
+                return float(getattr(self.model, name, default) or default)
+            except (TypeError, ValueError):
+                return default
+        # Text is never mirrored.  Flip/mirror operations affect only the
+        # model grid anchor (x/y + alignment), not the glyph orientation.
+        sx, sy, rot = abs(f('scale_x', 1.0)), abs(f('scale_y', 1.0)), f('rotation', 0.0)
+        self.model.scale_x, self.model.scale_y, self.model.rotation = sx, sy, rot
+        try:
+            self.setTransformOriginPoint(self._text_anchor_offset())
+        except Exception:
+            try:
+                self.setTransformOriginPoint(self.boundingRect().center())
+            except Exception:
+                pass
+        self.setTransform(QTransform().scale(sx, sy))
+        self.setRotation(rot)
+
+    def apply_text_from_model(self):
+        g = self.window.grid_px
+        self.setPlainText(str(getattr(self.model, 'text', '')))
+        self.setDefaultTextColor(rgb(self.model.color))
+        self.setFont(_text_qfont(self.model, g * self.model.font_size_grid * .45))
+        try:
+            self.document().setDocumentMargin(0)
+            opt = self.document().defaultTextOption()
+            opt.setWrapMode(QTextOption.WordWrap if bool(getattr(self.model, 'wrap_text', False)) else QTextOption.NoWrap)
+            self.document().setDefaultTextOption(opt)
+            self.setTextWidth(-1 if not bool(getattr(self.model, 'wrap_text', False)) else max(self.window.grid_px, self.boundingRect().width()))
+            self.adjustSize()
+        except Exception:
+            pass
+        self.setPos(self._aligned_scene_pos())
+        self.apply_transform_from_model()
+        self.update()
+
+    def _model_pos_from_item_pos(self):
+        g = self.window.grid_px
+        anchor = self.pos() + self._text_anchor_offset()
+        # Store the logical anchor on full grid coordinates.  This keeps the
+        # green anchor marker and all alignment permutations exactly on grid
+        # lines, independent of the visual width/height of the text.
+        if hasattr(self.window, 'snap_grid_value'):
+            self.model.x = self.window.snap_grid_value(anchor.x() / g)
+            self.model.y = self.window.snap_grid_value(-anchor.y() / g)
+        else:
+            self.model.x = round(anchor.x() / g)
+            self.model.y = round(-anchor.y() / g)
+
+    def paint(self, painter, option, widget=None):
+        super().paint(painter, option, widget)
+        if self.isSelected():
+            # Text objects show a thin text selection rectangle plus the active
+            # grid anchor.  The green marker has 9 possible positions inside the
+            # text box: left/center/right x upper/center/lower.
+            painter.save()
+            painter.setPen(QPen(QColor(80, 80, 80), 1, Qt.DashLine))
+            painter.setBrush(QBrush(Qt.NoBrush))
+            painter.drawRect(self._visual_text_rect())
+            anchor = self._text_anchor_offset()
+            s = max(4.0, self.window.grid_px * 0.12)
+            painter.setPen(QPen(QColor(0, 130, 0), 1))
+            painter.setBrush(QBrush(QColor(0, 180, 0)))
+            painter.drawRect(QRectF(anchor.x() - s / 2, anchor.y() - s / 2, s, s))
+            painter.restore()
+
+    def mouseDoubleClickEvent(self, event):
+        if self.data(0) in ('ATTR_REF_DES', 'ATTR_BODY') or bool(getattr(self.model, '_is_attribute_text', False)):
+            event.accept()
+            return
+        self.setTextInteractionFlags(Qt.TextEditorInteraction)
+        self.setFocus(Qt.MouseFocusReason)
+        cursor = self.textCursor()
+        cursor.select(QTextCursor.Document)
+        self.setTextCursor(cursor)
+        event.accept()
+
+    def keyPressEvent(self, event):
+        if self.textInteractionFlags() != Qt.NoTextInteraction and event.key() in (Qt.Key_Return, Qt.Key_Enter):
+            if event.modifiers() & Qt.ShiftModifier:
+                QGraphicsTextItem.keyPressEvent(self, event)
+                event.accept()
+                return
+            if not (self.data(0) in ('ATTR_REF_DES', 'ATTR_BODY') or bool(getattr(self.model, '_is_attribute_text', False))):
+                self.model.text = self.toPlainText()
+            self.setTextInteractionFlags(Qt.NoTextInteraction)
+            self.clearFocus()
+            try:
+                self.scene().window.notify_canvas_model_changed()
+            except Exception:
+                self.scene().window.live_refresh()
+            event.accept()
+            return
+        if self.textInteractionFlags() != Qt.NoTextInteraction:
+            # Prevent canvas shortcuts such as E/R rotation while typing.
+            QGraphicsTextItem.keyPressEvent(self, event)
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+    def focusOutEvent(self, e):
+        # When the user clicks out of a canvas text item, commit the text and
+        # immediately return the item to normal canvas-object mode so it can be
+        # selected, moved, copied and transformed again.
+        if not (self.data(0) in ('ATTR_REF_DES', 'ATTR_BODY') or bool(getattr(self.model, '_is_attribute_text', False))):
+            self.model.text = self.toPlainText()
+        self.setTextInteractionFlags(Qt.NoTextInteraction)
+        self.common_flags()
+        self.scene().window.live_refresh()
+        super().focusOutEvent(e)
+
+    def update_model_pos(self):
+        self._model_pos_from_item_pos()
+        if not (self.data(0) in ('ATTR_REF_DES', 'ATTR_BODY') or bool(getattr(self.model, '_is_attribute_text', False))):
+            self.model.text = self.toPlainText()
+
+    def flip_horizontal(self):
+        # Text glyphs stay readable.  A horizontal flip mirrors only the text
+        # grid anchor inside the text box (left <-> right) and normalizes any
+        # legacy negative scale left by older mirror patches.
+        try:
+            self.model.h_align = _swap_h_align(getattr(self.model, 'h_align', 'left'))
+            _normalize_text_scale(self.model)
+            self.apply_text_from_model()
+            try:
+                self.scene().window.notify_canvas_model_changed()
+            except Exception:
+                self.scene().window.live_refresh()
+        except Exception:
+            _normalize_text_scale(getattr(self, 'model', None))
+            self.apply_transform_from_model()
+            self.update()
+
+    def flip_vertical(self):
+        # Text glyphs stay readable.  A vertical flip mirrors only the text
+        # grid anchor inside the text box (upper <-> lower) and normalizes any
+        # legacy negative scale left by older mirror patches.
+        try:
+            self.model.v_align = _swap_v_align(getattr(self.model, 'v_align', 'upper'))
+            _normalize_text_scale(self.model)
+            self.apply_text_from_model()
+            try:
+                self.scene().window.notify_canvas_model_changed()
+            except Exception:
+                self.scene().window.live_refresh()
+        except Exception:
+            _normalize_text_scale(getattr(self, 'model', None))
+            self.apply_transform_from_model()
+            self.update()
+
+    def mousePressEvent(self, event):
+        _select_only_this_item(self, event)
+        try:
+            if _plain_canvas_text_item(self) and event.button() == Qt.LeftButton:
+                win = getattr(self, 'window', None)
+                if win is not None:
+                    win._active_plain_text_model = self.model
+                mods = event.modifiers()
+                if not (mods & (Qt.ControlModifier | Qt.ShiftModifier)):
+                    sc = self.scene()
+                    if sc is not None:
+                        sc.blockSignals(True)
+                        try:
+                            for item in list(sc.selectedItems()):
+                                if item is not self:
+                                    item.setSelected(False)
+                            self.setSelected(True)
+                        finally:
+                            sc.blockSignals(False)
+                        try:
+                            win.refresh_properties()
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+        return QGraphicsTextItem.mousePressEvent(self, event)
+
+    def scale_by(self, factor):
+        try:
+            factor = float(factor)
+        except Exception:
+            factor = 1.0
+        try:
+            step = float(getattr(self.window, '_edit_grid_step', lambda: 0.1)())
+        except Exception:
+            step = 0.1
+        cur = float(getattr(self.model, 'font_size_grid', 0.75) or 0.75)
+        self.model.font_size_grid = max(step, round((cur * factor) / step) * step)
+        try:
+            self.apply_text_from_model()
+        except Exception:
+            self.apply_transform_from_model()
+            self.update()
+
+
+class GraphicItem(TransformMixin, QGraphicsItem):
+    def __init__(self, model, window):
+        super().__init__()
+        self.model = model
+        self.window = window
+        self._resizing = None
+        self._rotating = False
+        self._resize_anchor_scene = None
+        self._resize_start = None
+        self._rotating = False
+        self._rotate_start_angle = 0.0
+        self._rotate_start_model = 0.0
+        self._rotate_center_scene = QPointF()
+        g = window.grid_px
+        self.setPos(model.x * g, -model.y * g)
+        self.common_flags()
+        self.setData(0, 'GRAPHIC')
+        if getattr(model, 'locked_to_body', False) and not getattr(window, 'is_template_editor', False):
+            # Imported/template BODY primitives are paint/highlight only in the
+            # Symbol Wizard. They must never become real selected objects; the
+            # logical BodyItem is the only selected item. This prevents the
+            # property panel from switching to "2 objects selected".
+            self.setFlag(QGraphicsItem.ItemIsMovable, False)
+            self.setFlag(QGraphicsItem.ItemIsSelectable, False)
+            self.setFlag(QGraphicsItem.ItemIsFocusable, False)
+            self.setAcceptedMouseButtons(Qt.NoButton)
+            self.setAcceptHoverEvents(False)
+        self.apply_transform_from_model()
+
+    def flip_horizontal(self):
+        # Canvas H/V flip mapping for standalone graphics follows the final
+        # historical behaviour: the visible axis was inverted for graphics.
+        return TransformMixin.flip_vertical(self)
+
+    def flip_vertical(self):
+        return TransformMixin.flip_horizontal(self)
+
+    def _raw_rect(self):
+        g = self.window.grid_px
+        return QRectF(0, 0, self.model.w * g, self.model.h * g)
+
+    def _rect(self):
+        r = self._raw_rect().normalized()
+        if getattr(self.model, 'shape', '') == 'line':
+            g = self.window.grid_px
+            cr = float(getattr(self.model, 'curve_radius', 0.0) or 0.0) * g
+            if cr > 0:
+                r.setTop(min(r.top(), self.model.h * g / 2 - cr))
+            elif cr < 0:
+                r.setBottom(max(r.bottom(), self.model.h * g / 2 - cr))
+        if r.width() < 1:
+            r.adjust(-.5, 0, .5, 0)
+        if r.height() < 1:
+            r.adjust(0, -.5, 0, .5)
+        return r
+
+    def boundingRect(self):
+        g = self.window.grid_px
+        return self._rect().adjusted(-.35 * g, -.35 * g, .35 * g, .35 * g)
+
+    def _handles(self):
+        g = self.window.grid_px
+        s = g * self.handle_size_factor
+        if self.model.shape == 'line':
+            return {
+                'start': QRectF(-s/2, -s/2, s, s),
+                'end': QRectF(self.model.w*g - s/2, self.model.h*g - s/2, s, s),
+                'curve': QRectF(self.model.w*g/2 - s/2, self.model.h*g/2 - float(getattr(self.model, 'curve_radius', 0.0))*g - s/2, s, s),
+            }
+        return _corner_handles(self._rect(), s)
+
+    def paint(self, painter, option, widget=None):
+        g, m = self.window.grid_px, self.model
+        painter.setPen(pen_for(m.style.stroke, m.style.line_width, m.style.line_style, g))
+        painter.setBrush(QBrush(rgb(m.style.fill)) if m.style.fill else QBrush(Qt.NoBrush))
+        if m.shape in ('line', 'arc'):
+            ctrl_x = getattr(m, 'ctrl_x', None)
+            ctrl_y = getattr(m, 'ctrl_y', None)
+            if ctrl_x is not None and ctrl_y is not None:
+                path = QPainterPath(QPointF(0, 0))
+                path.quadTo(QPointF(float(ctrl_x) * g, -float(ctrl_y) * g), QPointF(m.w * g, -m.h * g))
+                painter.drawPath(path)
+            else:
+                r = float(getattr(m, 'curve_radius', 0.0) or 0.0)
+                if abs(r) > 1e-9:
+                    path = QPainterPath(QPointF(0, 0))
+                    path.quadTo(QPointF(m.w * g / 2, m.h * g / 2 - r * g), QPointF(m.w * g, m.h * g))
+                    painter.drawPath(path)
+                else:
+                    painter.drawLine(QPointF(0, 0), QPointF(m.w * g, m.h * g))
+        elif m.shape == 'rect':
+            painter.drawRect(QRectF(0, 0, m.w * g, m.h * g))
+        elif m.shape in ('ellipse', 'circle'):
+            painter.drawEllipse(QRectF(0, 0, m.w * g, m.h * g))
+        selected_for_highlight = self.isSelected()
+        # Grouped user graphics are highlighted by one shared group outline in
+        # MainWindow. Individual child handles would make the group look like
+        # multiple objects and can also interfere with selection/pivot logic.
+        try:
+            _gid = str(getattr(self.model, 'group_id', '') or '')
+            _role = str(getattr(self.model, 'graphic_role', '') or '')
+            if (not getattr(self.model, 'locked_to_body', False)) and (_gid or _role.startswith('user_graphic_group:')):
+                selected_for_highlight = False
+        except Exception:
+            pass
+        if getattr(self.model, 'locked_to_body', False) and not getattr(self.window, 'is_template_editor', False):
+            try:
+                selected_for_highlight = selected_for_highlight or any(
+                    getattr(i, 'data', lambda *_: None)(0) == 'BODY' and i.isSelected()
+                    for i in self.scene().items()
+                )
+            except Exception:
+                pass
+        if selected_for_highlight:
+            painter.save()
+            if getattr(self.model, 'locked_to_body', False) and not getattr(self.window, 'is_template_editor', False):
+                # BODY selection highlight on the real artwork only. No proxy
+                # bounding rectangle / helper frame is drawn.
+                painter.setPen(QPen(QColor(0, 150, 170), max(1, int(0.08 * g)), Qt.DashLine))
+                painter.setBrush(QBrush(Qt.NoBrush))
+                if m.shape in ('line', 'arc'):
+                    if 'path' in locals():
+                        painter.drawPath(path)
+                    else:
+                        painter.drawLine(QPointF(0, 0), QPointF(m.w * g, m.h * g))
+                elif m.shape == 'rect':
+                    painter.drawRect(QRectF(0, 0, m.w * g, m.h * g))
+                elif m.shape in ('ellipse', 'circle'):
+                    painter.drawEllipse(QRectF(0, 0, m.w * g, m.h * g))
+            elif (not getattr(self.model, 'locked_to_body', False) or getattr(self.window, 'is_template_editor', False)):
+                painter.setPen(QPen(QColor(80, 80, 80), 1, Qt.DashLine))
+                painter.drawRect(self._rect())
+                painter.setBrush(QBrush(QColor(255, 255, 255)))
+                for r in self._handles().values():
+                    painter.drawRect(r)
+                painter.drawEllipse(_rotation_handle(self._rect(), self.window.grid_px * self.rotate_handle_factor))
+            painter.restore()
+
+    def hoverMoveEvent(self, event):
+        if self.isSelected():
+            h = 'rot' if _rotation_handle(self._rect(), self.window.grid_px * self.rotate_handle_factor).contains(event.pos()) else _hit_handle(self._handles(), event.pos())
+            self.setCursor(QCursor(_cursor_for_handle(h)) if h else QCursor(Qt.ArrowCursor))
+        super().hoverMoveEvent(event)
+
+    def hoverLeaveEvent(self, event):
+        self.unsetCursor()
+        super().hoverLeaveEvent(event)
+
+    def mousePressEvent(self, event):
+        _select_only_this_item(self, event)
+        try:
+            if (getattr(getattr(self, 'model', None), 'locked_to_body', False)
+                    and not getattr(self.window, 'is_template_editor', False)
+                    and event.button() == Qt.LeftButton):
+                candidates = _body_item_candidates_for_window(self.window)
+                body_items = [item for item in candidates if getattr(item, 'data', lambda *_: None)(0) == 'BODY']
+                target = body_items[0] if body_items else (candidates[0] if candidates else self)
+                try:
+                    self.window.scene.clearSelection()
+                except Exception:
+                    pass
+                target.setSelected(True)
+                try:
+                    self.window.refresh_properties()
+                except Exception:
+                    pass
+                event.accept()
+                return
+        except Exception:
+            pass
+        # Template Editor graphics need their own undo hook.  Resize/rotate
+        # handles do not always trigger ItemPositionChange, and a normal move
+        # can start before the item becomes selected, so relying only on the
+        # TransformMixin itemChange hook leaves GraphicModel edits out of the
+        # undo stack.  Save exactly one pre-edit snapshot on mouse press.
+        self._undo_state_pushed_for_drag = False
+        if event.button() == Qt.LeftButton:
+            try:
+                if (getattr(self.window, 'is_template_editor', False)
+                        and not getattr(self.window, '_loading_template', False)
+                        and not getattr(self.window, '_restoring_undo_redo', False)):
+                    self.window.push_undo_state()
+                    self._undo_state_pushed_for_drag = True
+                    try:
+                        self._undo_state_at_graphic_press = self.window._unit_state_for_undo(self.window.undo_stack[-1])
+                    except Exception:
+                        self._undo_state_at_graphic_press = None
+            except Exception:
+                pass
+        if self.isSelected():
+            if _rotation_handle(self._rect(), self.window.grid_px * self.rotate_handle_factor).contains(event.pos()):
+                self._rotating = True
+                self._rotate_center_scene = self.mapToScene(self._rect().center())
+                self._rotate_start_angle = _angle_from(self._rotate_center_scene, event.scenePos())
+                self._rotate_start_model = float(getattr(self.model, 'rotation', 0.0) or 0.0)
+                event.accept(); return
+            h = _hit_handle(self._handles(), event.pos())
+            if h:
+                self._resizing = h
+                g = self.window.grid_px
+                self._resize_start = {
+                    'x': float(self.model.x), 'y': float(self.model.y),
+                    'w': float(self.model.w), 'h': float(self.model.h),
+                }
+                event.accept()
+                return
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if getattr(self, '_rotating', False):
+            delta = _angle_from(self._rotate_center_scene, event.scenePos()) - self._rotate_start_angle
+            self.model.rotation = (round((self._rotate_start_model + delta) / 15.0) * 15.0) % 360
+            self.apply_transform_from_model()
+            try:
+                self.window.notify_canvas_model_changed()
+            except Exception:
+                self.window.live_refresh()
+            event.accept(); return
+        if self._resizing and self._resize_start is not None:
+            g = self.window.grid_px
+            p = QPointF(snap(event.scenePos().x(), self.window.edit_grid_px), snap(event.scenePos().y(), self.window.edit_grid_px))
+            st = self._resize_start
+            left = st['x'] * g
+            top = -st['y'] * g
+            right = left + st['w'] * g
+            bottom = top + st['h'] * g
+
+            # Line endpoints are edited directly; the middle handle changes only curve radius and is intentionally not grid-snapped.
+            if self.model.shape == 'line':
+                raw = event.scenePos()
+                if self._resizing == 'start':
+                    old_end_x = left + st['w'] * g; old_end_y = top + st['h'] * g
+                    left = p.x(); top = p.y(); right = old_end_x; bottom = old_end_y
+                elif self._resizing == 'end':
+                    right = p.x(); bottom = p.y()
+                elif self._resizing == 'curve':
+                    mid_y = top + (st['h'] * g) / 2
+                    self.model.curve_radius = (mid_y - raw.y()) / g
+                    self.window.live_refresh(); self.update(); event.accept(); return
+            else:
+                # Edge handles are one-dimensional only; corners are true 2D resize.
+                if self._resizing in ('l', 'tl', 'bl'):
+                    left = p.x()
+                if self._resizing in ('r', 'tr', 'br'):
+                    right = p.x()
+                if self._resizing in ('t', 'tl', 'tr'):
+                    top = p.y()
+                if self._resizing in ('b', 'bl', 'br'):
+                    bottom = p.y()
+
+            if self.model.shape != 'line':
+                min_size = g * .25
+                if right < left:
+                    left, right = right, left
+                if bottom < top:
+                    top, bottom = bottom, top
+                if right - left < min_size:
+                    if self._resizing in ('l', 'tl', 'bl'):
+                        left = right - min_size
+                    else:
+                        right = left + min_size
+                if bottom - top < min_size:
+                    if self._resizing in ('t', 'tl', 'tr'):
+                        top = bottom - min_size
+                    else:
+                        bottom = top + min_size
+
+            self.prepareGeometryChange()
+            self.setPos(left, top)
+            self.model.x = left / g
+            self.model.y = -top / g
+            self.model.w = (right - left) / g
+            self.model.h = (bottom - top) / g
+            try:
+                self.window.notify_canvas_model_changed()
+            except Exception:
+                self.window.live_refresh()
+            self.update()
+            event.accept()
+            return
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        # If the user only clicked/selected a graphic, do not leave a dirty
+        # undo entry behind.  For real graphic edits (move/resize/rotate/curve)
+        # the current template state differs from the saved pre-edit state and
+        # the undo snapshot is kept.
+        try:
+            if getattr(self, '_undo_state_pushed_for_drag', False) and getattr(self.window, 'is_template_editor', False):
+                before = getattr(self, '_undo_state_at_graphic_press', None)
+                after = self.window._template_state() if hasattr(self.window, '_template_state') else None
+                if before is not None and after == before and getattr(self.window, 'undo_stack', None):
+                    self.window.undo_stack.pop()
+                    self.window.dirty = self.window.is_template_dirty() if hasattr(self.window, 'is_template_dirty') else False
+        except Exception:
+            pass
+        self._undo_state_pushed_for_drag = False
+        self._undo_state_at_graphic_press = None
+        self._resizing = None
+        self._resize_anchor_scene = None
+        self._resize_start = None
+        self.window.enforce_symbol_size_limit(silent=True)
+        self.window.rebuild_tree()
+        self.scene().update()
+        super().mouseReleaseEvent(event)
+
+    def update_model_pos(self):
+        g = self.window.grid_px
+        self.model.x = self.pos().x() / g
+        self.model.y = -self.pos().y() / g
+
+    def _snap_graphic_dimension(self, value, step):
+        """Snap a graphic dimension to the edit grid without collapsing to 0."""
+        try:
+            step = max(0.001, float(step or 0.001))
+        except Exception:
+            step = 0.5
+        sign = -1.0 if float(value or 0.0) < 0 else 1.0
+        mag = abs(float(value or 0.0))
+        snapped = round(mag / step) * step
+        if snapped < step:
+            snapped = step
+        return sign * snapped
+
+    def scale_by(self, factor):
+        """Scale this graphic in-place around its own model-space center.
+
+        Toolbar Scale +/- is intentionally object-local for user graphics: it
+        must not move the object to the origin, must not collapse width/height
+        to 0, and must not involve pins or BODY-group scaling.  The center is
+        preserved while width/height are snapped to the active edit grid.
+        """
+        try:
+            factor = float(factor)
+        except Exception:
+            factor = 1.0
+        if abs(factor) < 1e-9:
+            return
+        step = 0.5
+        try:
+            step = self.window._edit_grid_step() if hasattr(self.window, '_edit_grid_step') else 0.5
+        except Exception:
+            step = 0.5
+
+        old_w = float(getattr(self.model, 'w', 0.0) or 0.0)
+        old_h = float(getattr(self.model, 'h', 0.0) or 0.0)
+        old_x = float(getattr(self.model, 'x', 0.0) or 0.0)
+        old_y = float(getattr(self.model, 'y', 0.0) or 0.0)
+
+        # In model coordinates graphics are stored with x/y at the visual top-left;
+        # positive h extends downward on screen, i.e. toward smaller model y.
+        cx = old_x + old_w / 2.0
+        cy = old_y - old_h / 2.0
+
+        new_w = self._snap_graphic_dimension(old_w * factor, step)
+        new_h = self._snap_graphic_dimension(old_h * factor, step)
+
+        self.prepareGeometryChange()
+        self.model.w = new_w
+        self.model.h = new_h
+        self.model.x = cx - new_w / 2.0
+        self.model.y = cy + new_h / 2.0
+        g = self.window.grid_px
+        self.setPos(self.model.x * g, -self.model.y * g)
+        try:
+            self.window.notify_canvas_model_changed()
+        except Exception:
+            try:
+                self.window.live_refresh()
+            except Exception:
+                pass
+        self.update()
+
+    def scale_selected(self, factor):
+        self.scale_by(factor)
+
+# Canonical QGraphics item update layer.
+# Historical item method chains are composed outside this class file and only
+# final methods are copied back.
+from . import item_updates as _item_updates
+_item_updates.apply_item_updates(globals())
+del _item_updates

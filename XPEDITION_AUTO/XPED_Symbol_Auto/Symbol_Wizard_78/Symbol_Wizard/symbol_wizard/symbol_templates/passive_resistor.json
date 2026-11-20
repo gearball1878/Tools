@@ -1,0 +1,52 @@
+{
+  "name": "Passive / Resistor",
+  "unit": {
+    "name": "Resistor",
+    "body": {
+      "x": 1.5,
+      "y": 1.5,
+      "width": 3.0,
+      "height": 1.0,
+      "color": [0, 0, 0],
+      "line_width": 0.03,
+      "line_style": "solid",
+      "attributes": {
+        "RefDes": "?",
+        "PART_NAME": "TNR_LEG",
+        "@XYCOORD": "",
+        "LEON_Link": "",
+        "DEVICE": "Artikelcode",
+        "VALUE": "VALUE",
+        "CASE": "BAUFORM",
+        "CLASS": "",
+        "FORWARD_PCB": "1",
+        "MENTOR_GRID_UNIT": "254000"
+      },
+      "visible_attributes": {
+        "RefDes": true,
+        "PART_NAME": false,
+        "@XYCOORD": false,
+        "LEON_Link": false,
+        "DEVICE": false,
+        "VALUE": true,
+        "CASE": true,
+        "CLASS": false,
+        "FORWARD_PCB": false,
+        "MENTOR_GRID_UNIT": false
+      },
+      "attribute_texts": {
+        "RefDes": {"text": "?", "x": 3.0, "y": 2.5, "font_size_grid": 1.0, "h_align": "center"},
+        "VALUE": {"text": "VALUE", "x": 3.0, "y": -0.4, "font_size_grid": 0.75, "h_align": "center"},
+        "CASE": {"text": "CASE=BAUFORM", "x": 1.0, "y": -1.2, "font_size_grid": 0.65, "h_align": "left"}
+      },
+      "refdes_align": "center",
+      "body_attr_align": "center"
+    },
+    "pins": [
+      {"number": "1", "name": "N1", "function": "N1", "pin_type": "ANALOG", "side": "left", "x": 0.0, "y": 1.0, "length": 1.5, "visible_number": false, "visible_name": false, "visible_function": false, "attributes": {"PINTYPE": "ANALOG"}, "visible_attributes": {"PINTYPE": false}},
+      {"number": "2", "name": "N2", "function": "N2", "pin_type": "ANALOG", "side": "right", "x": 6.0, "y": 1.0, "length": 1.5, "visible_number": false, "visible_name": false, "visible_function": false, "attributes": {"PINTYPE": "ANALOG"}, "visible_attributes": {"PINTYPE": false}}
+    ],
+    "texts": [],
+    "graphics": []
+  }
+}

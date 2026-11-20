@@ -1,0 +1,176 @@
+[
+  {
+    "System Name": "Generic_Architecture",
+    "System Arch ID": "{36D7739B-780D-50A5-92C2-AF223B6EB021}",
+    "System Variants": [],
+    "System Ports": [],
+    "System Blocks": [
+      {
+        "Module Name": "PSU",
+        "Module Arch ID": "{51A55FB3-EAB6-53FE-A4CC-DF91FAD77040}",
+        "Module SCM ID": "",
+        "Module Color": "0xF8CECC",
+        "Module Variants": [],
+        "Module Ports": [],
+        "Module Blocks": [
+          {
+            "AE Name": "PSU_SmC",
+            "AE CustName": "",
+            "AE Arch ID": "{B745CB1D-0902-5734-B787-E5787EA00CEE}",
+            "AE SCM ID": "",
+            "AE Color": "0xF8CECC",
+            "AE Power Modes": [],
+            "AE Class": "ArchitectureElement",
+            "AE Variants": [],
+            "AE Ports": [
+              {
+                "AE Port Name": "UART_Link_1",
+                "AE Port Arch ID": "{D3FB3EC3-B5E3-5FE8-B26D-030C28DEDA4E}",
+                "AE Port SCM ID": "",
+                "AE Port Direction": "inout",
+                "AE Port Type": "Interface",
+                "AE Port Variants": [],
+                "AE Port Cons": [
+                  {
+                    "Con Name": "UART_Link_1",
+                    "Connectivity": [],
+                    "Con SCM ID": "",
+                    "Con Type": "Bus",
+                    "Xped Auto Net ID": "NET-0EF5AEA09B",
+                    "Xped Auto Signals": [
+                      "UART_Link_1_RX",
+                      "UART_Link_1_TX",
+                      "UART_Link_1_CTS",
+                      "UART_Link_1_RTS"
+                    ],
+                    "Xped Auto Source Attributes": {
+                      "interfaceName": "UART_Link_1",
+                      "connectionType": "Bus",
+                      "signals": [
+                        "UART_Link_1_RX",
+                        "UART_Link_1_TX",
+                        "UART_Link_1_CTS",
+                        "UART_Link_1_RTS"
+                      ],
+                      "ecadSignals": [
+                        "UART_Link_1_RX",
+                        "UART_Link_1_TX",
+                        "UART_Link_1_CTS",
+                        "UART_Link_1_RTS"
+                      ],
+                      "generatedBy": "BusContentWizard",
+                      "netId": "NET-0EF5AEA09B",
+                      "family": "interface",
+                      "template": "UART_[Link/Port]",
+                      "instanceIndex": 1,
+                      "bcLine": "UART_Link_1 UART_Link_1_RX,UART_Link_1_TX,UART_Link_1_CTS,UART_Link_1_RTS",
+                      "busContentName": "UART_Link_1",
+                      "propagateToParent": false
+                    }
+                  }
+                ],
+                "Xped Auto Source ID": "PRT-A85E28F3A3",
+                "Xped Auto Source Type": "Bidi",
+                "Xped Auto Source Attributes": {
+                  "interfaceName": "UART_Link_1",
+                  "connectionType": "Bus",
+                  "signals": [
+                    "UART_Link_1_RX",
+                    "UART_Link_1_TX",
+                    "UART_Link_1_CTS",
+                    "UART_Link_1_RTS"
+                  ],
+                  "ecadSignals": [
+                    "UART_Link_1_RX",
+                    "UART_Link_1_TX",
+                    "UART_Link_1_CTS",
+                    "UART_Link_1_RTS"
+                  ],
+                  "generatedBy": "BusContentWizard",
+                  "netId": "NET-0EF5AEA09B",
+                  "family": "interface",
+                  "template": "UART_[Link/Port]",
+                  "instanceIndex": 1,
+                  "bcLine": "UART_Link_1 UART_Link_1_RX,UART_Link_1_TX,UART_Link_1_CTS,UART_Link_1_RTS",
+                  "busContentName": "UART_Link_1",
+                  "propagateToParent": false
+                }
+              },
+              {
+                "AE Port Name": "RES#_PSU_INFO_1V8",
+                "AE Port Arch ID": "{A34FA919-D3FD-53C9-B1CA-CD7FDE27D90A}",
+                "AE Port SCM ID": "",
+                "AE Port Direction": "in",
+                "AE Port Type": "Control",
+                "AE Port Variants": [],
+                "AE Port Cons": [
+                  {
+                    "Con Name": "RES#_PSU_INFO_1V8",
+                    "Connectivity": [],
+                    "Con SCM ID": "",
+                    "Con Type": "Net",
+                    "Xped Auto Net ID": "NET-52AFE7B6D6",
+                    "Xped Auto Signals": [
+                      "RES#_PSU_INFO_1V8"
+                    ],
+                    "Xped Auto Source Attributes": {
+                      "interfaceName": "RES#_PSU_INFO_1V8",
+                      "connectionType": "Net",
+                      "signals": [
+                        "RES#_PSU_INFO_1V8"
+                      ],
+                      "ecadSignals": [
+                        "RES#_PSU_INFO_1V8"
+                      ],
+                      "generatedBy": "BusContentWizard",
+                      "netId": "NET-52AFE7B6D6",
+                      "family": "control",
+                      "template": "RES",
+                      "instanceIndex": 0,
+                      "bcLine": "PSU_Control RES#_PSU_INFO_1V8",
+                      "busContentName": "PSU_Control",
+                      "propagateToParent": false
+                    }
+                  }
+                ],
+                "Xped Auto Source ID": "PRT-BD8E94A077",
+                "Xped Auto Source Type": "In",
+                "Xped Auto Source Attributes": {
+                  "interfaceName": "RES#_PSU_INFO_1V8",
+                  "connectionType": "Net",
+                  "signals": [
+                    "RES#_PSU_INFO_1V8"
+                  ],
+                  "ecadSignals": [
+                    "RES#_PSU_INFO_1V8"
+                  ],
+                  "generatedBy": "BusContentWizard",
+                  "netId": "NET-52AFE7B6D6",
+                  "family": "control",
+                  "template": "RES",
+                  "instanceIndex": 0,
+                  "bcLine": "PSU_Control RES#_PSU_INFO_1V8",
+                  "busContentName": "PSU_Control",
+                  "propagateToParent": false
+                }
+              }
+            ],
+            "AE Components": [],
+            "AE Functions": [],
+            "Xped Auto Source ID": "BLK-852E3DB2DA",
+            "Xped Auto Source Attributes": {
+              "domainColor": "#f8cecc"
+            }
+          }
+        ],
+        "Module Functions": [],
+        "Xped Auto Source ID": "BLK-5D3D5D5154",
+        "Xped Auto Source Attributes": {
+          "domainColor": "#f8cecc"
+        }
+      }
+    ],
+    "System Functions": [],
+    "Xped Auto Bridge Format": "sysml2-xped-auto-map/v1"
+  }
+]

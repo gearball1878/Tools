@@ -1,0 +1,36 @@
+EDB - Gesprächsmappe v0.3
+25.10.2026
+
+Neu im Konzeptstand v0.3
+- Externe Bauteile können in der EDB bewertet werden.
+- Bei positiver Bewertung ist eine Rückführung in die Unternehmensdatenbank möglich.
+- Die initiale Parameteranalyse soll KI-gestützt on premise erfolgen.
+- Homogenität, Nutzungsbedarf und Versionierung gelten weiterhin durchgängig.
+
+Inhalt
+EDB_Konzeptanimation_v0.3.html
+  Nach dem Entpacken im Browser öffnen. Funktioniert offline.
+  Drei wählbare Anwendungsbeispiele, acht Abschnitte.
+  Mit Weiter manuell führen oder die Animation starten.
+
+EDB_Konzeptfilm_v0.3.mp4
+  80 Sekunden, 1280 x 720 Pixel, ohne Ton.
+
+EDB_Konzeptbroschuere_v0.3.pdf
+  Achtseitige Konzeptbeschreibung.
+
+EDB_Highlevel_Mindmap_v0.3.pdf
+  Konzeptübersicht im A3-Querformat.
+
+EDB_Kurzueberblick_v0.3.pdf
+  Einseitiger Einstieg zum Weitergeben.
+
+EDB_Gespraechsleitfaden_v0.3.pdf
+  Sechs Seiten mit Pitch, Gesprächsführung, Einwänden und Anwendungsbeispielen.
+
+EDB_Praesentation_v0.3.url
+  Verweis auf die aktualisierte, bearbeitbare Präsentation mit 15 Folien.
+https://chatgpt.com/space/page_0a849f7cf91c8191abf0e968d0fa33a2
+
+Die Mappe bleibt auf Highlevel-Konzeptniveau. Modelle, technische Architektur
+und detaillierte Bewertungs- oder Rückführungsmechanismen sind noch nicht festgelegt.

@@ -1,0 +1,186 @@
+{ "anyOf": 
+    [ 
+        {
+            "type": "null"},
+        {
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "array", 
+            "items": {
+                "type": "object",
+                "properties": {
+                    "System Name": { "type": "string", "pattern": "^[^!@#$%^&*(),.\\-\"/\\\\]+$" },
+                    "System Arch ID": { "type": "string", "pattern": "^{?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}}?|$" },
+                    "System Variants": { "type": "array", "items": { "type": "string", "pattern": "^[^!@#$%^&*(),.\\-\"/\\\\]+$"}},
+                    "System Ports": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "System Port Name": { "type": "string", "pattern": "^[^!@#$%^&*(),.\\-\"/\\\\]+$" },
+                                "System Port Arch ID": { "type": "string", "pattern": "^{?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}}?|$" },
+                                "System Port SCM ID": { "type": "string" },
+                                "System Port Direction": { "type": "string", "enum": ["in", "out", "inout"] },
+                                "System Port Variants": { "type": "array", "items": { "type": "string", "pattern": "^[^!@#$%^&*(),.\\-\"/\\\\]+$"}}
+                            },
+                            "required": ["System Port Name", "System Port Direction"],
+                            "description": "Optional: System Port Arch ID, System Port SCM ID, System Port Variants"
+                        }
+                    },
+                    "System Blocks": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "Module Name": { "type": "string", "pattern": "^[^!@#$%^&*(),.\\-\"/\\\\]+$" },
+                                "Module Arch ID": { "type": "string", "pattern": "^{?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}}?|$" },
+                                "Module SCM ID": { "type": "string" },
+                                "Module Color": { "anyOf": [{"type": "string", "pattern": "^#?0?x?([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$" }, {"type": "null"}]},
+                                "Module Variants": { "type": "array", "items": { "type": "string", "pattern": "^[^!@#$%^&*(),.\\-\"/\\\\]+$"}},
+                                "Module Ports": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "Module Port Name": { "type": "string", "pattern": "^[^!@#$%^&*(),.\\-\"/\\\\]+$" },
+                                            "Module Port Arch ID": { "type": "string", "pattern": "^{?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}}?|$" },
+                                            "Module Port SCM ID": { "type": "string" },
+                                            "Module Port Direction": { "type": "string", "enum": ["in", "out", "inout"] },
+                                            "Module Port Variants": { "type": "array", "items": { "type": "string", "pattern": "^[^!@#$%^&*(),.\\-\"/\\\\]+$"}}
+                                        },
+                                        "required": ["Module Port Name", "Module Port Direction"],
+                                        "description": "Optional: Module Port Arch ID, Module Port SCM ID, Module Port Variants"
+                                    }
+                                },
+                                "Module Blocks": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "AE Name": { "type": "string", "pattern": "^[^!@#$%^&*(),.\\-\"/\\\\]+$" },
+                                            "AE CustName": { "type": "string", "pattern": "^(|[^!@#$%^&*(),.\\-\"/\\\\]+)$" },
+                                            "AE Arch ID": { "type": "string", "pattern": "^{?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}}?|$" },
+                                            "AE SCM ID": { "type": "string" },
+                                            "AE Color": { "anyOf": [{"type": "string", "pattern": "^#?0?x?([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$" }, {"type": "null"}]},
+                                            "AE Power Modes": { "type": "array", "items": { "type": "string", "pattern": "^[^!@#$%^&*(),.\\-\"/\\\\]+$"}},
+                                            "AE Class": { "type": "string", "pattern": "^[^!@#$%^&*(),.\\-\"/\\\\]+$" },
+                                            "AE Variants": { "type": "array", "items": { "type": "string", "pattern": "^[^!@#$%^&*(),.\\-\"/\\\\]+$"}},
+                                            "AE Ports": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "AE Port Name": { "type": "string", "pattern": "^[^!@#$%^&*(),.\\-\"/\\\\]+$" },
+                                                        "AE Port Arch ID": { "type": "string", "pattern": "^{?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}}?|$" },
+                                                        "AE Port SCM ID": { "type": "string" },
+                                                        "AE Port Direction": { "type": "string", "enum": ["in", "out", "inout"] },
+                                                        "AE Port Type": { "type": "string" , "enum": ["PowerIn", "PowerOut", "Interface", "Analog", "Control", "Status", "Undefined"]},
+                                                        "AE Port Variants": { "type": "array", "items": { "type": "string", "pattern": "^[^!@#$%^&*(),.\\-\"/\\\\]+$"}},
+                                                        "AE Port Cons": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "object",
+                                                                "properties": {
+                                                                    "Con Name": { "type": "string", "pattern": "^[^!@#$%^&*(),.\\-\"/\\\\]+$" },
+                                                                    "Connectivity": {
+                                                                        "type": "array",
+                                                                        "items": { 
+                                                                            "type": "object", 
+                                                                            "properties": {
+                                                                                "Connected Port Arch ID": {"type": "string", "pattern": "^{?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}}?|$" },
+                                                                                "Connected Port SCM ID": {"type": "string"},
+                                                                                "Connector Arch ID": {"type": "string", "pattern": "^{?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}}?|$" }
+                                                                            }
+                                                                        }                                                                
+                                                                    },
+                                                                    "Con SCM ID": { "type": "string" },
+                                                                    "Con Type": { "type": "string" }
+                                                                },
+                                                                "required": ["Con Name", "Con Type"],
+                                                                "description": "Optional: Con Arch IDs, Con SCM ID"
+                                                            }
+                                                        }
+                                                    },
+                                                    "required": ["AE Port Name", "AE Port Direction", "AE Port Type"],
+                                                    "description": "Optional: AE Port Arch ID, AE Port SCM ID, AE Port Variants"
+                                                }
+                                            },
+                                            "AE Components": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "AE Component Name": { "type": "string", "pattern": "^[^!@#$%^&*(),.\\-\"/\\\\]+$" },
+                                                        "AE Component SCM ID": { "type": "string" },
+                                                        "AE Component Variants": { "type": "array", "items": { "type": "string", "pattern": "^[^!@#$%^&*(),.\\-\"/\\\\]+$"}},
+                                                        "AE Components": {
+                                                            "type": "array",
+                                                            "items": {
+                                                                "type": "object",
+                                                                "properties": {
+                                                                    "Component Name": { "type": "string", "pattern": "^[^!@#$%^&*(),.\\-\"/\\\\]+$" },
+                                                                    "Component RefDes": { "type": "string", "pattern": "^[^!@#$%^&*(),.\\-\"/\\\\]+$" }
+                                                                },
+                                                                "required": ["Component Name", "Component RefDes"]
+                                                            }
+                                                        }
+                                                    },
+                                                    "required": ["AE Component Name", "AE Component SCM ID", "AE Components"],
+                                                    "description": "Optional: AE Component Variants"
+                                                }
+                                            },
+                                            "AE Functions": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "AE Function Name": { "type": "string", "pattern": "^[^!@#$%^&*(),.\\-\"/\\\\]+$" },
+                                                        "AE Function Arch ID": { "type": "string", "pattern": "^{?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}}?|$" },
+                                                        "AE Function Type": { "type": "string" },
+                                                        "AE Function ASIL": { "type": "string" },
+                                                        "AE Function States": { "type": "array", "items": { "type": "string", "pattern": "^[^!@#$%^&*(),.\\-\"/\\\\]+$"}}
+                                                    },
+                                                    "required": ["AE Function Name", "AE Function Arch ID", "AE Function Type", "AE Function ASIL"],
+                                                    "description": "Optional: AE Function States"
+                                                }
+                                            }
+                                        },
+                                        "required": ["AE Name"], 
+                                        "description": "Optional: AE CustName, AE Arch ID, AE SCM ID, AE Color, AE Power Modes, AE Class, AE Variants, AE Ports, AE Components, AE Functions],"
+                                    }
+                                },
+                                "Module Functions": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "Module Function Name": { "type": "string", "pattern": "^[^!@#$%^&*(),.\\-\"/\\\\]+$" },
+                                            "Module Function Arch ID": { "type": "string", "pattern": "^{?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}}?|$" },
+                                            "Module Function Type": { "type": "string" },
+                                            "Module Function ASIL": { "type": "string" }
+                                        },
+                                        "required": ["Module Function Name", "Module Function Arch ID", "Module Function Type", "Module Function ASIL"]
+                                    }
+                                }
+                            },
+                            "required": ["Module Name"],
+                            "description": "Optional: Module Arch ID, Module SCM ID, Module Color, Module Variants, Module Ports, Module Blocks, Module Functions"
+                        }
+                    },
+                    "System Functions": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "System Function Name": { "type": "string", "pattern": "^[^!@#$%^&*(),.\\-\"/\\\\]+$" },
+                                "System Function Arch ID": { "type": "string", "pattern": "^{?[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}}?|$" }
+                            },
+                            "required": ["System Function Name", "System Function Arch ID"]
+                        }
+                    }
+                },
+                "required": ["System Name"],
+                "description": "Optional: System Arch ID, System Variants, System Ports, System Blocks, System Functions"
+            }
+        }
+    ]
+}

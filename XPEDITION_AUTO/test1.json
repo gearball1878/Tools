@@ -1,0 +1,102 @@
+{
+  "format": "sysml2-architecture/v1",
+  "name": "Generic_Architecture",
+  "blocks": [
+    {
+      "name": "test",
+      "level": "Level1_Domain",
+      "id": "BLK-53E6CA8BE7",
+      "kind": "Domain",
+      "is_host": false,
+      "color": "#e8f6f3",
+      "attributes": {
+        "domainColor": "#e8f6f3"
+      },
+      "ports": [],
+      "children": [
+        {
+          "name": "test1",
+          "level": "Level2_ArchitectureElement",
+          "id": "BLK-364DAED893",
+          "kind": "ArchitectureElement",
+          "is_host": false,
+          "color": "#e8f6f3",
+          "attributes": {
+            "domainColor": "#e8f6f3"
+          },
+          "ports": [
+            {
+              "name": "UART_Link_1",
+              "port_type": "Bidi",
+              "id": "PRT-2D6DB67C0A",
+              "attributes": {
+                "interfaceName": "UART_Link_1",
+                "connectionType": "Bus",
+                "signals": [
+                  "UART_Link_1_RX",
+                  "UART_Link_1_TX",
+                  "UART_Link_1_CTS",
+                  "UART_Link_1_RTS"
+                ],
+                "ecadSignals": [
+                  "UART_Link_1_RX",
+                  "UART_Link_1_TX",
+                  "UART_Link_1_CTS",
+                  "UART_Link_1_RTS"
+                ],
+                "generatedBy": "BusContentWizard",
+                "netId": "NET-0EF5AEA09B",
+                "family": "interface",
+                "template": "UART_[Link/Port]",
+                "instanceIndex": 1,
+                "bcLine": "UART_Link_1 UART_Link_1_RX,UART_Link_1_TX,UART_Link_1_CTS,UART_Link_1_RTS",
+                "busContentName": "UART_Link_1",
+                "propagateToParent": false
+              }
+            }
+          ],
+          "children": []
+        }
+      ]
+    }
+  ],
+  "connections": [],
+  "net_references": [
+    {
+      "name": "UART_Link_1",
+      "reference_type": "Bus",
+      "end": {
+        "block_path": "test.test1",
+        "port_name": "UART_Link_1"
+      },
+      "direction": "Bidi",
+      "id": "REF-373E36F8C1",
+      "net_id": "NET-0EF5AEA09B",
+      "attributes": {
+        "interfaceName": "UART_Link_1",
+        "connectionType": "Bus",
+        "signals": [
+          "UART_Link_1_RX",
+          "UART_Link_1_TX",
+          "UART_Link_1_CTS",
+          "UART_Link_1_RTS"
+        ],
+        "ecadSignals": [
+          "UART_Link_1_RX",
+          "UART_Link_1_TX",
+          "UART_Link_1_CTS",
+          "UART_Link_1_RTS"
+        ],
+        "generatedBy": "BusContentWizard",
+        "netId": "NET-0EF5AEA09B",
+        "family": "interface",
+        "template": "UART_[Link/Port]",
+        "instanceIndex": 1,
+        "bcLine": "UART_Link_1 UART_Link_1_RX,UART_Link_1_TX,UART_Link_1_CTS,UART_Link_1_RTS",
+        "busContentName": "UART_Link_1",
+        "propagateToParent": false
+      }
+    }
+  ],
+  "attributes": {}
+}

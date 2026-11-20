@@ -1,0 +1,33 @@
+EDB - Gesprächsmappe v0.2
+25.10.2026
+
+Neu für das Kundengespräch
+
+EDB_Konzeptanimation_v0.2.html
+  Nach dem Entpacken im Browser öffnen. Funktioniert offline.
+  Drei wählbare Beispiele: Toleranzanalyse, thermische Analyse, Redesign.
+  Mit Weiter manuell führen oder als Animation starten.
+  Pfeiltasten wechseln die Szene, Leertaste startet oder pausiert.
+
+EDB_Konzeptfilm_v0.2.mp4
+  60 Sekunden, 1280 x 720 Pixel, ohne Ton.
+  Zeigt das Beispiel Toleranzanalyse und den gemeinsamen Ablauf.
+
+EDB_Gespraechsleitfaden_v0.2.pdf
+  Fünf Seiten mit Einstieg, Kurzvorstellung, Gesprächsführung,
+  Anwendungsbeispielen, Einwandbehandlung und Nutzenbewertung.
+  Für die eigene Gesprächsvorbereitung.
+
+EDB_Praesentation_v0.2.url
+  Verweis auf die aktualisierte, bearbeitbare Präsentation mit 13 Folien.
+https://chatgpt.com/space/page_0a849f7cf91c8191abf0e968d0fa33a2
+
+Weiterhin enthalten: fachliche Basisunterlagen v0.1
+
+EDB_Konzeptbroschuere_v0.1.pdf - Siebenseitige Konzepterklärung.
+EDB_Highlevel_Mindmap_v0.1.pdf - A3-Querformat.
+EDB_Kurzueberblick_v0.1.pdf - Eine Seite zum Weitergeben.
+
+Version 0.2 erweitert die visuelle Darstellung und die Gesprächsführung.
+Die inhaltlichen Grundprinzipien der Basisunterlagen gelten weiter.
+Alle Darstellungen beschreiben das Konzept und mögliche Anwendungsfälle.

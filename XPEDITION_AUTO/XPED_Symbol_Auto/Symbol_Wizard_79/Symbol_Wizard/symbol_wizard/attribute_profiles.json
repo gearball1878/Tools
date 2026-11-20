@@ -1,0 +1,202 @@
+{
+  "version": 1,
+  "core_part_attributes": [
+    {
+      "name": "RefDes",
+      "value": "U?",
+      "visible": true,
+      "required": true,
+      "description": "Reference designator. Core attribute and cannot be deleted.",
+      "locked": true
+    },
+    {
+      "name": "CLASS",
+      "value": "",
+      "visible": true,
+      "required": true,
+      "description": "Component class / part type used to select PartType-specific attribute profiles.",
+      "locked": true
+    },
+    {
+      "name": "TYPE",
+      "value": "TYPE",
+      "visible": true,
+      "required": false,
+      "description": "Display/type text used by many existing Liebherr templates.",
+      "locked": false
+    },
+    {
+      "name": "Package",
+      "value": "",
+      "visible": true,
+      "required": false,
+      "description": "Package / case information.",
+      "locked": false
+    },
+    {
+      "name": "Datasheet-Link",
+      "value": "",
+      "visible": false,
+      "required": false,
+      "description": "Optional datasheet URL or document reference.",
+      "locked": false
+    },
+    {
+      "name": "Part Name",
+      "value": "",
+      "visible": false,
+      "required": false,
+      "description": "Internal or ERP part name.",
+      "locked": false
+    }
+  ],
+  "base_part_classes": {
+    "DEFAULT": {
+      "attributes": [
+        {
+          "name": "Manufacturer",
+          "value": "",
+          "visible": false,
+          "required": false,
+          "description": "Optional common manufacturer / vendor metadata.",
+          "locked": false
+        },
+        {
+          "name": "Lifecycle State",
+          "value": "",
+          "visible": false,
+          "required": false,
+          "description": "Optional lifecycle / release state metadata.",
+          "locked": false
+        }
+      ]
+    }
+  },
+  "part_types": {},
+  "pin_types": {
+    "IN": {
+      "attributes": [
+        {
+          "name": "Input Voltage Max",
+          "value": "",
+          "visible": false,
+          "required": false,
+          "description": "DRC/metaprocess hint for maximum allowed input voltage.",
+          "locked": false
+        },
+        {
+          "name": "Input Threshold",
+          "value": "",
+          "visible": false,
+          "required": false,
+          "description": "Optional logical threshold or signal class.",
+          "locked": false
+        }
+      ]
+    },
+    "OUT": {
+      "attributes": [
+        {
+          "name": "Output Current Max",
+          "value": "",
+          "visible": false,
+          "required": false,
+          "description": "Maximum source/sink current for checks.",
+          "locked": false
+        },
+        {
+          "name": "Output Voltage Max",
+          "value": "",
+          "visible": false,
+          "required": false,
+          "description": "Maximum output voltage.",
+          "locked": false
+        }
+      ]
+    },
+    "BIDI": {
+      "attributes": [
+        {
+          "name": "IO Voltage Max",
+          "value": "",
+          "visible": false,
+          "required": false,
+          "description": "Maximum bidirectional IO voltage.",
+          "locked": false
+        },
+        {
+          "name": "Drive Strength",
+          "value": "",
+          "visible": false,
+          "required": false,
+          "description": "Optional IO drive capability.",
+          "locked": false
+        }
+      ]
+    },
+    "PASSIVE": {
+      "attributes": [
+        {
+          "name": "Net Tie Allowed",
+          "value": "",
+          "visible": false,
+          "required": false,
+          "description": "Passive connectivity/metaprocess flag.",
+          "locked": false
+        }
+      ]
+    },
+    "POWER": {
+      "attributes": [
+        {
+          "name": "Max Voltage",
+          "value": "",
+          "visible": false,
+          "required": false,
+          "description": "Maximum voltage for power pin DRC.",
+          "locked": false
+        },
+        {
+          "name": "Power Rating",
+          "value": "",
+          "visible": false,
+          "required": false,
+          "description": "Power rating or rail capability.",
+          "locked": false
+        }
+      ]
+    },
+    "GROUND": {
+      "attributes": [
+        {
+          "name": "Ground Domain",
+          "value": "",
+          "visible": false,
+          "required": false,
+          "description": "Ground domain, e.g. AGND/DGND/PGND.",
+          "locked": false
+        }
+      ]
+    },
+    "ANALOG": {
+      "attributes": [
+        {
+          "name": "Analog Domain",
+          "value": "",
+          "visible": false,
+          "required": false,
+          "description": "Analog signal/voltage domain.",
+          "locked": false
+        },
+        {
+          "name": "Max Voltage",
+          "value": "",
+          "visible": false,
+          "required": false,
+          "description": "Maximum analog pin voltage.",
+          "locked": false
+        }
+      ]
+    }
+  }
+}

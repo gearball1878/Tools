@@ -1,0 +1,152 @@
+{
+  "name": "Generic_Architecture",
+  "blocks": [
+    {
+      "name": "PSU",
+      "level": "Level1_Domain",
+      "id": "BLK-5D3D5D5154",
+      "kind": "Domain",
+      "is_host": false,
+      "color": "#f8cecc",
+      "attributes": {
+        "domainColor": "#f8cecc"
+      },
+      "ports": [],
+      "children": [
+        {
+          "name": "PSU_SmC",
+          "level": "Level2_ArchitectureElement",
+          "id": "BLK-852E3DB2DA",
+          "kind": "ArchitectureElement",
+          "is_host": false,
+          "color": "#f8cecc",
+          "attributes": {
+            "domainColor": "#f8cecc"
+          },
+          "ports": [
+            {
+              "name": "UART_Link_1",
+              "port_type": "Bidi",
+              "id": "PRT-A85E28F3A3",
+              "attributes": {
+                "interfaceName": "UART_Link_1",
+                "connectionType": "Bus",
+                "signals": [
+                  "UART_Link_1_RX",
+                  "UART_Link_1_TX",
+                  "UART_Link_1_CTS",
+                  "UART_Link_1_RTS"
+                ],
+                "ecadSignals": [
+                  "UART_Link_1_RX",
+                  "UART_Link_1_TX",
+                  "UART_Link_1_CTS",
+                  "UART_Link_1_RTS"
+                ],
+                "generatedBy": "BusContentWizard",
+                "netId": "NET-0EF5AEA09B",
+                "family": "interface",
+                "template": "UART_[Link/Port]",
+                "instanceIndex": 1,
+                "bcLine": "UART_Link_1 UART_Link_1_RX,UART_Link_1_TX,UART_Link_1_CTS,UART_Link_1_RTS",
+                "busContentName": "UART_Link_1",
+                "propagateToParent": false
+              }
+            },
+            {
+              "name": "RES#_PSU_INFO_1V8",
+              "port_type": "In",
+              "id": "PRT-BD8E94A077",
+              "attributes": {
+                "interfaceName": "RES#_PSU_INFO_1V8",
+                "connectionType": "Net",
+                "signals": [
+                  "RES#_PSU_INFO_1V8"
+                ],
+                "ecadSignals": [
+                  "RES#_PSU_INFO_1V8"
+                ],
+                "generatedBy": "BusContentWizard",
+                "netId": "NET-52AFE7B6D6",
+                "family": "control",
+                "template": "RES",
+                "instanceIndex": 0,
+                "bcLine": "PSU_Control RES#_PSU_INFO_1V8",
+                "busContentName": "PSU_Control",
+                "propagateToParent": false
+              }
+            }
+          ],
+          "children": []
+        }
+      ]
+    }
+  ],
+  "connections": [],
+  "net_references": [
+    {
+      "name": "UART_Link_1",
+      "reference_type": "Bus",
+      "end": {
+        "block_path": "PSU.PSU_SmC",
+        "port_name": "UART_Link_1"
+      },
+      "direction": "Bidi",
+      "id": "REF-373E36F8C1",
+      "net_id": "NET-0EF5AEA09B",
+      "attributes": {
+        "interfaceName": "UART_Link_1",
+        "connectionType": "Bus",
+        "signals": [
+          "UART_Link_1_RX",
+          "UART_Link_1_TX",
+          "UART_Link_1_CTS",
+          "UART_Link_1_RTS"
+        ],
+        "ecadSignals": [
+          "UART_Link_1_RX",
+          "UART_Link_1_TX",
+          "UART_Link_1_CTS",
+          "UART_Link_1_RTS"
+        ],
+        "generatedBy": "BusContentWizard",
+        "netId": "NET-0EF5AEA09B",
+        "family": "interface",
+        "template": "UART_[Link/Port]",
+        "instanceIndex": 1,
+        "bcLine": "UART_Link_1 UART_Link_1_RX,UART_Link_1_TX,UART_Link_1_CTS,UART_Link_1_RTS",
+        "busContentName": "UART_Link_1",
+        "propagateToParent": false
+      }
+    },
+    {
+      "name": "RES#_PSU_INFO_1V8",
+      "reference_type": "Net",
+      "end": {
+        "block_path": "PSU.PSU_SmC",
+        "port_name": "RES#_PSU_INFO_1V8"
+      },
+      "direction": "In",
+      "id": "REF-2B0E246B0D",
+      "net_id": "NET-52AFE7B6D6",
+      "attributes": {
+        "interfaceName": "RES#_PSU_INFO_1V8",
+        "connectionType": "Net",
+        "signals": [
+          "RES#_PSU_INFO_1V8"
+        ],
+        "ecadSignals": [
+          "RES#_PSU_INFO_1V8"
+        ],
+        "generatedBy": "BusContentWizard",
+        "netId": "NET-52AFE7B6D6",
+        "family": "control",
+        "template": "RES",
+        "instanceIndex": 0,
+        "bcLine": "PSU_Control RES#_PSU_INFO_1V8",
+        "busContentName": "PSU_Control",
+        "propagateToParent": false
+      }
+    }
+  ]
+}

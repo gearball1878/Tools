@@ -1,0 +1,114 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="1540" viewBox="0 0 2400 1540">
+<defs><marker id="blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#386FB1"/></marker><marker id="teal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#168C86"/></marker></defs>
+<g font-family="DejaVu Sans, sans-serif">
+<rect x="0" y="0" width="2400" height="1540" rx="0" fill="#F7F9FC" stroke="none" stroke-width="2"/>
+<rect x="60" y="54" width="73" height="7" rx="3" fill="#168C86" stroke="none" stroke-width="2"/>
+<text x="60" y="112" fill="#17324E" font-size="50" font-weight="750" text-anchor="start">EDB</text>
+<text x="199" y="111" fill="#17324E" font-size="46" font-weight="650" text-anchor="start">Technische Architektur</text>
+<text x="60" y="158" fill="#637489" font-size="26" font-weight="400" text-anchor="start">Einheitliche Bauteildaten · belegte Parameter · nachvollziehbare Versionen</text>
+<rect x="2035" y="77" width="305" height="47" rx="23" fill="#E7EEF6" stroke="none" stroke-width="2"/>
+<text x="2187" y="108" fill="#375675" font-size="19" font-weight="600" text-anchor="middle">KONZEPT  /  V1.0</text>
+<rect x="470" y="225" width="1870" height="1140" rx="24" fill="#EEF3F8" stroke="#CDD9E6" stroke-width="2"/>
+<rect x="500" y="249" width="281" height="39" rx="19" fill="#DCE8F4" stroke="none" stroke-width="2"/>
+<text x="640" y="276" fill="#325E89" font-size="19" font-weight="700" text-anchor="middle">ON PREMISE</text>
+<text x="805" y="276" fill="#4C637B" font-size="23" font-weight="500" text-anchor="start">Unternehmensinfrastruktur</text>
+<text x="2310" y="276" fill="#73859A" font-size="19" font-weight="400" text-anchor="end">Logische Komponenten</text>
+<text x="1000" y="328" fill="#6E8093" font-size="18" font-weight="650" text-anchor="start">BENUTZERZUGRIFF</text>
+<rect x="1000" y="350" width="540" height="132" rx="15" fill="white" stroke="#D6E0EA" stroke-width="2"/>
+<rect x="1001" y="370" width="5" height="92" rx="2" fill="#386FB1" stroke="none" stroke-width="2"/>
+<text x="1026" y="393" fill="#19334E" font-size="26" font-weight="650" text-anchor="start">EDB-Weboberfläche</text>
+<text x="1026" y="428" fill="#53667B" font-size="22" font-weight="400" text-anchor="start">Suchen · Pflegen · Prüfen · Freigeben</text>
+<text x="1720" y="328" fill="#6E8093" font-size="18" font-weight="650" text-anchor="start">NUTZENDE ANWENDUNGEN</text>
+<rect x="1720" y="350" width="540" height="132" rx="15" fill="white" stroke="#D6E0EA" stroke-width="2"/>
+<rect x="1721" y="370" width="5" height="92" rx="2" fill="#386FB1" stroke="none" stroke-width="2"/>
+<text x="1746" y="393" fill="#19334E" font-size="26" font-weight="650" text-anchor="start">Engineering-Anwendungen</text>
+<text x="1746" y="428" fill="#53667B" font-size="22" font-weight="400" text-anchor="start">ECAD · ISD / Redesign · Simulation</text>
+<text x="60" y="576" fill="#6E8093" font-size="19" font-weight="650" text-anchor="start">EXTERNE QUELLEN</text>
+<rect x="60" y="635" width="320" height="186" rx="15" fill="#FFFFFF" stroke="#D6E0EA" stroke-width="2"/>
+<rect x="61" y="655" width="5" height="146" rx="2" fill="#7A899B" stroke="none" stroke-width="2"/>
+<text x="86" y="678" fill="#19334E" font-size="26" font-weight="650" text-anchor="start">Hersteller &amp;</text>
+<text x="86" y="713" fill="#53667B" font-size="22" font-weight="400" text-anchor="start">Distributoren</text>
+<text x="86" y="742" fill="#53667B" font-size="22" font-weight="400" text-anchor="start">Bauteildaten und</text>
+<text x="86" y="771" fill="#53667B" font-size="22" font-weight="400" text-anchor="start">technische Dokumente</text>
+<text x="540" y="576" fill="#6E8093" font-size="18" font-weight="650" text-anchor="start">SYSTEMINTEGRATION</text>
+<rect x="540" y="640" width="360" height="148" rx="15" fill="white" stroke="#D6E0EA" stroke-width="2"/>
+<rect x="541" y="660" width="5" height="108" rx="2" fill="#386FB1" stroke="none" stroke-width="2"/>
+<text x="566" y="683" fill="#19334E" font-size="26" font-weight="650" text-anchor="start">Konnektoren</text>
+<text x="566" y="718" fill="#53667B" font-size="21" font-weight="400" text-anchor="start">Zuordnung · Synchronisation</text>
+<text x="566" y="747" fill="#53667B" font-size="21" font-weight="400" text-anchor="start">Import / Export</text>
+<rect x="540" y="1010" width="360" height="180" rx="15" fill="white" stroke="#D6E0EA" stroke-width="2"/>
+<rect x="541" y="1030" width="5" height="140" rx="2" fill="#386FB1" stroke="none" stroke-width="2"/>
+<text x="566" y="1053" fill="#19334E" font-size="26" font-weight="650" text-anchor="start">Unternehmenssysteme</text>
+<text x="566" y="1088" fill="#53667B" font-size="22" font-weight="400" text-anchor="start">Bauteildatenbank</text>
+<text x="566" y="1117" fill="#53667B" font-size="22" font-weight="400" text-anchor="start">PLM · ERP</text>
+<rect x="1000" y="640" width="540" height="190" rx="19" fill="#173A60" stroke="none" stroke-width="2"/>
+<text x="1030" y="688" fill="#FFFFFF" font-size="35" font-weight="650" text-anchor="start">EDB-Backend</text>
+<text x="1030" y="725" fill="#A9D0F0" font-size="19" font-weight="650" text-anchor="start">ZENTRALE API</text>
+<text x="1030" y="768" fill="#E0EAF5" font-size="23" font-weight="400" text-anchor="start">Validierung · Rechte · Freigaben</text>
+<text x="1030" y="800" fill="#E0EAF5" font-size="23" font-weight="400" text-anchor="start">Parameter- und Versionsverwaltung</text>
+<rect x="1000" y="1030" width="252" height="160" rx="15" fill="white" stroke="#D6E0EA" stroke-width="2"/>
+<rect x="1001" y="1050" width="5" height="120" rx="2" fill="#386FB1" stroke="none" stroke-width="2"/>
+<text x="1026" y="1073" fill="#19334E" font-size="26" font-weight="650" text-anchor="start">Datenbank</text>
+<text x="1026" y="1108" fill="#53667B" font-size="19" font-weight="400" text-anchor="start">Bauteile · Parameter</text>
+<text x="1026" y="1137" fill="#53667B" font-size="19" font-weight="400" text-anchor="start">Quellen · Versionen</text>
+<rect x="1290" y="1030" width="250" height="160" rx="15" fill="white" stroke="#D6E0EA" stroke-width="2"/>
+<rect x="1291" y="1050" width="5" height="120" rx="2" fill="#386FB1" stroke="none" stroke-width="2"/>
+<text x="1316" y="1073" fill="#19334E" font-size="26" font-weight="650" text-anchor="start">Dokumente</text>
+<text x="1316" y="1108" fill="#53667B" font-size="18" font-weight="400" text-anchor="start">Originale · Revisionen</text>
+<text x="1316" y="1137" fill="#53667B" font-size="18" font-weight="400" text-anchor="start">Analyseartefakte</text>
+<rect x="1720" y="545" width="540" height="645" rx="20" fill="#EAF6F3" stroke="#B7DBD4" stroke-width="2"/>
+<text x="1750" y="581" fill="#287A72" font-size="18" font-weight="650" text-anchor="start">LOKALE DOKUMENTENANALYSE</text>
+<rect x="1750" y="610" width="460" height="108" rx="15" fill="white" stroke="#D6E0EA" stroke-width="2"/>
+<rect x="1751" y="630" width="5" height="68" rx="2" fill="#168C86" stroke="none" stroke-width="2"/>
+<text x="1776" y="653" fill="#19334E" font-size="26" font-weight="650" text-anchor="start">Auftragsverwaltung / Worker</text>
+<text x="1776" y="688" fill="#53667B" font-size="21" font-weight="400" text-anchor="start">Warteschlange · Status · Wiederholung</text>
+<rect x="1750" y="790" width="460" height="108" rx="15" fill="white" stroke="#D6E0EA" stroke-width="2"/>
+<rect x="1751" y="810" width="5" height="68" rx="2" fill="#168C86" stroke="none" stroke-width="2"/>
+<text x="1776" y="833" fill="#19334E" font-size="26" font-weight="650" text-anchor="start">Dokumentenaufbereitung</text>
+<text x="1776" y="868" fill="#53667B" font-size="22" font-weight="400" text-anchor="start">Text · Tabellen · OCR · Seitenbezug</text>
+<rect x="1750" y="970" width="460" height="108" rx="15" fill="white" stroke="#D6E0EA" stroke-width="2"/>
+<rect x="1751" y="990" width="5" height="68" rx="2" fill="#168C86" stroke="none" stroke-width="2"/>
+<text x="1776" y="1013" fill="#19334E" font-size="26" font-weight="650" text-anchor="start">KI-Inferenzdienst</text>
+<text x="1776" y="1048" fill="#53667B" font-size="22" font-weight="400" text-anchor="start">Strukturierte Parameterextraktion</text>
+<text x="1750" y="1153" fill="#3D786F" font-size="20" font-weight="400" text-anchor="start">Vorschläge mit Fundstellen und Unsicherheiten</text>
+<path d="M1270 482 V640" fill="none" stroke="#386FB1" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#blue)" marker-start="url(#blue)"/>
+<text x="1290" y="553" fill="#53667B" font-size="20" font-weight="500" text-anchor="start">HTTPS / EDB-API</text>
+<path d="M1720 416 H1642 V682 H1540" fill="none" stroke="#386FB1" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#blue)" marker-start="url(#blue)"/>
+<text x="1659" y="536" fill="#53667B" font-size="20" font-weight="500" text-anchor="start">EDB-API</text>
+<path d="M900 693 H1000" fill="none" stroke="#386FB1" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#blue)"/>
+<path d="M1000 747 H900" fill="none" stroke="#386FB1" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#blue)"/>
+<text x="934" y="674" fill="#53667B" font-size="20" font-weight="500" text-anchor="start">API</text>
+<path d="M380 715 H540" fill="none" stroke="#386FB1" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#blue)"/>
+<text x="394" y="674" fill="#53667B" font-size="20" font-weight="500" text-anchor="start">API /</text>
+<text x="394" y="699" fill="#53667B" font-size="20" font-weight="500" text-anchor="start">Datei</text>
+<path d="M678 788 V1010" fill="none" stroke="#386FB1" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#blue)"/>
+<path d="M757 1010 V788" fill="none" stroke="#386FB1" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#blue)"/>
+<text x="780" y="870" fill="#53667B" font-size="20" font-weight="500" text-anchor="start">System-API /</text>
+<text x="780" y="897" fill="#53667B" font-size="20" font-weight="500" text-anchor="start">Dateiaustausch</text>
+<path d="M1270 830 V945 H1126 V1030" fill="none" stroke="#386FB1" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#blue)"/>
+<path d="M1270 945 H1415 V1030" fill="none" stroke="#386FB1" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#blue)"/>
+<text x="1020" y="926" fill="#53667B" font-size="20" font-weight="500" text-anchor="start">Lesen / Schreiben</text>
+<path d="M1540 760 H1610 V638 H1750" fill="none" stroke="#168C86" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#teal)"/>
+<text x="1554" y="617" fill="#287A72" font-size="20" font-weight="500" text-anchor="start">Auftrag</text>
+<path d="M1750 688 H1683 V889 H1465 V830" fill="none" stroke="#168C86" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#teal)" stroke-dasharray="9 8"/>
+<text x="1505" y="922" fill="#287A72" font-size="20" font-weight="500" text-anchor="start">Ergebnisse zur Prüfung</text>
+<path d="M1960 718 V790" fill="none" stroke="#168C86" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#teal)"/>
+<text x="1980" y="761" fill="#53667B" font-size="20" font-weight="500" text-anchor="start">Dokument</text>
+<path d="M1960 898 V970" fill="none" stroke="#168C86" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#teal)"/>
+<text x="1980" y="940" fill="#53667B" font-size="20" font-weight="500" text-anchor="start">Inhalte + Zielschema</text>
+<path d="M2210 1024 H2237 V665 H2210" fill="none" stroke="#168C86" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#teal)" stroke-dasharray="9 8"/>
+<rect x="540" y="1240" width="1720" height="84" rx="13" fill="#E1E8F0" stroke="none" stroke-width="2"/>
+<text x="568" y="1275" fill="#52677F" font-size="17" font-weight="650" text-anchor="start">BETRIEB &amp; SICHERHEIT</text>
+<text x="568" y="1304" fill="#324C68" font-size="21" font-weight="500" text-anchor="start">Unternehmensanmeldung / Rollen</text>
+<text x="1120" y="1304" fill="#324C68" font-size="21" font-weight="500" text-anchor="start">HTTPS · Monitoring · Protokollierung</text>
+<text x="1740" y="1304" fill="#324C68" font-size="21" font-weight="500" text-anchor="start">Backup · Wiederherstellung</text>
+<path d="M60 1420 H120" fill="none" stroke="#386FB1" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#blue)"/>
+<text x="137" y="1427" fill="#53667B" font-size="21" font-weight="400" text-anchor="start">Datenzugriff / Austausch</text>
+<path d="M620 1420 H680" fill="none" stroke="#168C86" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#teal)"/>
+<text x="697" y="1427" fill="#53667B" font-size="21" font-weight="400" text-anchor="start">Analyseauftrag / Verarbeitung</text>
+<path d="M1280 1420 H1340" fill="none" stroke="#168C86" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#teal)" stroke-dasharray="9 8"/>
+<text x="1357" y="1427" fill="#53667B" font-size="21" font-weight="400" text-anchor="start">Analyseergebnis</text>
+<text x="2340" y="1427" fill="#73859A" font-size="20" font-weight="400" text-anchor="end">Pfeilrichtung = Datenfluss</text>
+<text x="60" y="1490" fill="#73859A" font-size="20" font-weight="400" text-anchor="start">Architekturvorschlag · Komponenten sind unabhängig von ihrer späteren Serverzuordnung dargestellt.</text>
+<text x="2340" y="1490" fill="#73859A" font-size="20" font-weight="500" text-anchor="end">EDB  /  19.11.2026</text>
+</g></svg>

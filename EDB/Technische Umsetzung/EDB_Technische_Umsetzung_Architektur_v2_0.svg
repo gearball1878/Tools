@@ -1,0 +1,158 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2560" height="1880" viewBox="0 0 2560 1880"><defs>
+<marker id="blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10Z" fill="#3973B2"/></marker>
+<marker id="teal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10Z" fill="#16877C"/></marker>
+<marker id="purple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10Z" fill="#8063A8"/></marker>
+</defs><g font-family="DejaVu Sans, sans-serif">
+<rect x="0" y="0" width="2560" height="1880" rx="0" fill="#F7F9FC" stroke="none" stroke-width="2"/>
+<rect x="60" y="53" width="80" height="7" rx="3" fill="#16877C" stroke="none" stroke-width="2"/>
+<text x="60" y="115" font-size="50" fill="#203B56" font-weight="700">EDB  Technische Umsetzung</text>
+<text x="60" y="165" font-size="26" fill="#5C7288" font-weight="400">Mehrnutzerbetrieb mit Branches, Review, reproduzierbaren Berechnungen und Baselines</text>
+<text x="2220" y="106" font-size="20" fill="#59738B" font-weight="650">VORSCHLAG  V2.0</text>
+<rect x="460" y="225" width="2040" height="1195" rx="24" fill="#EDF3F8" stroke="#CBD9E5" stroke-width="2"/>
+<text x="500" y="271" font-size="21" fill="#3973B2" font-weight="700">ON PREMISE</text>
+<text x="710" y="271" font-size="25" fill="#526B82" font-weight="400">Unternehmensinfrastruktur</text>
+<text x="2070" y="271" font-size="20" fill="#6E8398" font-weight="400">Logische Dienste und Speicher</text>
+<rect x="1000" y="330" width="660" height="135" rx="16" fill="#FFFFFF" stroke="#D0DCE8" stroke-width="2"/>
+<rect x="1000" y="348" width="5" height="99" rx="2" fill="#3973B2" stroke="none" stroke-width="2"/>
+<text x="1024" y="370" font-size="27" fill="#203B56" font-weight="650">Webfrontend</text>
+<text x="1024" y="407" font-size="23" fill="#536B80" font-weight="400">Vue 3 · TypeScript · Quasar</text>
+<text x="1024" y="437" font-size="23" fill="#536B80" font-weight="400">Bauteile · Branches · Vergleich · Review</text>
+<rect x="1860" y="330" width="560" height="135" rx="16" fill="#FFFFFF" stroke="#D0DCE8" stroke-width="2"/>
+<rect x="1860" y="348" width="5" height="99" rx="2" fill="#3973B2" stroke="none" stroke-width="2"/>
+<text x="1884" y="370" font-size="27" fill="#203B56" font-weight="650">Engineering Anwendungen</text>
+<text x="1884" y="407" font-size="23" fill="#536B80" font-weight="400">ECAD · ISD / Redesign · Simulation</text>
+<text x="1884" y="437" font-size="23" fill="#536B80" font-weight="400">Versionierte Parameter über EDB API</text>
+<rect x="530" y="330" width="350" height="135" rx="16" fill="#FFFFFF" stroke="#D0DCE8" stroke-width="2"/>
+<rect x="530" y="348" width="5" height="99" rx="2" fill="#3973B2" stroke="none" stroke-width="2"/>
+<text x="554" y="370" font-size="23" fill="#203B56" font-weight="650">Unternehmensanmeldung</text>
+<text x="554" y="407" font-size="20" fill="#536B80" font-weight="400">Bestehender Identity Provider</text>
+<text x="554" y="437" font-size="23" fill="#536B80" font-weight="400">OIDC · optional Keycloak</text>
+<text x="60" y="520" font-size="20" fill="#6E8398" font-weight="650">EXTERNE QUELLEN</text>
+<rect x="60" y="570" width="320" height="185" rx="16" fill="#FFFFFF" stroke="#D0DCE8" stroke-width="2"/>
+<rect x="60" y="588" width="5" height="149" rx="2" fill="#8391A0" stroke="none" stroke-width="2"/>
+<text x="84" y="610" font-size="27" fill="#203B56" font-weight="650">Hersteller und</text>
+<text x="84" y="647" font-size="23" fill="#536B80" font-weight="400">Distributoren</text>
+<text x="84" y="677" font-size="19" fill="#536B80" font-weight="400">Bauteildaten · Datenblätter</text>
+<rect x="530" y="570" width="350" height="165" rx="16" fill="#FFFFFF" stroke="#D0DCE8" stroke-width="2"/>
+<rect x="530" y="588" width="5" height="129" rx="2" fill="#3973B2" stroke="none" stroke-width="2"/>
+<text x="554" y="610" font-size="27" fill="#203B56" font-weight="650">Konnektoren</text>
+<text x="554" y="647" font-size="23" fill="#536B80" font-weight="400">Systemzuordnung</text>
+<text x="554" y="677" font-size="23" fill="#536B80" font-weight="400">Import · Export · Abgleich</text>
+<rect x="530" y="1020" width="350" height="165" rx="16" fill="#FFFFFF" stroke="#D0DCE8" stroke-width="2"/>
+<rect x="530" y="1038" width="5" height="129" rx="2" fill="#3973B2" stroke="none" stroke-width="2"/>
+<text x="554" y="1060" font-size="25" fill="#203B56" font-weight="650">Unternehmenssysteme</text>
+<text x="554" y="1097" font-size="23" fill="#536B80" font-weight="400">PLM · ERP</text>
+<text x="554" y="1127" font-size="19" fill="#536B80" font-weight="400">Bestehende Bauteildatenbank</text>
+<rect x="1000" y="570" width="660" height="260" rx="20" fill="#183D62" stroke="none" stroke-width="2"/>
+<text x="1032" y="621" font-size="37" fill="white" font-weight="650">EDB Backend</text>
+<text x="1032" y="661" font-size="25" fill="#C5DFF4" font-weight="400">FastAPI · Pydantic · SQLAlchemy</text>
+<text x="1032" y="709" font-size="27" fill="white" font-weight="600">Fachliche Versionsverwaltung</text>
+<text x="1032" y="752" font-size="24" fill="#E2ECF6" font-weight="400">Branch und Commit · Diff · Review · Merge</text>
+<text x="1032" y="786" font-size="24" fill="#E2ECF6" font-weight="400">Parameterprüfung · Rechte · Baselines</text>
+<rect x="1860" y="570" width="560" height="110" rx="16" fill="#FFFFFF" stroke="#D0DCE8" stroke-width="2"/>
+<rect x="1860" y="588" width="5" height="74" rx="2" fill="#16877C" stroke="none" stroke-width="2"/>
+<text x="1884" y="610" font-size="27" fill="#203B56" font-weight="650">Aufträge und Worker</text>
+<text x="1884" y="647" font-size="21" fill="#536B80" font-weight="400">Celery · RabbitMQ · dauerhafter Auftragsstatus</text>
+<rect x="1860" y="770" width="560" height="110" rx="16" fill="#FFFFFF" stroke="#D0DCE8" stroke-width="2"/>
+<rect x="1860" y="788" width="5" height="74" rx="2" fill="#16877C" stroke="none" stroke-width="2"/>
+<text x="1884" y="810" font-size="27" fill="#203B56" font-weight="650">Dokumentenaufbereitung</text>
+<text x="1884" y="847" font-size="23" fill="#536B80" font-weight="400">Docling · OCR · Tabellen · Fundstellen</text>
+<rect x="1860" y="970" width="560" height="110" rx="16" fill="#FFFFFF" stroke="#D0DCE8" stroke-width="2"/>
+<rect x="1860" y="988" width="5" height="74" rx="2" fill="#16877C" stroke="none" stroke-width="2"/>
+<text x="1884" y="1010" font-size="27" fill="#203B56" font-weight="650">Lokale KI Inferenz</text>
+<text x="1884" y="1047" font-size="23" fill="#536B80" font-weight="400">Qwen3.5-9B über vLLM · GPU separat</text>
+<rect x="1860" y="1150" width="560" height="100" rx="16" fill="#FFFFFF" stroke="#D0DCE8" stroke-width="2"/>
+<rect x="1860" y="1168" width="5" height="64" rx="2" fill="#8063A8" stroke="none" stroke-width="2"/>
+<text x="1884" y="1190" font-size="27" fill="#203B56" font-weight="650">Dokumente und Ergebnisse</text>
+<text x="1884" y="1227" font-size="23" fill="#536B80" font-weight="400">Dateispeicher · Versionen · SHA-256</text>
+<rect x="1000" y="1020" width="660" height="230" rx="20" fill="#FFFFFF" stroke="#B9CADB" stroke-width="2"/>
+<text x="1026" y="1062" font-size="32" fill="#203B56" font-weight="650">PostgreSQL</text>
+<text x="1280" y="1061" font-size="22" fill="#667D91" font-weight="400">Eine Datenbank</text>
+<rect x="1024" y="1090" width="190" height="100" rx="10" fill="#ECF2F8" stroke="none" stroke-width="2"/>
+<text x="1038" y="1121" font-size="22" fill="#203B56" font-weight="650">master</text>
+<text x="1038" y="1151" font-size="19" fill="#536B80" font-weight="400">Freigegebene</text>
+<text x="1038" y="1176" font-size="19" fill="#536B80" font-weight="400">Revisionen</text>
+<rect x="1235" y="1090" width="190" height="100" rx="10" fill="#ECF2F8" stroke="none" stroke-width="2"/>
+<text x="1249" y="1121" font-size="22" fill="#203B56" font-weight="650">workspace</text>
+<text x="1249" y="1151" font-size="19" fill="#536B80" font-weight="400">Branches</text>
+<text x="1249" y="1176" font-size="19" fill="#536B80" font-weight="400">und Commits</text>
+<rect x="1446" y="1090" width="190" height="100" rx="10" fill="#ECF2F8" stroke="none" stroke-width="2"/>
+<text x="1460" y="1121" font-size="22" fill="#203B56" font-weight="650">collaboration</text>
+<text x="1460" y="1151" font-size="19" fill="#536B80" font-weight="400">Review · Tags</text>
+<text x="1460" y="1176" font-size="19" fill="#536B80" font-weight="400">und Baselines</text>
+<text x="1026" y="1225" font-size="21" fill="#536B80" font-weight="400">execution  ·  Eingabestände und Berechnungsreferenzen</text>
+<path d="M1330 465 V570" fill="none" stroke="#3973B2" stroke-width="3" stroke-linejoin="round" marker-end="url(#blue)" marker-start="url(#blue)"/>
+<text x="1350" y="526" font-size="20" fill="#536B80" font-weight="500">HTTPS · REST / JSON</text>
+<path d="M1860 397 H1770 V615 H1660" fill="none" stroke="#3973B2" stroke-width="3" stroke-linejoin="round" marker-end="url(#blue)" marker-start="url(#blue)"/>
+<text x="1680" y="515" font-size="20" fill="#536B80" font-weight="500">API</text>
+<path d="M880 397 H930 V585 H1000" fill="none" stroke="#3973B2" stroke-width="3" stroke-linejoin="round" marker-end="url(#blue)" marker-start="url(#blue)"/>
+<text x="942" y="515" font-size="16" fill="#536B80" font-weight="400">OIDC</text>
+<path d="M380 652 H530" fill="none" stroke="#3973B2" stroke-width="3" stroke-linejoin="round" marker-end="url(#blue)"/>
+<text x="394" y="610" font-size="20" fill="#536B80" font-weight="500">API /</text>
+<text x="394" y="636" font-size="20" fill="#536B80" font-weight="500">Datei</text>
+<path d="M880 627 H1000" fill="none" stroke="#3973B2" stroke-width="3" stroke-linejoin="round" marker-end="url(#blue)" marker-start="url(#blue)"/>
+<text x="912" y="608" font-size="20" fill="#536B80" font-weight="500">API</text>
+<path d="M680 735 V1020" fill="none" stroke="#3973B2" stroke-width="3" stroke-linejoin="round" marker-end="url(#blue)" marker-start="url(#blue)"/>
+<text x="702" y="861" font-size="20" fill="#536B80" font-weight="500">API /</text>
+<text x="702" y="889" font-size="20" fill="#536B80" font-weight="500">Dateien</text>
+<path d="M1330 830 V1020" fill="none" stroke="#3973B2" stroke-width="3" stroke-linejoin="round" marker-end="url(#blue)" marker-start="url(#blue)"/>
+<text x="1030" y="923" font-size="20" fill="#536B80" font-weight="500">Lesen / Schreiben</text>
+<text x="1030" y="950" font-size="20" fill="#536B80" font-weight="500">Transaktionen</text>
+<path d="M1660 746 H1722 V651 H1860" fill="none" stroke="#16877C" stroke-width="3" stroke-linejoin="round" marker-end="url(#teal)"/>
+<path d="M1860 611 H1814 V884 H1570 V830" fill="none" stroke="#16877C" stroke-width="3" stroke-linejoin="round" marker-end="url(#teal)" stroke-dasharray="9 7"/>
+<text x="1578" y="917" font-size="20" fill="#287B70" font-weight="500">Ergebnisse</text>
+<text x="1578" y="946" font-size="20" fill="#287B70" font-weight="500">zur Prüfung</text>
+<path d="M2110 680 V770" fill="none" stroke="#16877C" stroke-width="3" stroke-linejoin="round" marker-end="url(#teal)"/>
+<text x="2130" y="731" font-size="20" fill="#287B70" font-weight="500">Dokument und Schema</text>
+<path d="M2110 880 V970" fill="none" stroke="#16877C" stroke-width="3" stroke-linejoin="round" marker-end="url(#teal)"/>
+<text x="2130" y="932" font-size="20" fill="#287B70" font-weight="500">Text / Seitenausschnitt</text>
+<path d="M2420 1024 H2460 V625 H2420" fill="none" stroke="#16877C" stroke-width="3" stroke-linejoin="round" marker-end="url(#teal)" stroke-dasharray="9 7"/>
+<path d="M1660 790 H1750 V1200 H1860" fill="none" stroke="#8063A8" stroke-width="3" stroke-linejoin="round" marker-end="url(#purple)" marker-start="url(#purple)"/>
+<text x="1770" y="1133" font-size="20" fill="#8063A8" font-weight="500">Datei API</text>
+<rect x="530" y="1310" width="1890" height="73" rx="12" fill="#DDE7F0" stroke="none" stroke-width="2"/>
+<text x="552" y="1340" font-size="17" fill="#506B84" font-weight="700">BETRIEB</text>
+<text x="552" y="1366" font-size="21" fill="#203B56" font-weight="400">Rollen und Rechte · Audit</text>
+<text x="1070" y="1366" font-size="21" fill="#203B56" font-weight="400">Linux · Container · Nginx · interne Paketversorgung</text>
+<text x="1910" y="1366" font-size="21" fill="#203B56" font-weight="400">Monitoring · Backup · Restore</text>
+<text x="60" y="1476" font-size="23" fill="#263F5B" font-weight="700">VERSIONEN UND FREIGABE</text>
+<text x="60" y="1510" font-size="22" fill="#62798F" font-weight="400">Branch und Review als fachliche Funktionen im EDB Backend</text>
+<rect x="60" y="1550" width="430" height="145" rx="16" fill="#FFFFFF" stroke="#D0DCE8" stroke-width="2"/>
+<rect x="60" y="1568" width="5" height="109" rx="2" fill="#3973B2" stroke="none" stroke-width="2"/>
+<text x="84" y="1590" font-size="27" fill="#203B56" font-weight="650">Master R122</text>
+<text x="84" y="1627" font-size="23" fill="#536B80" font-weight="400">Freigegebener Ausgangsstand</text>
+<text x="84" y="1657" font-size="23" fill="#536B80" font-weight="400">Historisch dauerhaft aufrufbar</text>
+<rect x="570" y="1550" width="430" height="145" rx="16" fill="#FFFFFF" stroke="#D0DCE8" stroke-width="2"/>
+<rect x="570" y="1568" width="5" height="109" rx="2" fill="#3973B2" stroke="none" stroke-width="2"/>
+<text x="594" y="1590" font-size="27" fill="#203B56" font-weight="650">Branch B17 · C004</text>
+<text x="594" y="1627" font-size="23" fill="#536B80" font-weight="400">Basis R122 plus Änderungen</text>
+<text x="594" y="1657" font-size="22" fill="#536B80" font-weight="400">Berechnung fixiert C004 + Inputs</text>
+<rect x="1080" y="1550" width="430" height="145" rx="16" fill="#FFFFFF" stroke="#D0DCE8" stroke-width="2"/>
+<rect x="1080" y="1568" width="5" height="109" rx="2" fill="#3973B2" stroke="none" stroke-width="2"/>
+<text x="1104" y="1590" font-size="27" fill="#203B56" font-weight="650">Review und Merge</text>
+<text x="1104" y="1627" font-size="23" fill="#536B80" font-weight="400">Geprüften Commit abgleichen</text>
+<text x="1104" y="1657" font-size="20" fill="#536B80" font-weight="400">Konflikte und Abhängigkeiten prüfen</text>
+<rect x="1590" y="1550" width="430" height="145" rx="16" fill="#FFFFFF" stroke="#D0DCE8" stroke-width="2"/>
+<rect x="1590" y="1568" width="5" height="109" rx="2" fill="#3973B2" stroke="none" stroke-width="2"/>
+<text x="1614" y="1590" font-size="27" fill="#203B56" font-weight="650">Master R123</text>
+<text x="1614" y="1627" font-size="23" fill="#536B80" font-weight="400">Atomare Übernahme</text>
+<text x="1614" y="1657" font-size="23" fill="#536B80" font-weight="400">Neue unveränderliche Revision</text>
+<rect x="2100" y="1550" width="400" height="145" rx="16" fill="#FFFFFF" stroke="#D0DCE8" stroke-width="2"/>
+<rect x="2100" y="1568" width="5" height="109" rx="2" fill="#8063A8" stroke="none" stroke-width="2"/>
+<text x="2124" y="1590" font-size="27" fill="#203B56" font-weight="650">Baseline mit Tag</text>
+<text x="2124" y="1627" font-size="23" fill="#536B80" font-weight="400">R123 + Artefaktversionen</text>
+<text x="2124" y="1657" font-size="23" fill="#536B80" font-weight="400">Freigegeben und eingefroren</text>
+<path d="M490 1620 H570" fill="none" stroke="#3973B2" stroke-width="3" stroke-linejoin="round" marker-end="url(#blue)"/>
+<path d="M1000 1620 H1080" fill="none" stroke="#3973B2" stroke-width="3" stroke-linejoin="round" marker-end="url(#blue)"/>
+<path d="M1510 1620 H1590" fill="none" stroke="#3973B2" stroke-width="3" stroke-linejoin="round" marker-end="url(#blue)"/>
+<path d="M2020 1620 H2100" fill="none" stroke="#8063A8" stroke-width="3" stroke-linejoin="round" marker-end="url(#purple)"/>
+<path d="M60 1760 H116" fill="none" stroke="#3973B2" stroke-width="3" stroke-linejoin="round" marker-end="url(#blue)"/>
+<text x="132" y="1767" font-size="20" fill="#536B80" font-weight="500">Datenzugriff / Austausch</text>
+<path d="M650 1760 H706" fill="none" stroke="#16877C" stroke-width="3" stroke-linejoin="round" marker-end="url(#teal)"/>
+<text x="722" y="1767" font-size="20" fill="#536B80" font-weight="500">Verarbeitung</text>
+<path d="M1060 1760 H1116" fill="none" stroke="#16877C" stroke-width="3" stroke-linejoin="round" marker-end="url(#teal)" stroke-dasharray="9 7"/>
+<text x="1132" y="1767" font-size="20" fill="#536B80" font-weight="500">Analyseergebnis</text>
+<path d="M1510 1760 H1566" fill="none" stroke="#8063A8" stroke-width="3" stroke-linejoin="round" marker-end="url(#purple)"/>
+<text x="1582" y="1767" font-size="20" fill="#536B80" font-weight="500">Dokumente / Baseline</text>
+<text x="60" y="1837" font-size="20" fill="#71859A" font-weight="400">Modell und Dimensionierung sind vor Produktivbetrieb mit repräsentativen Datenblättern zu validieren.</text>
+<text x="2160" y="1837" font-size="20" fill="#71859A" font-weight="400">EDB · 19.11.2026</text>
+</g></svg>

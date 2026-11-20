@@ -1,0 +1,82 @@
+Objekte:
+--> Domänen
+	--> Architekturelemente (AE)
+		--> Ports:
+			-> Inputs sind links
+				-> Power in
+				-> Analog in
+				-> Digital in 
+				-> AE ist Teilnehmer für Interfaces
+			-> Outputs sind rechts
+				-> Power out
+				-> Digital out
+				-> AE ist Host für Interfaces
+				
+Gegebenenfalls, bitte weitere Signale prüfen.
+Wichtig ist immer, wer ist Host und wer ist Teilnehmer!
+			
+			
+		
+Verbindungen:
+--> Netze/Busse:
+	--> Source (primärer Host)
+	--> Sink (multiple Teilnehmer möglich)
+	
+Verbindungen werden separat zu den Funktionsblöcken (Domänenen und Architekturelemente) gemanaged.
+Wenn ich neue Signale benötige, erzeuge ich diese über den Buscontent Wizard.
+Diese Signale werden dann nach Typ übersichtlich aufgelistet.
+
+
+Gesamtsystem:
+Wenn ich in neues Signal angelegt habe, dann möchte ich diesem zuweisen, wer die Hosts sind und wer die Teilnehmer.
+hieraus wird dann die Architektur upgedated. 
+Die Architekturelemente bekommen über diese Zuweisung dann einen Eingangs-, oder Ausgangs-Port. 
+Gibt es für ein dediziertes Signal (Namen sing unique) dann einen Host und mindestens einen Teilnehmer wird sowohl im Navigator, als auch im Canvas eine entsprechnde Verbindung hinzugefügt.
+Für mehrere Teilnehmer muss dann die Verbindung selbstverständlich eine Verzweigung bekommen.
+Die einzelnen Signale der Interfaces sind für die Architektur nicht zwingend von Bedeutung, aber es wäre natürlich toll, wenn man sich in einem Menü die vollständig definierten buscontents, bzw. Signale anschauen könnte.
+
+Requirementstool:
+Workflow:
+-> Requirementsdokumente einlesen --> initiale KI Analyse von Anforderungsdokumenten
+	-> Requirements ableiten --> für ECAD brauchen wir System-, Hardware und Mechanikrequirements, Softwarerequirements können auch gepflegt werden, allerdings ist das dann eher als BAcklog für die SW-Entwicklung gedacht. Sollten sich aus den SW-Requirements HW-Requiements ableiten lassen sind diese natürlcih relevant für das ECAD Design
+		-> Aus den Requirements ergeben sich technische Anforderungen an die erforderlichen Kernkomponenten (Performance, Power, etc...) --> Hieraus sollen sich dann durchaus dedizierte A-Parts ableiten lassen, bzw. Vorschläge ergeben 
+			-> Aus den Requirements ergeben sich auch Schnittstellen und Interfaces für das Design --> sehr wichtig für die initiale Architektur und sollen deshalb schon relativ früh ermittelt werden, soweit möglich.
+			
+KI:
+-> Der Arbeitsraum zur Projektanalyse ist gut, aber ich möchte dort dann schon einen Status sehen, wenn die KI noch beschäftigt ist.
+-> Ich würde gerne eine rudimentäre promptmöglichkeit in der kompletten Toolumgebung haben, in der ich sowohl schnell etwas nachfragen kann, aber auch Eingriffe an den Inhalten vornhemen kann.
+
+Darstellung:
+-> Die Darstellung der Requirements ist für meinen Geschmack noch nicht fancy genug. Zudem möchte ich, dass wenn ich irgendwo aus ein Requirement klicke sich das Edit Fenster für dieses öffnet.
+-> Updates könnten auch noch hinsichtlich Sortierung, Filterung der Requirements eingebaut werden.
+
+Dokumente:
+-> Wenn ich Dokumente importiere, dann möchte ich, bevor die Requirements geschrieben und erstellt werden erstmal die Analyse durchgehen und bewerten hinsichtlich der Dinge die ich behalte oder verwerfe.
+Ich würde pro Dokument ein Tab erstellen, wo ich durch die anlaysierten Daten durchgehen kann.
+
+Normen und Standards sind ja stützende Dokumente und müssen für die Entwicklung zugänglich sein. Wie gehen wir dort am Besten vor?
+
+Update 17.09.2026:
+
+Wir müssen die ganze Struktur etwas anschaulicher gestalten und etwas Komplexitär rausnehmen.
+
+--> Das mit der Anaylse der Dokumente und den Requirementskandidaten und der Bewertung finde ich gut.
+
+--> Die Requirements selbst öffnen sich im Edit Mode, wenn man draufklickt. Ich würde es doch wieder so gestalten, das wenn ich draufklicke, ich die Informationen auf der rechten Seite sehe.
+	Zusätlich brauch ich ein Edit Button, wenn ich das Requirement anpassen möchte.
+	
+--> Bei den Interfaces und Signalen würde ich so vorgehen, dass man dort dedizierte Interfaces die aus den Anforderungen beriets hervorgehen eifach mit einem dedizierten Prototypen anlegt. Wichtig ist, dass man die Interfaces oder Signale im Nachgang noch ändern, anpassen oder löschen kann.
+--> Wenn ich ein Signal oder Interface hinzufügen möchte, kann ich das über den Buscontents/Signal Wizard machen. Auch hier muss die vollständige Funktionalität hinsichtlich edit und delete gegeben sein.
+--> Die Siganle und Interfaces werden ja im JSON gespeichert und können ja als filterbare Liste in Siganle und Interfaces angezeigt werden. Den Interface Katalog würde ich dahingehend umbenennen.
+--> Ich würde das noch das Template für den Wizard noch zugänglich machen, damit man dort fehlende Interfaces und Signale hinzufügen kann.
+--> Ich würde nicht zwischen frühen und anderen Signalen und Interfaces unterscheiden. Die einen sind halt mit den Requirements schon da, die anderen ergeben sich aus der Entwicklung, wenn man dedizierte Bausteine und technologien einsetzt. 
+    
+-->	Es kann auch sein, dass erst in der Architektur etwas datzukommt, was in den Requirements noch nicht abgedeckt ist. Sowas passiert in der Umsetzung häufig. Man muss da auch zwischen Lastenheft und Pflichtenheft unterscheiden.
+    Requirement --> Umsetzung: Es kann auch sein, dass ein Requirement technisch nicht umgesetzt werden kann. Das führt dann zu Kollisionen die aufgelöst werden müssen.
+
+--> Die Frage ist, wollen wir dieses Tool als rudimentäres straight-forward Tool nutzen, oder möchten wir alles in Sync bringen, was während der Entwicklung auftaucht?
+	Was wäre hier dein Vorschlag?  
+	
+--> Die kleinen Icons in de Prozesslandkarte würde ich pro Kachel immer gleich anordnen. 
+		-> Nummerierung, Icon ganz oben. Darunter die Überschrift, darunter die kurze Beschreibung. Sieht schöner aus.
+								 

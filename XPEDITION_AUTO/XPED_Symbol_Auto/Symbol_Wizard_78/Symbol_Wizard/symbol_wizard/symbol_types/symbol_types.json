@@ -1,0 +1,513 @@
+{
+  "version": "1.0",
+  "description": "Lean Symbol Wizard catalog. Stage 1 contains resistor templates only. Path fixed to Symbol_Wizard/symbol_wizard/symbol_types/symbol_types.json.",
+  "global_attributes": [
+    {
+      "name": "REFDES",
+      "visible": true
+    },
+    {
+      "name": "CASE",
+      "visible": true
+    },
+    {
+      "name": "CLASS",
+      "visible": true
+    },
+    {
+      "name": "PART_NAME",
+      "visible": true
+    },
+    {
+      "name": "@XYCOORD",
+      "visible": false
+    },
+    {
+      "name": "LEON_Link",
+      "visible": false
+    },
+    {
+      "name": "DEVICE",
+      "visible": false
+    },
+    {
+      "name": "VALUE",
+      "visible": true
+    },
+    {
+      "name": "TYPE",
+      "visible": true
+    },
+    {
+      "name": "FORWARD_PCB",
+      "visible": false
+    }
+  ],
+  "types": {
+    "Passive": {
+      "prefix": "R",
+      "attributes": [
+        "REFDES",
+        "CASE",
+        "CLASS",
+        "PART_NAME",
+        "@XYCOORD",
+        "LEON_Link",
+        "DEVICE",
+        "VALUE",
+        "TYPE",
+        "FORWARD_PCB"
+      ],
+      "body": {
+        "x": 1.5,
+        "y": 1.5,
+        "width": 3.0,
+        "height": 1.0,
+        "color": [
+          0,
+          0,
+          0
+        ],
+        "line_width": 0.03,
+        "line_style": "solid",
+        "attribute_font": {
+          "family": "Arial",
+          "size_grid": 0.75,
+          "color": [
+            0,
+            0,
+            0
+          ]
+        },
+        "refdes_font": {
+          "family": "Arial",
+          "size_grid": 0.9,
+          "color": [
+            0,
+            0,
+            0
+          ]
+        },
+        "attributes": {
+          "REFDES": "?",
+          "CASE": "BAUFORM",
+          "CLASS": "",
+          "PART_NAME": "TNR_LEG",
+          "@XYCOORD": "",
+          "LEON_Link": "",
+          "DEVICE": "Artikelcode",
+          "VALUE": "VALUE",
+          "TYPE": "TYPE",
+          "FORWARD_PCB": "1",
+          "MENTOR_GRID_UNIT": "254000"
+        },
+        "visible_attributes": {
+          "REFDES": true,
+          "CASE": true,
+          "CLASS": true,
+          "PART_NAME": true,
+          "@XYCOORD": false,
+          "LEON_Link": false,
+          "DEVICE": false,
+          "VALUE": true,
+          "TYPE": false,
+          "FORWARD_PCB": false,
+          "MENTOR_GRID_UNIT": false
+        },
+        "attribute_texts": {
+          "REFDES": {
+            "text": "?",
+            "x": 3.0,
+            "y": 2.5,
+            "font_family": "Arial",
+            "font_size_grid": 1.0,
+            "color": [
+              0,
+              0,
+              0
+            ],
+            "h_align": "center",
+            "v_align": "upper",
+            "wrap_text": false
+          },
+          "VALUE": {
+            "text": "VALUE",
+            "x": 3.0,
+            "y": -0.4,
+            "font_family": "Arial",
+            "font_size_grid": 0.75,
+            "color": [
+              0,
+              0,
+              0
+            ],
+            "h_align": "center",
+            "v_align": "upper",
+            "wrap_text": false
+          },
+          "CASE": {
+            "text": "CASE=BAUFORM",
+            "x": 1.0,
+            "y": -1.2,
+            "font_family": "Arial",
+            "font_size_grid": 0.65,
+            "color": [
+              0,
+              0,
+              0
+            ],
+            "h_align": "left",
+            "v_align": "upper",
+            "wrap_text": false
+          },
+          "CLASS": {
+            "text": "CLASS=",
+            "x": 4.8,
+            "y": -1.2,
+            "font_family": "Arial",
+            "font_size_grid": 0.65,
+            "color": [
+              0,
+              0,
+              0
+            ],
+            "h_align": "left",
+            "v_align": "upper",
+            "wrap_text": false
+          },
+          "PART_NAME": {
+            "text": "PART_NAME=TNR_LEG",
+            "x": 1.0,
+            "y": -1.9,
+            "font_family": "Arial",
+            "font_size_grid": 0.65,
+            "color": [
+              0,
+              0,
+              0
+            ],
+            "h_align": "left",
+            "v_align": "upper",
+            "wrap_text": false
+          }
+        },
+        "refdes_align": "center",
+        "body_attr_align": "center"
+      },
+      "subtypes": {
+        "Resistor": {
+          "description": "Liebherr/Mentor wid.1 master orientation normalized with 254000 Mentor units per 0.100 inch Wizard grid.",
+          "body": {
+            "shape": "resistor"
+          },
+          "default_pins": [
+            {
+              "number": "1",
+              "name": "N1",
+              "function": "N1",
+              "pin_type": "ANALOG",
+              "side": "left",
+              "x": 0.0,
+              "y": 1.0,
+              "length": 1.5,
+              "visible_number": false,
+              "visible_name": false,
+              "visible_function": false,
+              "color": [
+                0,
+                0,
+                0
+              ],
+              "attributes": {
+                "PINTYPE": "ANALOG"
+              },
+              "visible_attributes": {
+                "PINTYPE": false
+              }
+            },
+            {
+              "number": "2",
+              "name": "N2",
+              "function": "N2",
+              "pin_type": "ANALOG",
+              "side": "right",
+              "x": 6.0,
+              "y": 1.0,
+              "length": 1.5,
+              "visible_number": false,
+              "visible_name": false,
+              "visible_function": false,
+              "color": [
+                0,
+                0,
+                0
+              ],
+              "attributes": {
+                "PINTYPE": "ANALOG"
+              },
+              "visible_attributes": {
+                "PINTYPE": false
+              }
+            }
+          ],
+          "graphics": [
+            {
+              "shape": "rect",
+              "x": 1.5,
+              "y": 1.5,
+              "w": 3.0,
+              "h": 1.0,
+              "style": {
+                "stroke": [
+                  0,
+                  0,
+                  0
+                ],
+                "fill": null,
+                "line_width": 0.03,
+                "line_style": "solid"
+              }
+            }
+          ],
+          "texts": []
+        },
+        "Shunt Resistor": {
+          "description": "Same geometric base as resistor; subtype reserved for explicit shunt metadata.",
+          "attributes": [
+            "Power",
+            "Current Rating",
+            "Sense Tolerance"
+          ],
+          "body": {
+            "shape": "resistor"
+          },
+          "default_pins": [
+            {
+              "number": "1",
+              "name": "N1",
+              "function": "N1",
+              "pin_type": "ANALOG",
+              "side": "left",
+              "x": 0.0,
+              "y": 1.0,
+              "length": 1.5,
+              "visible_number": false,
+              "visible_name": false,
+              "visible_function": false,
+              "color": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "number": "2",
+              "name": "N2",
+              "function": "N2",
+              "pin_type": "ANALOG",
+              "side": "right",
+              "x": 6.0,
+              "y": 1.0,
+              "length": 1.5,
+              "visible_number": false,
+              "visible_name": false,
+              "visible_function": false,
+              "color": [
+                0,
+                0,
+                0
+              ]
+            }
+          ],
+          "graphics": [
+            {
+              "shape": "rect",
+              "x": 1.5,
+              "y": 1.5,
+              "w": 3.0,
+              "h": 1.0,
+              "style": {
+                "stroke": [
+                  0,
+                  0,
+                  0
+                ],
+                "fill": null,
+                "line_width": 0.03,
+                "line_style": "solid"
+              }
+            }
+          ],
+          "texts": []
+        },
+        "NTC": {
+          "attributes": [
+            "B-Value",
+            "R25",
+            "Temperature Range"
+          ],
+          "body": {
+            "shape": "resistor"
+          },
+          "default_pins": [
+            {
+              "number": "1",
+              "name": "N1",
+              "function": "N1",
+              "pin_type": "ANALOG",
+              "side": "left",
+              "x": 0.0,
+              "y": 1.0,
+              "length": 1.5,
+              "visible_number": false,
+              "visible_name": false,
+              "visible_function": false,
+              "color": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "number": "2",
+              "name": "N2",
+              "function": "N2",
+              "pin_type": "ANALOG",
+              "side": "right",
+              "x": 6.0,
+              "y": 1.0,
+              "length": 1.5,
+              "visible_number": false,
+              "visible_name": false,
+              "visible_function": false,
+              "color": [
+                0,
+                0,
+                0
+              ]
+            }
+          ],
+          "graphics": [
+            {
+              "shape": "rect",
+              "x": 1.5,
+              "y": 1.5,
+              "w": 3.0,
+              "h": 1.0,
+              "style": {
+                "stroke": [
+                  0,
+                  0,
+                  0
+                ],
+                "fill": null,
+                "line_width": 0.03,
+                "line_style": "solid"
+              }
+            }
+          ],
+          "texts": [
+            {
+              "text": "NTC",
+              "x": 3.0,
+              "y": 0.25,
+              "font_family": "Arial",
+              "font_size_grid": 0.55,
+              "color": [
+                0,
+                0,
+                0
+              ],
+              "h_align": "center",
+              "v_align": "upper",
+              "wrap_text": false
+            }
+          ]
+        },
+        "PTC": {
+          "attributes": [
+            "Trip Current",
+            "Hold Current"
+          ],
+          "body": {
+            "shape": "resistor"
+          },
+          "default_pins": [
+            {
+              "number": "1",
+              "name": "N1",
+              "function": "N1",
+              "pin_type": "ANALOG",
+              "side": "left",
+              "x": 0.0,
+              "y": 1.0,
+              "length": 1.5,
+              "visible_number": false,
+              "visible_name": false,
+              "visible_function": false,
+              "color": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "number": "2",
+              "name": "N2",
+              "function": "N2",
+              "pin_type": "ANALOG",
+              "side": "right",
+              "x": 6.0,
+              "y": 1.0,
+              "length": 1.5,
+              "visible_number": false,
+              "visible_name": false,
+              "visible_function": false,
+              "color": [
+                0,
+                0,
+                0
+              ]
+            }
+          ],
+          "graphics": [
+            {
+              "shape": "rect",
+              "x": 1.5,
+              "y": 1.5,
+              "w": 3.0,
+              "h": 1.0,
+              "style": {
+                "stroke": [
+                  0,
+                  0,
+                  0
+                ],
+                "fill": null,
+                "line_width": 0.03,
+                "line_style": "solid"
+              }
+            }
+          ],
+          "texts": [
+            {
+              "text": "PTC",
+              "x": 3.0,
+              "y": 0.25,
+              "font_family": "Arial",
+              "font_size_grid": 0.55,
+              "color": [
+                0,
+                0,
+                0
+              ],
+              "h_align": "center",
+              "v_align": "upper",
+              "wrap_text": false
+            }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,1460 @@
+{
+  "version": 1,
+  "source": "SymbolLibs.zip",
+  "scanned_symbols": 3026,
+  "scanned_bodies": 3026,
+  "core_part_attributes": [
+    {
+      "name": "RefDes",
+      "value": "U?",
+      "visible": true,
+      "required": true,
+      "locked": true,
+      "description": "Reference designator. Core attribute and cannot be deleted."
+    },
+    {
+      "name": "CLASS",
+      "value": "Bauform",
+      "visible": true,
+      "required": true,
+      "locked": true,
+      "description": "Component class / part type. Used by the Attribute Profile Manager and cannot be deleted."
+    },
+    {
+      "name": "Value",
+      "value": "Artikelcode",
+      "visible": false,
+      "required": false,
+      "locked": false,
+      "description": "Component value / displayed value."
+    },
+    {
+      "name": "Part Name",
+      "value": "TNR_LEG",
+      "visible": true,
+      "required": false,
+      "locked": false,
+      "description": "Liebherr internal part name / TNR field."
+    },
+    {
+      "name": "Package",
+      "value": "BAUFORM",
+      "visible": true,
+      "required": false,
+      "locked": false,
+      "description": "Package / case information."
+    },
+    {
+      "name": "LEON_Link",
+      "value": "",
+      "visible": false,
+      "required": false,
+      "locked": false,
+      "description": "Liebherr LEON reference link."
+    },
+    {
+      "name": "@XYCOORD",
+      "value": "",
+      "visible": false,
+      "required": false,
+      "locked": false,
+      "description": "Placement/backannotation coordinate attribute used by existing libraries."
+    },
+    {
+      "name": "FORWARD_PCB",
+      "value": "1",
+      "visible": false,
+      "required": false,
+      "locked": false,
+      "description": "Forward-to-PCB flag used by existing libraries."
+    },
+    {
+      "name": "Datasheet-Link",
+      "value": "",
+      "visible": false,
+      "required": false,
+      "locked": false,
+      "description": "Optional datasheet URL or document reference."
+    }
+  ],
+  "part_types": {
+    "5552-RELAIS": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 4 symbols scanned.",
+      "attributes": [
+        {
+          "name": "LEVEL",
+          "value": "STD",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/5552-RELAIS (4 symbol(s) with this attribute)."
+        },
+        {
+          "name": "TYPE",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/5552-RELAIS (4 symbol(s) with this attribute)."
+        },
+        {
+          "name": "VOLTAGE",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/5552-RELAIS (4 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "BORDER": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 14 symbols scanned.",
+      "attributes": [
+        {
+          "name": "@Path",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/BORDER (2 symbol(s) with this attribute)."
+        },
+        {
+          "name": "@PRINTORDER",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/BORDER (2 symbol(s) with this attribute)."
+        },
+        {
+          "name": "@Sheet",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/BORDER (2 symbol(s) with this attribute)."
+        },
+        {
+          "name": "@SHEETTOTAL",
+          "value": "1",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/BORDER (2 symbol(s) with this attribute)."
+        },
+        {
+          "name": "Articlecode",
+          "value": "12345678",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/BORDER (2 symbol(s) with this attribute)."
+        },
+        {
+          "name": "BLATT",
+          "value": "1",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/BORDER (3 symbol(s) with this attribute)."
+        },
+        {
+          "name": "Board Specification",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/BORDER (2 symbol(s) with this attribute)."
+        },
+        {
+          "name": "Circuit Diagram",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/BORDER (1 symbol(s) with this attribute)."
+        },
+        {
+          "name": "Date checked",
+          "value": "JJJJ-MM-TT",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/BORDER (2 symbol(s) with this attribute)."
+        },
+        {
+          "name": "Date prepared",
+          "value": "JJJJ-MM-TT",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/BORDER (2 symbol(s) with this attribute)."
+        },
+        {
+          "name": "Designer",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/BORDER (2 symbol(s) with this attribute)."
+        },
+        {
+          "name": "Document Status",
+          "value": "Status",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/BORDER (2 symbol(s) with this attribute)."
+        },
+        {
+          "name": "Drawing Number",
+          "value": "DRAWING-NO",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/BORDER (2 symbol(s) with this attribute)."
+        },
+        {
+          "name": "EINHEIT",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/BORDER (2 symbol(s) with this attribute)."
+        },
+        {
+          "name": "INHALT",
+          "value": "UEBERSICHT",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/BORDER (3 symbol(s) with this attribute)."
+        },
+        {
+          "name": "Issue",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/BORDER (2 symbol(s) with this attribute)."
+        },
+        {
+          "name": "LEG_VISIBLE_SLP01",
+          "value": "TRUE",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/BORDER (2 symbol(s) with this attribute)."
+        },
+        {
+          "name": "MENGE",
+          "value": "0,0000",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/BORDER (2 symbol(s) with this attribute)."
+        },
+        {
+          "name": "NUMMER_LFD",
+          "value": "lfd_Nr",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/BORDER (1 symbol(s) with this attribute)."
+        },
+        {
+          "name": "Part List Exclude",
+          "value": "False",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/BORDER (1 symbol(s) with this attribute)."
+        },
+        {
+          "name": "Project Specification",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/BORDER (2 symbol(s) with this attribute)."
+        },
+        {
+          "name": "Reviewer",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/BORDER (2 symbol(s) with this attribute)."
+        },
+        {
+          "name": "SLP02_TEXT_01",
+          "value": "BAUTEILATTRIBUTE UNTERLIEGEN",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/BORDER (1 symbol(s) with this attribute)."
+        },
+        {
+          "name": "SLP02_TEXT_02",
+          "value": "NICHT DEM AENDERUNGSDIENST",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/BORDER (1 symbol(s) with this attribute)."
+        },
+        {
+          "name": "TYP",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/BORDER (2 symbol(s) with this attribute)."
+        },
+        {
+          "name": "X_Modulbezeichnung",
+          "value": "MODULBEZEICHNUNG",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/BORDER (2 symbol(s) with this attribute)."
+        },
+        {
+          "name": "X_Reuse_Block",
+          "value": "REUSE",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/BORDER (2 symbol(s) with this attribute)."
+        },
+        {
+          "name": "Xref Annotation",
+          "value": "",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/BORDER (2 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "CU_COIN": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 2 symbols scanned.",
+      "attributes": [
+        {
+          "name": "EXCLUDE",
+          "value": "YES",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/CU_COIN (2 symbol(s) with this attribute)."
+        },
+        {
+          "name": "TYP",
+          "value": "D13_H5,4",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/CU_COIN (2 symbol(s) with this attribute)."
+        },
+        {
+          "name": "TYPE",
+          "value": "CU-COIN",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/CU_COIN (2 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "EMBEDDED": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 5 symbols scanned.",
+      "attributes": [
+        {
+          "name": "VOLTAGE",
+          "value": "VOLT",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/EMBEDDED (5 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "GND": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 3 symbols scanned.",
+      "attributes": [
+        {
+          "name": "NETNAME",
+          "value": "AGND",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/GND (3 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "INFO": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 2 symbols scanned.",
+      "attributes": [
+        {
+          "name": "Infotext",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/INFO (2 symbol(s) with this attribute)."
+        },
+        {
+          "name": "Infotext1",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/INFO (2 symbol(s) with this attribute)."
+        },
+        {
+          "name": "Infotext2",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/INFO (2 symbol(s) with this attribute)."
+        },
+        {
+          "name": "Part List Exclude",
+          "value": "True",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/INFO (2 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "KLS_5511_WIDERSTAND": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 11 symbols scanned.",
+      "attributes": [
+        {
+          "name": "PINORDER",
+          "value": "N1",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5511_WIDERSTAND (2 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "KLS_5513_IND_FILTER_DROSSEL_UEBTR": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 131 symbols scanned.",
+      "attributes": [
+        {
+          "name": "Articlecode",
+          "value": "Artikelcode",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5513_IND_FILTER_DROSSEL_UEBTR (3 symbol(s) with this attribute)."
+        },
+        {
+          "name": "LEVEL",
+          "value": "STD",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5513_IND_FILTER_DROSSEL_UEBTR (1 symbol(s) with this attribute)."
+        },
+        {
+          "name": "PINORDER",
+          "value": "N1",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5513_IND_FILTER_DROSSEL_UEBTR (2 symbol(s) with this attribute)."
+        },
+        {
+          "name": "TYPE",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5513_IND_FILTER_DROSSEL_UEBTR (17 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "KLS_5514_DIODE": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 41 symbols scanned.",
+      "attributes": [
+        {
+          "name": "LEVEL",
+          "value": "STD",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5514_DIODE (1 symbol(s) with this attribute)."
+        },
+        {
+          "name": "PINTYPE",
+          "value": "IN0,IN1,IN2,OUT0,OUT1",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5514_DIODE (2 symbol(s) with this attribute)."
+        },
+        {
+          "name": "SLOT",
+          "value": "[SLOT]",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5514_DIODE (4 symbol(s) with this attribute)."
+        },
+        {
+          "name": "SLOT1",
+          "value": "[SLOT]",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5514_DIODE (4 symbol(s) with this attribute)."
+        },
+        {
+          "name": "SLOT2",
+          "value": "[SLOT]",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5514_DIODE (4 symbol(s) with this attribute)."
+        },
+        {
+          "name": "Spannung V_RWM [V]",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5514_DIODE (1 symbol(s) with this attribute)."
+        },
+        {
+          "name": "TYPE",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5514_DIODE (5 symbol(s) with this attribute)."
+        },
+        {
+          "name": "VOLTAGE",
+          "value": "VOLT",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5514_DIODE (39 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "KLS_5519_MECH_TEIL_BEREICH_EL": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 3 symbols scanned.",
+      "attributes": [
+        {
+          "name": "TYP",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5519_MECH_TEIL_BEREICH_EL (1 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "KLS_5522_MUTLIFUNKTIONSBAUSTEIN": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 683 symbols scanned.",
+      "attributes": [
+        {
+          "name": "ARTIKELCODE",
+          "value": "",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5522_MUTLIFUNKTIONSBAUSTEIN (1 symbol(s) with this attribute)."
+        },
+        {
+          "name": "SLOT",
+          "value": "[SLOT]",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5522_MUTLIFUNKTIONSBAUSTEIN (2 symbol(s) with this attribute)."
+        },
+        {
+          "name": "TYP",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5522_MUTLIFUNKTIONSBAUSTEIN (3 symbol(s) with this attribute)."
+        },
+        {
+          "name": "TYPE",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5522_MUTLIFUNKTIONSBAUSTEIN (675 symbol(s) with this attribute)."
+        },
+        {
+          "name": "Type",
+          "value": "TYP",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5522_MUTLIFUNKTIONSBAUSTEIN (3 symbol(s) with this attribute)."
+        },
+        {
+          "name": "VOLTAGE",
+          "value": "VOLT",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5522_MUTLIFUNKTIONSBAUSTEIN (3 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "KLS_5523_CONTROLLER_PROZESSOR_SP_LOG": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 1112 symbols scanned.",
+      "attributes": [
+        {
+          "name": "LEVEL",
+          "value": "STD",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5523_CONTROLLER_PROZESSOR_SP_LOG (3 symbol(s) with this attribute)."
+        },
+        {
+          "name": "TYP",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5523_CONTROLLER_PROZESSOR_SP_LOG (7 symbol(s) with this attribute)."
+        },
+        {
+          "name": "TYPE",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5523_CONTROLLER_PROZESSOR_SP_LOG (1104 symbol(s) with this attribute)."
+        },
+        {
+          "name": "XYCOORD",
+          "value": "",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5523_CONTROLLER_PROZESSOR_SP_LOG (3 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "KLS_5524_FESTFREQUENZGEBER_QUARZ_OSZ": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 18 symbols scanned.",
+      "attributes": [
+        {
+          "name": "FREQUENCE",
+          "value": "HZ",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5524_FESTFREQUENZGEBER_QUARZ_OSZ (11 symbol(s) with this attribute)."
+        },
+        {
+          "name": "TYPE",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5524_FESTFREQUENZGEBER_QUARZ_OSZ (7 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "KLS_5525_FET_TRANS_THYR_TRIAC_IGBT": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 98 symbols scanned.",
+      "attributes": [
+        {
+          "name": "TYPE",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5525_FET_TRANS_THYR_TRIAC_IGBT (88 symbol(s) with this attribute)."
+        },
+        {
+          "name": "VOLTAGE",
+          "value": "VOLT",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5525_FET_TRANS_THYR_TRIAC_IGBT (90 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "KLS_5526_STROM_SPANNUNGSREGLER_REF": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 256 symbols scanned.",
+      "attributes": [
+        {
+          "name": "MUSTER",
+          "value": "Musterbauteil",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5526_STROM_SPANNUNGSREGLER_REF (1 symbol(s) with this attribute)."
+        },
+        {
+          "name": "TYPE",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5526_STROM_SPANNUNGSREGLER_REF (256 symbol(s) with this attribute)."
+        },
+        {
+          "name": "VOLTAGE",
+          "value": "VOLT",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5526_STROM_SPANNUNGSREGLER_REF (1 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "KLS_5527_VERSTAERKER_IC": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 72 symbols scanned.",
+      "attributes": [
+        {
+          "name": "SLOT",
+          "value": "[SLOT]",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5527_VERSTAERKER_IC (4 symbol(s) with this attribute)."
+        },
+        {
+          "name": "TYPE",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5527_VERSTAERKER_IC (72 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "KLS_5528_OPTOELEKTRONIK": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 37 symbols scanned.",
+      "attributes": [
+        {
+          "name": "Articlecode",
+          "value": "Artikelcode",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5528_OPTOELEKTRONIK (1 symbol(s) with this attribute)."
+        },
+        {
+          "name": "COLOUR",
+          "value": "FARBE",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5528_OPTOELEKTRONIK (10 symbol(s) with this attribute)."
+        },
+        {
+          "name": "TYPE",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5528_OPTOELEKTRONIK (21 symbol(s) with this attribute)."
+        },
+        {
+          "name": "VOLTAGE",
+          "value": "VOLT",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5528_OPTOELEKTRONIK (18 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "KLS_5531_MODUL_STECKKARTE_E_BOARD": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 3 symbols scanned.",
+      "attributes": [
+        {
+          "name": "TYP",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5531_MODUL_STECKKARTE_E_BOARD (3 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "KLS_5542_AKKU_BATTERIE": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 4 symbols scanned.",
+      "attributes": [
+        {
+          "name": "Chemische Technologie",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5542_AKKU_BATTERIE (1 symbol(s) with this attribute)."
+        },
+        {
+          "name": "Kapazitaet",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5542_AKKU_BATTERIE (1 symbol(s) with this attribute)."
+        },
+        {
+          "name": "Part List Exclude",
+          "value": "False",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5542_AKKU_BATTERIE (1 symbol(s) with this attribute)."
+        },
+        {
+          "name": "Reference ID",
+          "value": "+",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5542_AKKU_BATTERIE (1 symbol(s) with this attribute)."
+        },
+        {
+          "name": "TYP",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5542_AKKU_BATTERIE (4 symbol(s) with this attribute)."
+        },
+        {
+          "name": "VOLTAGE",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5542_AKKU_BATTERIE (4 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "KLS_5544_GERAET_AKUSTISCH_HUPE": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 3 symbols scanned.",
+      "attributes": [
+        {
+          "name": "DBA",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5544_GERAET_AKUSTISCH_HUPE (3 symbol(s) with this attribute)."
+        },
+        {
+          "name": "VOLTAGE",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5544_GERAET_AKUSTISCH_HUPE (3 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "KLS_5551_GEBER_MESSWERTAUFN_UMFORMER": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 19 symbols scanned.",
+      "attributes": [
+        {
+          "name": "PRESSURE",
+          "value": "DRUCK",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5551_GEBER_MESSWERTAUFN_UMFORMER (11 symbol(s) with this attribute)."
+        },
+        {
+          "name": "RANGE",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5551_GEBER_MESSWERTAUFN_UMFORMER (4 symbol(s) with this attribute)."
+        },
+        {
+          "name": "TYP",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5551_GEBER_MESSWERTAUFN_UMFORMER (18 symbol(s) with this attribute)."
+        },
+        {
+          "name": "TYPE",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5551_GEBER_MESSWERTAUFN_UMFORMER (1 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "KLS_5552_RELAIS": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 15 symbols scanned.",
+      "attributes": [
+        {
+          "name": "TYPE",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5552_RELAIS (15 symbol(s) with this attribute)."
+        },
+        {
+          "name": "VOLTAGE",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5552_RELAIS (14 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "KLS_5553_SCHALTER_ENDSCHALTER": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 2 symbols scanned.",
+      "attributes": [
+        {
+          "name": "TYPE",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5553_SCHALTER_ENDSCHALTER (2 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "KLS_5554_BEDIENELEMENT_TAST_SCHALT": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 15 symbols scanned.",
+      "attributes": [
+        {
+          "name": "TYPE",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5554_BEDIENELEMENT_TAST_SCHALT (15 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "KLS_55571_SICHERUNG": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 1 symbols scanned.",
+      "attributes": [
+        {
+          "name": "RATED CURRENT",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_55571_SICHERUNG (1 symbol(s) with this attribute)."
+        },
+        {
+          "name": "RATED VOLTAGE",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_55571_SICHERUNG (1 symbol(s) with this attribute)."
+        },
+        {
+          "name": "RESPONSE",
+          "value": "",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_55571_SICHERUNG (1 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "KLS_55579_ZUBEHOER_SICHERUNG": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 1 symbols scanned.",
+      "attributes": [
+        {
+          "name": "RATED",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_55579_ZUBEHOER_SICHERUNG (1 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "KLS_5581_LEITUNG_KABELBAUM": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 1 symbols scanned.",
+      "attributes": [
+        {
+          "name": "TYP",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5581_LEITUNG_KABELBAUM (1 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "KLS_5584_STECKER_ZUBEHOER": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 180 symbols scanned.",
+      "attributes": [
+        {
+          "name": "Nennmass",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5584_STECKER_ZUBEHOER (1 symbol(s) with this attribute)."
+        },
+        {
+          "name": "TYP",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5584_STECKER_ZUBEHOER (163 symbol(s) with this attribute)."
+        },
+        {
+          "name": "Type",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5584_STECKER_ZUBEHOER (3 symbol(s) with this attribute)."
+        },
+        {
+          "name": "TYPE",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KLS_5584_STECKER_ZUBEHOER (13 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "KSB": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 1 symbols scanned.",
+      "attributes": [
+        {
+          "name": "Cell Name",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KSB (1 symbol(s) with this attribute)."
+        },
+        {
+          "name": "Part List Exclude",
+          "value": "True",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/KSB (1 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "LINKS": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 3 symbols scanned.",
+      "attributes": [
+        {
+          "name": "Xref Annotation",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/LINKS (3 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "LOGIC": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 1 symbols scanned.",
+      "attributes": [
+        {
+          "name": "LEVEL",
+          "value": "STD",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/LOGIC (1 symbol(s) with this attribute)."
+        },
+        {
+          "name": "TYPE",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/LOGIC (1 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "MECH": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 8 symbols scanned.",
+      "attributes": [
+        {
+          "name": "EINHEIT",
+          "value": "ST",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/MECH (4 symbol(s) with this attribute)."
+        },
+        {
+          "name": "LEG_VISIBLE_SLP01",
+          "value": "",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/MECH (4 symbol(s) with this attribute)."
+        },
+        {
+          "name": "MENGE",
+          "value": "1",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/MECH (4 symbol(s) with this attribute)."
+        },
+        {
+          "name": "Part List Exclude",
+          "value": "False",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/MECH (2 symbol(s) with this attribute)."
+        },
+        {
+          "name": "TYP",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/MECH (8 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "MICRO_SECTION_POSITION": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 1 symbols scanned.",
+      "attributes": [
+        {
+          "name": "EXCLUDE",
+          "value": "YES",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/MICRO_SECTION_POSITION (1 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "MOUNTING_HOLE": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 12 symbols scanned.",
+      "attributes": [
+        {
+          "name": "EXCLUDE",
+          "value": "YES",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/MOUNTING_HOLE (8 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "NC": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 17 symbols scanned.",
+      "attributes": [
+        {
+          "name": "Term",
+          "value": "",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/NC (2 symbol(s) with this attribute)."
+        },
+        {
+          "name": "TYPE",
+          "value": "",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/NC (14 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "PLANARTRAFOS": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 39 symbols scanned.",
+      "attributes": [
+        {
+          "name": "LEVEL",
+          "value": "STD",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/PLANARTRAFOS (1 symbol(s) with this attribute)."
+        },
+        {
+          "name": "Part List Exclude",
+          "value": "True",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/PLANARTRAFOS (39 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "PORTS": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 9 symbols scanned.",
+      "attributes": [
+        {
+          "name": "NETNAME",
+          "value": "",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/PORTS (3 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "PWR": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 11 symbols scanned.",
+      "attributes": [
+        {
+          "name": "NETNAME",
+          "value": "xVx",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/PWR (2 symbol(s) with this attribute)."
+        },
+        {
+          "name": "TYPE",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/PWR (9 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "SLOTS": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 4 symbols scanned.",
+      "attributes": [
+        {
+          "name": "EXCLUDE",
+          "value": "YES",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/SLOTS (4 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "SOLDERPADS": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 20 symbols scanned.",
+      "attributes": [
+        {
+          "name": "EXCLUDE",
+          "value": "YES",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/SOLDERPADS (14 symbol(s) with this attribute)."
+        },
+        {
+          "name": "TYP",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/SOLDERPADS (1 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "STERNPUNKT": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 3 symbols scanned.",
+      "attributes": [
+        {
+          "name": "0",
+          "value": "",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/STERNPUNKT (1 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "TESTPUNKT_PAD": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 4 symbols scanned.",
+      "attributes": [
+        {
+          "name": "Part List Exclude",
+          "value": "True",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/TESTPUNKT_PAD (4 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "VORENTWICKLUNG": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 54 symbols scanned.",
+      "attributes": [
+        {
+          "name": "Cell Name",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/VORENTWICKLUNG (1 symbol(s) with this attribute)."
+        },
+        {
+          "name": "EXCLUDE",
+          "value": "YES",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/VORENTWICKLUNG (8 symbol(s) with this attribute)."
+        },
+        {
+          "name": "Part List Exclude",
+          "value": "True",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/VORENTWICKLUNG (4 symbol(s) with this attribute)."
+        },
+        {
+          "name": "TYP",
+          "value": "TAG-CONNECT",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/VORENTWICKLUNG (5 symbol(s) with this attribute)."
+        },
+        {
+          "name": "TYPE",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/VORENTWICKLUNG (30 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "XX_MUSTER": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 90 symbols scanned.",
+      "attributes": [
+        {
+          "name": "COLOUR",
+          "value": "FARBE",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/XX_MUSTER (1 symbol(s) with this attribute)."
+        },
+        {
+          "name": "FREQUENCE",
+          "value": "HZ",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/XX_MUSTER (1 symbol(s) with this attribute)."
+        },
+        {
+          "name": "MUSTER",
+          "value": "Musterbauteil",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/XX_MUSTER (87 symbol(s) with this attribute)."
+        },
+        {
+          "name": "PINORDER",
+          "value": "PLUS",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/XX_MUSTER (1 symbol(s) with this attribute)."
+        },
+        {
+          "name": "SLOT",
+          "value": "[SLOT]",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/XX_MUSTER (2 symbol(s) with this attribute)."
+        },
+        {
+          "name": "SLOT1",
+          "value": "[SLOT]",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/XX_MUSTER (3 symbol(s) with this attribute)."
+        },
+        {
+          "name": "SLOT2",
+          "value": "[SLOT]",
+          "visible": false,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/XX_MUSTER (3 symbol(s) with this attribute)."
+        },
+        {
+          "name": "TYP",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/XX_MUSTER (5 symbol(s) with this attribute)."
+        },
+        {
+          "name": "TYPE",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/XX_MUSTER (72 symbol(s) with this attribute)."
+        },
+        {
+          "name": "VOLTAGE",
+          "value": "VOLT",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/XX_MUSTER (13 symbol(s) with this attribute)."
+        }
+      ]
+    },
+    "XX_temp": {
+      "description": "Derived from uploaded Liebherr SymbolLibs library. 1 symbols scanned.",
+      "attributes": [
+        {
+          "name": "Connector",
+          "value": "",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/XX_temp (1 symbol(s) with this attribute)."
+        },
+        {
+          "name": "TYP",
+          "value": "TAG-CONNECT",
+          "visible": true,
+          "required": false,
+          "locked": false,
+          "description": "Derived from SymbolLibs/XX_temp (1 symbol(s) with this attribute)."
+        }
+      ]
+    }
+  },
+  "pin_types": {}
+}

@@ -1,0 +1,175 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://xped-auto.local/schema/architecture/v1",
+  "title": "SysML architecture SPOT resource for xped_auto",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "name", "blocks", "connections", "net_references", "attributes"],
+  "properties": {
+    "format": { "const": "sysml2-architecture/v1" },
+    "name": { "$ref": "#/$defs/name" },
+    "blocks": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/domain" }
+    },
+    "connections": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/connection" }
+    },
+    "net_references": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/netReference" }
+    },
+    "attributes": { "$ref": "#/$defs/attributes" }
+  },
+  "$defs": {
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "attributes": {
+      "type": "object",
+      "description": "Extensible attributes owned by the architecture. Tool-specific data must be namespaced.",
+      "properties": {
+        "xpedition": { "$ref": "#/$defs/xpeditionAttributes" }
+      },
+      "propertyNames": {
+        "not": {
+          "enum": ["xpedScmId", "EA UID", "EA_UID"]
+        }
+      },
+      "additionalProperties": true
+    },
+    "xpeditionAttributes": {
+      "type": "object",
+      "description": "Back-annotation written by Xpedition into the same SPOT resource.",
+      "additionalProperties": false,
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Xpedition COM UID. Architecture identity remains in the object's id/net_id field."
+        },
+        "uids": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 },
+          "description": "COM UIDs when one architecture net has multiple hierarchical Xpedition instances."
+        },
+        "project": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Xpedition project used for the latest Back Annotation."
+        },
+        "lastBackAnnotationUtc": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "port": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "port_type", "id", "attributes"],
+      "properties": {
+        "name": { "$ref": "#/$defs/name" },
+        "port_type": {
+          "enum": ["In", "Out", "Bidi", "Power", "Ground", "Analog"]
+        },
+        "id": { "$ref": "#/$defs/id" },
+        "attributes": { "$ref": "#/$defs/attributes" }
+      }
+    },
+    "domain": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "level", "id", "kind", "is_host", "color", "attributes", "ports", "children"],
+      "properties": {
+        "name": { "$ref": "#/$defs/name" },
+        "level": { "const": "Level1_Domain" },
+        "id": { "$ref": "#/$defs/id" },
+        "kind": { "$ref": "#/$defs/name" },
+        "is_host": { "type": "boolean" },
+        "color": { "$ref": "#/$defs/color" },
+        "attributes": { "$ref": "#/$defs/attributes" },
+        "ports": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/port" }
+        },
+        "children": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/architectureElement" }
+        }
+      }
+    },
+    "architectureElement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "level", "id", "kind", "is_host", "color", "attributes", "ports", "children"],
+      "properties": {
+        "name": { "$ref": "#/$defs/name" },
+        "level": { "const": "Level2_ArchitectureElement" },
+        "id": { "$ref": "#/$defs/id" },
+        "kind": { "$ref": "#/$defs/name" },
+        "is_host": { "type": "boolean" },
+        "color": { "$ref": "#/$defs/color" },
+        "attributes": { "$ref": "#/$defs/attributes" },
+        "ports": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/port" }
+        },
+        "children": {
+          "type": "array",
+          "maxItems": 0,
+          "description": "xped_auto supports exactly the Domain -> Architecture Element hierarchy."
+        }
+      }
+    },
+    "color": {
+      "type": "string",
+      "pattern": "^(|#[0-9A-Fa-f]{6})$"
+    },
+    "connectionEnd": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["block_path", "port_name"],
+      "properties": {
+        "block_path": { "$ref": "#/$defs/name" },
+        "port_name": { "$ref": "#/$defs/name" }
+      }
+    },
+    "connection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "connection_type", "source", "target", "id", "net_id", "attributes"],
+      "properties": {
+        "name": { "$ref": "#/$defs/name" },
+        "connection_type": { "enum": ["Net", "Bus"] },
+        "source": { "$ref": "#/$defs/connectionEnd" },
+        "target": { "$ref": "#/$defs/connectionEnd" },
+        "id": { "$ref": "#/$defs/id" },
+        "net_id": { "$ref": "#/$defs/id" },
+        "attributes": { "$ref": "#/$defs/attributes" }
+      }
+    },
+    "netReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "reference_type", "end", "direction", "id", "net_id", "attributes"],
+      "properties": {
+        "name": { "$ref": "#/$defs/name" },
+        "reference_type": { "enum": ["Net", "Bus"] },
+        "end": { "$ref": "#/$defs/connectionEnd" },
+        "direction": { "enum": ["In", "Out", "Bidi"] },
+        "id": { "$ref": "#/$defs/id" },
+        "net_id": { "$ref": "#/$defs/id" },
+        "attributes": { "$ref": "#/$defs/attributes" }
+      }
+    }
+  }
+}
